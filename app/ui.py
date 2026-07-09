@@ -34,17 +34,12 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
   border-radius:10px;padding:8px 11px;font-size:12px;color:#dffaff;max-width:230px;box-shadow:0 6px 26px #000a;transform:translateY(-50%)}
 #tip b{color:#7ff6ff}#tip span{color:#8fb0c2;font-size:10.5px}
 #wave{position:fixed;left:0;right:0;bottom:0;height:120px;width:100%;z-index:4;pointer-events:none;opacity:.9}
-/* VOZ */
-#voice{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:26;display:flex;align-items:center;gap:10px;
-  background:#06131fe8;border:1px solid #17495d;border-radius:99px;padding:8px 12px 8px 8px;box-shadow:0 10px 40px #000a;max-width:96vw;flex-wrap:wrap;justify-content:center}
-#mic{width:46px;height:46px;border-radius:50%;border:0;cursor:pointer;font-size:20px;background:radial-gradient(circle at 50% 40%,#66f0ff,#1596b3);color:#022;box-shadow:0 0 18px #38e6ff88}
-#mic.on{animation:mic 1.1s ease-in-out infinite}
-@keyframes mic{0%,100%{box-shadow:0 0 14px #38e6ff88}50%{box-shadow:0 0 30px #38e6ff,0 0 50px #38e6ff66}}
-#vtext{font-size:12px;color:#bfe6f5;min-width:150px;max-width:40vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#vtext b{color:#7ff6ff}
-.vtoggle{cursor:pointer;font-size:11px;color:#7fbfd0;border:1px solid #17495d;border-radius:99px;padding:5px 9px;white-space:nowrap}
-.vtoggle.on{color:#02141b;background:#38e6ff;border-color:#38e6ff}
-#v-voice{background:#08131d;color:#9fe6ff;border:1px solid #17495d;border-radius:99px;padding:5px 8px;font-family:inherit;font-size:11px;max-width:150px}
+/* VOZ (botones compactos en la barra de arriba, sin panel ni micrófono gigante) */
+.btn.on{background:linear-gradient(180deg,#66f0ff,#22d3ee);color:#02141b;border:0;box-shadow:0 0 16px #22d3ee66}
+.btn.mic-on{animation:micpulse 1.1s ease-in-out infinite}
+@keyframes micpulse{0%,100%{box-shadow:0 0 12px #38e6ff66}50%{box-shadow:0 0 26px #38e6ff,0 0 44px #38e6ff55}}
+#vstatus{font-size:11px;color:#7ff6ff;background:#06131fcc;border:1px solid #17495d;border-radius:99px;padding:4px 11px;max-width:38vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:none}
+#vstatus b{color:#dffaff}
 /* BOOT */
 #boot{position:fixed;inset:0;z-index:60;background:radial-gradient(900px 700px at 50% 45%,#08202f,#03060c 70%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;transition:opacity .7s}
 #boot.hide{opacity:0;pointer-events:none}
@@ -103,7 +98,12 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
   <span class="chip" id="c-conn">conexión —</span>
   <span class="chip" id="c-bal">balance —</span>
   <span class="chip" id="c-pb">playbook —</span>
+  <span id="vstatus"></span>
   <span class="spacer"></span>
+  <button class="btn ghost" id="b-mic" title="Hablar (clic, o di “Oye Hydra”)">🎙️</button>
+  <button class="btn ghost on" id="b-wake" title="Palabra mágica: “Oye Hydra”">👂 OYE HYDRA</button>
+  <button class="btn ghost" id="b-clap" title="Activar aplaudiendo 2 veces">👏 APLAUSO</button>
+  <button class="btn ghost on" id="b-speak" title="Voz de respuesta">🔊 VOZ</button>
   <button class="btn" id="b-demo">▶ DEMO</button>
   <button class="btn ghost" id="b-cal">📅 CALENDARIO</button>
   <button class="btn ghost" id="b-halt">⏸ HALT</button>
@@ -112,15 +112,6 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 
 <div id="hint">pasa el cursor por la red · cada nodo de energía es un agente</div>
 <div id="stage"><canvas id="corefx"></canvas><div id="tip"></div></div>
-
-<div id="voice">
-  <button id="mic" title="Hablar">🎙️</button>
-  <div id="vtext">Di <b>“Oye Hydra…”</b></div>
-  <span class="vtoggle on" id="v-wake" title="Palabra mágica">👂 oye hydra</span>
-  <span class="vtoggle" id="v-clap" title="Activar con aplauso">👏 aplauso</span>
-  <span class="vtoggle on" id="v-speak" title="Voz de respuesta">🔊 voz</span>
-  <select id="v-voice" title="Elegir voz"></select>
-</div>
 
 <div id="drawer">
   <div class="hd"><div class="e" id="d-e">🔍</div>
@@ -148,8 +139,8 @@ function renderCore(c){
   $('#c-pb').innerHTML='playbook <b>v'+c.playbook_version+'</b>';
   $('#b-halt').textContent=c.halted?'▶ RESUME':'⏸ HALT';
   $('#b-cal').style.display='';
-  if(c.voice_enabled===false)$('#voice').style.display='none';
-  ttsServer=!!c.tts_server; if(ttsServer)$('#v-voice').style.display='none';
+  if(c.voice_enabled===false)['b-mic','b-wake','b-clap','b-speak'].forEach(id=>{const e=$('#'+id);if(e)e.style.display='none';});
+  ttsServer=!!c.tts_server;
 }
 function agentByKey(k){ return DATA?DATA.agents.find(a=>a.key===k):null; }
 function openAgent(k){ selected=k; renderDrawer(k); $('#drawer').classList.add('open'); const a=agentByKey(k); if(a)speak(a.name+'. '+a.role); }
@@ -209,11 +200,9 @@ let esVoices=[], esVoice=null, speakOn=true, ttsServer=false, ttsAudio=null;
 let speaking=false, listeningActive=false, wakeUntil=0;
 const MALE_PRIORITY=['jorge','juan','diego','carlos','enrique','miguel','pablo','alvaro','google español de estados unidos','google español'];
 function loadVoices(){ if(!('speechSynthesis'in window))return; esVoices=speechSynthesis.getVoices().filter(v=>/es(-|_)/i.test(v.lang));
-  if(!esVoice){ for(const nm of MALE_PRIORITY){ const v=esVoices.find(v=>v.name.toLowerCase().includes(nm)); if(v){esVoice=v;break;} } if(!esVoice)esVoice=esVoices[0]||null; }
-  const sel=$('#v-voice'); sel.innerHTML=''; esVoices.forEach((v,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=v.name.replace(/Microsoft|Online|\(Natural\)/gi,'').trim()+' · '+v.lang; if(esVoice&&v.name===esVoice.name)o.selected=true; sel.appendChild(o); }); }
+  if(!esVoice){ for(const nm of MALE_PRIORITY){ const v=esVoices.find(v=>v.name.toLowerCase().includes(nm)); if(v){esVoice=v;break;} } if(!esVoice)esVoice=esVoices[0]||null; } }
 if('speechSynthesis'in window){ loadVoices(); speechSynthesis.onvoiceschanged=loadVoices; }
-$('#v-voice').onchange=e=>{ esVoice=esVoices[+e.target.value]||esVoice; speak('Hola, señor. ¿Así le gusta más mi voz?'); };
-$('#v-speak').onclick=()=>{ speakOn=!speakOn; $('#v-speak').classList.toggle('on',speakOn); if(speakOn)speak('Voz activada.'); };
+$('#b-speak').onclick=()=>{ speakOn=!speakOn; $('#b-speak').classList.toggle('on',speakOn); toast(speakOn?'Voz activada':'Voz silenciada'); if(speakOn)speak('Voz activada.'); };
 function speak(t){ if(!speakOn)return; if(ttsServer){ serverSpeak(t); return; } browserSpeak(t); }
 async function serverSpeak(t){ try{ speaking=true; if(ttsAudio)ttsAudio.pause();
     const r=await fetch('/tts',{method:'POST',headers:{'Content-Type':'text/plain'},body:t}); if(!r.ok)throw 0;
@@ -227,8 +216,8 @@ function browserSpeak(t){ if(!('speechSynthesis'in window))return; try{ speechSy
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 let recog=null,running=false,wakeMode=true,awaiting=false,awaitTimer=null;
 const WAKE=['oye hydra','hola hydra','hey hydra','oye idra','oye hidra','hydra','hidra','jarvis'];
-function setV(t){ $('#vtext').innerHTML=t; }
-function coreHear(on){ listeningActive=on; $('#mic').classList.toggle('on',on); }
+function setV(t){ const el=$('#vstatus'); if(!el)return; el.innerHTML=t||''; el.style.display=t?'inline-block':'none'; if(el._t)clearTimeout(el._t); if(t)el._t=setTimeout(()=>{el.style.display='none';},6000); }
+function coreHear(on){ listeningActive=on; $('#b-mic').classList.toggle('mic-on',on); }
 function wakeFlash(){ wakeUntil=performance.now()+700; }
 if(!SR){ setV('Voz no soportada — usa Chrome.'); }
 else{ recog=new SR(); recog.lang='es-ES'; recog.interimResults=true; recog.continuous=true;
@@ -240,19 +229,19 @@ function startRecog(){ if(!recog||running)return; try{ recog.start(); running=tr
 function handlePhrase(t){ if(awaiting){ clearTimeout(awaitTimer); awaiting=false; wakeFlash(); runCmd(t); return; }
   const w=WAKE.find(w=>t.includes(w)); if(!w)return; wakeFlash(); const rest=t.slice(t.indexOf(w)+w.length).trim();
   if(rest.length>2){ runCmd(rest); } else { speak('A la orden, señor.'); setV('<b>Le escucho…</b>'); awaiting=true; awaitTimer=setTimeout(()=>{awaiting=false;setV('Di <b>“Oye Hydra…”</b>');},9000); } }
-$('#mic').onclick=()=>{ if(!SR){toast('Usa Chrome para la voz');return;} awaiting=true; setV('<b>Le escucho…</b>'); speak('Dígame, señor.'); if(!running)startRecog(); };
-$('#v-wake').onclick=()=>{ wakeMode=!wakeMode; $('#v-wake').classList.toggle('on',wakeMode); if(wakeMode){ toast('Palabra mágica activada'); startRecog(); } else { toast('Palabra mágica apagada'); if(recog&&running)recog.stop(); } };
+$('#b-mic').onclick=()=>{ if(!SR){toast('Usa Chrome para la voz');return;} awaiting=true; setV('<b>Le escucho…</b>'); speak('Dígame, señor.'); if(!running)startRecog(); };
+$('#b-wake').onclick=()=>{ wakeMode=!wakeMode; $('#b-wake').classList.toggle('on',wakeMode); if(wakeMode){ toast('Palabra mágica activada'); startRecog(); } else { toast('Palabra mágica apagada'); if(recog&&running)recog.stop(); } };
 
 let clapOn=false,clapStream=null,clapRAF=null,clapTimes=[];
-$('#v-clap').onclick=async()=>{ if(clapOn){stopClap();}else{await startClap();} };
+$('#b-clap').onclick=async()=>{ if(clapOn){stopClap();}else{await startClap();} };
 async function startClap(){ try{ clapStream=await navigator.mediaDevices.getUserMedia({audio:true});
     const ctx=new (window.AudioContext||window.webkitAudioContext)(); const src=ctx.createMediaStreamSource(clapStream); const an=ctx.createAnalyser(); an.fftSize=1024; src.connect(an); const buf=new Uint8Array(an.fftSize);
-    clapOn=true; $('#v-clap').classList.add('on'); toast('Aplauso activado: aplaude 2 veces');
+    clapOn=true; $('#b-clap').classList.add('on'); toast('Aplauso activado: aplaude 2 veces');
     const loop=()=>{ if(!clapOn)return; an.getByteTimeDomainData(buf); let peak=0; for(let i=0;i<buf.length;i++){ const v=Math.abs(buf[i]-128)/128; if(v>peak)peak=v; }
       const now=performance.now(); if(peak>0.42&&(!clapTimes.length||now-clapTimes[clapTimes.length-1]>180)){ clapTimes.push(now); clapTimes=clapTimes.filter(t=>now-t<1000); if(clapTimes.length>=2){clapTimes=[];onClap();} }
       clapRAF=requestAnimationFrame(loop); }; loop();
   }catch(e){ toast('No pude usar el micrófono para aplauso'); } }
-function stopClap(){ clapOn=false; $('#v-clap').classList.remove('on'); if(clapRAF)cancelAnimationFrame(clapRAF); if(clapStream)clapStream.getTracks().forEach(t=>t.stop()); }
+function stopClap(){ clapOn=false; $('#b-clap').classList.remove('on'); if(clapRAF)cancelAnimationFrame(clapRAF); if(clapStream)clapStream.getTracks().forEach(t=>t.stop()); }
 function onClap(){ wakeFlash(); speak('A la orden, señor.'); setV('<b>Le escucho…</b>'); awaiting=true; if(!running)startRecog(); clearTimeout(awaitTimer); awaitTimer=setTimeout(()=>{awaiting=false;},9000); }
 
 const AGENT_WORDS=[{k:'analyst',w:['analista','analisis']},{k:'risk_manager',w:['riesgo','gestor']},{k:'executor',w:['ejecutor','ordenes']},{k:'overnight',w:['nocturno','noche']},{k:'reviewer',w:['revisor','revision']},{k:'architect',w:['arquitecto','playbook']},{k:'sentinel',w:['sentinel','noticias','calendario','centinela']},{k:'watchdog',w:['watchdog','vigilante','salud']},{k:'auditor',w:['auditor','auditoria']},{k:'validator',w:['validador','backtest']},{k:'portfolio',w:['portafolio','cartera','correlacion']}];
@@ -274,7 +263,7 @@ function speakStatus(){ if(!DATA){ speak('Aún cargando.'); return; } const c=DA
 
 $('#activate').onclick=()=>{ $('#boot').classList.add('hide'); setTimeout(()=>$('#boot').style.display='none',700);
   loadVoices(); speak('Sistemas en línea, señor. Los once agentes están conectados. Diga, oye Hydra, cuando me necesite.');
-  if(SR){ wakeMode=true; $('#v-wake').classList.add('on'); startRecog(); setV('Escuchando… di <b>“Oye Hydra”</b>'); } };
+  if(SR){ wakeMode=true; $('#b-wake').classList.add('on'); startRecog(); setV('Escuchando… di <b>“Oye Hydra”</b>'); } };
 
 /* ===================== ONDA DE AUDIO ===================== */
 const wv=$('#wave'), wg=wv.getContext('2d'); let wt=0; const DPR=window.devicePixelRatio||1;
