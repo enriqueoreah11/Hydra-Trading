@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# Secrets & runtime data — NEVER commit
+.env
+data/
+tokens.json
+*.db
+*.log

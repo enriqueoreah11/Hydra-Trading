@@ -1,0 +1,14 @@
+services:
+  brain:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+    ports:
+      - "8000:8000"
+    volumes:
+      - brain-data:/data
+
+volumes:
+  brain-data:

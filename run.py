@@ -1,0 +1,62 @@
+"""Entry point: runs the web dashboard + the brain in one asyncio loop.
+
+    python run.py
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+
+import uvicorn
+
+from app.broker import Broker
+from app.config import settings
+from app.ctrader import CTraderClient
+from app.oauth import TokenStore
+from app.orchestrator import Brain
+from app.store import Store
+from app.web import create_app
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+log = logging.getLogger("main")
+
+
+async def main() -> None:
+    data = settings.data_path
+    store = Store(data / "brain.db")
+    tokens = TokenStore(data / "tokens.json", settings.ctrader_client_id,
+                        settings.ctrader_client_secret, settings.ctrader_redirect_uri)
+
+    client = CTraderClient(
+        ws_url=settings.ws_url,
+        client_id=settings.ctrader_client_id,
+        client_secret=settings.ctrader_client_secret,
+        account_id=settings.ctrader_account_id,
+        access_token_provider=tokens.get_access_token,
+    )
+    broker = Broker(client, settings.ctrader_account_id)
+    brain = Brain(broker, store)
+
+    app = create_app(store, tokens, broker)
+    server = uvicorn.Server(uvicorn.Config(
+        app, host=settings.web_host, port=settings.web_port, log_level="info"))
+
+    tasks = [asyncio.create_task(server.serve(), name="web")]
+
+    if settings.ctrader_client_id and tokens.has_tokens and settings.ctrader_account_id:
+        await client.start()
+        tasks.append(asyncio.create_task(brain.run_forever(), name="brain"))
+    else:
+        log.warning(
+            "brain idle: falta configuracion. Pasos: 1) define CTRADER_CLIENT_ID/SECRET, "
+            "2) visita /oauth/login para autorizar tu cuenta, 3) define CTRADER_ACCOUNT_ID "
+            "y reinicia. El dashboard web ya esta disponible.")
+
+    await asyncio.gather(*tasks)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

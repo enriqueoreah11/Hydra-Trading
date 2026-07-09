@@ -1,0 +1,63 @@
+"""cTrader Open API payload types and enums (JSON-over-WebSocket protocol).
+
+Reference: https://help.ctrader.com/open-api/messages/ and the
+spotware/openapi-proto-messages definitions. Prices on the wire are int64
+scaled by 1e5 in trendbars/spots; order/position prices are plain doubles.
+"""
+
+# --- Common ---
+PROTO_ERROR_RES = 50
+HEARTBEAT_EVENT = 51
+
+# --- OA messages ---
+APPLICATION_AUTH_REQ = 2100
+APPLICATION_AUTH_RES = 2101
+ACCOUNT_AUTH_REQ = 2102
+ACCOUNT_AUTH_RES = 2103
+VERSION_REQ = 2104
+VERSION_RES = 2105
+NEW_ORDER_REQ = 2106
+CANCEL_ORDER_REQ = 2108
+AMEND_ORDER_REQ = 2109
+AMEND_POSITION_SLTP_REQ = 2110
+CLOSE_POSITION_REQ = 2111
+SYMBOLS_LIST_REQ = 2114
+SYMBOLS_LIST_RES = 2115
+SYMBOL_BY_ID_REQ = 2116
+SYMBOL_BY_ID_RES = 2117
+TRADER_REQ = 2121
+TRADER_RES = 2122
+RECONCILE_REQ = 2124
+RECONCILE_RES = 2125
+EXECUTION_EVENT = 2126
+SUBSCRIBE_SPOTS_REQ = 2127
+UNSUBSCRIBE_SPOTS_REQ = 2129
+SPOT_EVENT = 2131
+ORDER_ERROR_EVENT = 2132
+DEAL_LIST_REQ = 2133
+DEAL_LIST_RES = 2134
+GET_TRENDBARS_REQ = 2137
+GET_TRENDBARS_RES = 2138
+OA_ERROR_RES = 2142
+ACCOUNTS_TOKEN_INVALIDATED_EVENT = 2147
+CLIENT_DISCONNECT_EVENT = 2148
+GET_ACCOUNTS_BY_ACCESS_TOKEN_REQ = 2149
+GET_ACCOUNTS_BY_ACCESS_TOKEN_RES = 2150
+
+# --- Enums ---
+TRENDBAR_PERIOD = {
+    "M1": 1, "M2": 2, "M3": 3, "M4": 4, "M5": 5, "M10": 6, "M15": 7,
+    "M30": 8, "H1": 9, "H4": 10, "H12": 11, "D1": 12, "W1": 13, "MN1": 14,
+}
+
+TRENDBAR_PERIOD_MINUTES = {
+    "M1": 1, "M2": 2, "M3": 3, "M4": 4, "M5": 5, "M10": 10, "M15": 15,
+    "M30": 30, "H1": 60, "H4": 240, "H12": 720, "D1": 1440, "W1": 10080, "MN1": 43200,
+}
+
+TRADE_SIDE = {"buy": 1, "sell": 2}
+TRADE_SIDE_NAME = {1: "buy", 2: "sell"}
+
+ORDER_TYPE_MARKET = 1
+
+PRICE_SCALE = 100_000  # int64 wire prices -> real price
