@@ -15,7 +15,7 @@ from .store import Store
 
 
 def create_app(store: Store, tokens: TokenStore, broker: Broker) -> FastAPI:
-    app = FastAPI(title="ctrader-brain")
+    app = FastAPI(title="hydra-trading")
 
     def _check_token(token: str | None) -> None:
         if settings.dashboard_token and token != settings.dashboard_token:
@@ -83,6 +83,13 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker) -> FastAPI:
             "symbols": settings.symbol_list,
             "timeframe": settings.timeframe,
             "playbook_version": version,
+            "agents": {
+                "sentinel_news": settings.enable_news,
+                "auditor": settings.enable_auditor,
+                "validator": settings.validate_playbook,
+                "portfolio": settings.enable_portfolio_check,
+                "telegram": bool(settings.telegram_bot_token and settings.telegram_chat_id),
+            },
         }
         if broker.client.account_authorized:
             try:
@@ -127,7 +134,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker) -> FastAPI:
         badge = "🔴 HALTED" if st["halted"] else ("🟡 SIN CONEXION" if not st["connected"] else "🟢 ACTIVO")
         mode = "PAPEL (dry run)" if st["dry_run"] else "REAL"
         return f"""<!doctype html><html><head><meta charset="utf-8">
-<title>ctrader-brain</title>
+<title>Hydra Trading</title>
 <style>
  body{{font-family:system-ui,sans-serif;margin:2rem;max-width:1100px}}
  table{{border-collapse:collapse;width:100%;font-size:.85rem}}
@@ -136,7 +143,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker) -> FastAPI:
  pre{{background:#f6f6f6;padding:1rem;overflow-x:auto;font-size:.8rem}}
  .pill{{display:inline-block;padding:2px 10px;border-radius:99px;background:#eee;margin-right:8px}}
 </style></head><body>
-<h1>🧠 ctrader-brain {badge}</h1>
+<h1>🐉 Hydra Trading {badge}</h1>
 <p>
  <span class="pill">modo: <b>{mode}</b></span>
  <span class="pill">entorno: {st["env"]}</span>
@@ -145,6 +152,20 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker) -> FastAPI:
  <span class="pill">simbolos: {", ".join(st["symbols"])} @ {st["timeframe"]}</span>
  <span class="pill">playbook v{version}</span>
  <span class="pill">OAuth: {"✅" if st["oauth_ok"] else '❌ <a href="/oauth/login">conectar cTrader</a>'}</span>
+</p>
+<p>
+ <b>Agentes:</b>
+ <span class="pill">🔍 Analyst</span>
+ <span class="pill">🛡️ Risk</span>
+ <span class="pill">⚡ Executor</span>
+ <span class="pill">🌙 Overnight</span>
+ <span class="pill">📋 Reviewer</span>
+ <span class="pill">🏗️ Architect</span>
+ <span class="pill">📰 Sentinel {"✅" if st["agents"]["sentinel_news"] else "—"}</span>
+ <span class="pill">🩺 Watchdog {"✅" if st["agents"]["telegram"] else "sin Telegram"}</span>
+ <span class="pill">🧾 Auditor {"✅" if st["agents"]["auditor"] else "—"}</span>
+ <span class="pill">🧪 Validator {"✅" if st["agents"]["validator"] else "—"}</span>
+ <span class="pill">🔗 Portfolio {"✅" if st["agents"]["portfolio"] else "—"}</span>
 </p>
 <p>Kill switch: <code>POST /halt</code> · <code>POST /resume</code>
  {"(requiere ?token=)" if settings.dashboard_token else ""}</p>

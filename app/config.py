@@ -34,6 +34,38 @@ class Settings(BaseSettings):
     min_risk_reward: float = 1.5
     equity_floor_pct: float = 80.0           # halt if balance < this % of initial balance
 
+    # --- Sentinel (economic-calendar news blackout) ---
+    enable_news: bool = True
+    news_url: str = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+    news_impact_min: str = "High"            # High | Medium | Low — minimum impact that blocks
+    news_blackout_before_min: int = 30       # no new entries this many min BEFORE an event
+    news_blackout_after_min: int = 15        # ...and this many min AFTER
+    news_refresh_min: int = 180              # re-fetch the calendar every N minutes
+
+    # --- Watchdog + Telegram notifier ---
+    telegram_bot_token: str = ""             # from @BotFather; empty = notifications disabled
+    telegram_chat_id: str = ""               # your chat id (see README)
+    watchdog_interval_min: int = 5
+    data_stale_alert_min: int = 20           # alert if no fresh candles for this long (market open)
+    error_burst_threshold: int = 5           # alert if this many errors within the window
+    heartbeat_hour_utc: int = 8              # one "estoy vivo" ping per day at this UTC hour
+
+    # --- Auditor / reconciler ---
+    enable_auditor: bool = True
+    auditor_interval_min: int = 20
+    auto_halt_on_discrepancy: bool = True    # halt trading if an unexplained discrepancy appears
+
+    # --- Playbook validator (light backtest gate for the Architect) ---
+    validate_playbook: bool = True
+    backtest_bars: int = 400                 # history depth per symbol
+    backtest_samples: int = 12               # decision points sampled per symbol (LLM cost driver)
+    backtest_horizon_bars: int = 24          # bars ahead to resolve each simulated trade
+
+    # --- Portfolio risk / correlation ---
+    enable_portfolio_check: bool = True
+    max_currency_exposure_pct: float = 2.0   # max aggregate risk% on a single currency
+    max_correlation: float = 0.7             # block a redundant, highly-correlated same-direction bet
+
     # --- Web dashboard ---
     web_host: str = "0.0.0.0"
     web_port: int = 8000
