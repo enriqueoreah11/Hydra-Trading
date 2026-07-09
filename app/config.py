@@ -47,6 +47,14 @@ class Settings(BaseSettings):
 
     # --- Voz (JARVIS) ---
     voice_enabled: bool = True               # muestra el control de voz en el dashboard
+    # Voz NEURAL por servidor (suena natural, como la de Claude). Requiere una API key.
+    tts_provider: str = ""                   # "" (usa la del navegador) | "openai" | "elevenlabs"
+    tts_api_key: str = ""                    # key de OpenAI o de ElevenLabs
+    tts_speed: float = 1.06
+    openai_tts_model: str = "tts-1"          # tts-1 (rápido) | tts-1-hd (más calidad)
+    openai_tts_voice: str = "onyx"           # onyx=masculina grave; echo/fable/alloy también
+    elevenlabs_voice_id: str = ""            # id de la voz elegida en ElevenLabs
+    elevenlabs_model: str = "eleven_multilingual_v2"
 
     # --- Watchdog + Telegram notifier ---
     telegram_bot_token: str = ""             # from @BotFather; empty = notifications disabled

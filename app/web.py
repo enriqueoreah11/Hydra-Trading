@@ -5,9 +5,10 @@ import datetime as dt
 import html
 import json
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
+from . import tts as tts_mod
 from .broker import Broker
 from .config import settings
 from .oauth import TokenStore, build_auth_url
@@ -80,6 +81,16 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker) -> FastAPI:
             return {"ran": True, "results": results}
         except Exception as e:  # noqa: BLE001
             raise HTTPException(400, str(e))
+
+    @app.post("/tts")
+    async def tts_endpoint(request: Request):
+        """Devuelve audio MP3 con voz neural (si hay proveedor configurado)."""
+        from . import tts as tts_mod
+        text = (await request.body()).decode("utf-8", "ignore")
+        audio = await tts_mod.synth(text)
+        if not audio:
+            raise HTTPException(400, "TTS neural no configurado")
+        return Response(content=audio, media_type="audio/mpeg")
 
     @app.get("/demo", response_class=HTMLResponse)
     async def demo_page(token: str | None = Query(None)):
@@ -233,6 +244,7 @@ Conecta tu cuenta en <a href="/oauth/login">/oauth/login</a> para operar de verd
                 "playbook_version": st["playbook_version"],
                 "has_anthropic": bool(settings.anthropic_api_key),
                 "voice_enabled": settings.voice_enabled,
+                "tts_server": tts_mod.available(),
                 "calendar_embed_url": settings.calendar_embed_url,
                 "server_time": now,
             },

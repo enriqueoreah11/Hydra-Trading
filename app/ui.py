@@ -207,6 +207,7 @@ function renderCore(c){
   $('#b-halt').textContent=c.halted?'▶ RESUME':'⏸ HALT';
   $('#b-cal').style.display=c.calendar_embed_url?'':'none';
   if(c.voice_enabled===false)$('#voice').style.display='none';
+  ttsServer=!!c.tts_server; if(ttsServer)$('#v-voice').style.display='none';
 }
 function ensureNodes(a){ if(Object.keys(NODES).length)return; const st=$('#stage');
   a.forEach(x=>{ const n=document.createElement('div'); n.className='node'; n.dataset.key=x.key;
@@ -280,9 +281,19 @@ function loadVoices(){ if(!('speechSynthesis'in window))return; esVoices=speechS
 if('speechSynthesis'in window){ loadVoices(); speechSynthesis.onvoiceschanged=loadVoices; }
 $('#v-voice').onchange=e=>{ esVoice=esVoices[+e.target.value]||esVoice; speak('Hola. Soy Hydra, tu asistente.'); };
 $('#v-speak').onclick=()=>{ speakOn=!speakOn; $('#v-speak').classList.toggle('on',speakOn); if(speakOn)speak('Voz activada.'); };
-let speaking=false, listeningActive=false, waveLevel=0.12;
-function speak(t){ if(!speakOn||!('speechSynthesis'in window))return; try{ speechSynthesis.cancel();
-  const u=new SpeechSynthesisUtterance(t); u.lang=(esVoice&&esVoice.lang)||'es-ES'; u.rate=0.98; u.pitch=0.8; if(esVoice)u.voice=esVoice;
+let speaking=false, listeningActive=false, waveLevel=0.12, ttsServer=false, ttsAudio=null;
+function speak(t){ if(!speakOn) return;
+  if(ttsServer){ serverSpeak(t); return; }
+  browserSpeak(t);
+}
+async function serverSpeak(t){ try{ speaking=true; if(ttsAudio){ttsAudio.pause();}
+    const r=await fetch('/tts',{method:'POST',headers:{'Content-Type':'text/plain'},body:t});
+    if(!r.ok) throw 0; const url=URL.createObjectURL(await r.blob());
+    ttsAudio=new Audio(url); ttsAudio.onended=()=>{speaking=false;URL.revokeObjectURL(url);};
+    ttsAudio.onerror=()=>{speaking=false;browserSpeak(t);}; await ttsAudio.play();
+  }catch(_){ speaking=false; browserSpeak(t); } }
+function browserSpeak(t){ if(!('speechSynthesis'in window))return; try{ speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(t); u.lang=(esVoice&&esVoice.lang)||'es-ES'; u.rate=1.08; u.pitch=0.85; if(esVoice)u.voice=esVoice;
   u.onstart=()=>{speaking=true;}; u.onend=()=>{speaking=false;}; u.onerror=()=>{speaking=false;}; speechSynthesis.speak(u); }catch(_){}}
 
 /* ---- onda de audio estilo JARVIS ---- */
