@@ -232,6 +232,8 @@ Conecta tu cuenta en <a href="/oauth/login">/oauth/login</a> para operar de verd
                 "symbols": st["symbols"], "timeframe": st["timeframe"],
                 "playbook_version": st["playbook_version"],
                 "has_anthropic": bool(settings.anthropic_api_key),
+                "voice_enabled": settings.voice_enabled,
+                "calendar_embed_url": settings.calendar_embed_url,
                 "server_time": now,
             },
             "agents": out_agents,

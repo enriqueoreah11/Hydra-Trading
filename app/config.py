@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     news_blackout_before_min: int = 30       # no new entries this many min BEFORE an event
     news_blackout_after_min: int = 15        # ...and this many min AFTER
     news_refresh_min: int = 180              # re-fetch the calendar every N minutes
+    # Panel de calendario embebido en el dashboard (p.ej. widget de Financial Juice / TradingView).
+    # Pega aqui la URL del widget/iframe de tu calendario para verlo dentro de la app.
+    calendar_embed_url: str = ""
+
+    # --- Voz (JARVIS) ---
+    voice_enabled: bool = True               # muestra el control de voz en el dashboard
 
     # --- Watchdog + Telegram notifier ---
     telegram_bot_token: str = ""             # from @BotFather; empty = notifications disabled
