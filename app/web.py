@@ -184,9 +184,67 @@ Conecta tu cuenta en <a href="/oauth/login">/oauth/login</a> para operar de verd
         version, content = store.playbook()
         return JSONResponse({"version": version, "content": content})
 
+    @app.get("/agents")
+    async def agents():
+        """Todo lo que la UI JARVIS necesita en una sola llamada."""
+        import time as _t
+        from .agents_registry import AGENTS, is_enabled
+
+        st = await status()
+        journal = store.recent_journal(limit=400)
+        by_agent: dict[str, list[dict]] = {}
+        for e in journal:
+            by_agent.setdefault(e["agent"], []).append(e)
+        # las entradas del modo demo cuentan como actividad del Analyst
+        by_agent.setdefault("analyst", [])
+        by_agent["analyst"] = sorted(
+            by_agent.get("analyst", []) + by_agent.get("demo", []),
+            key=lambda e: e["ts"], reverse=True)
+
+        now = _t.time()
+        active_window = max(3600.0, settings.analysis_interval_min * 90.0)
+        out_agents = []
+        for a in AGENTS:
+            entries = by_agent.get(a["key"], [])[:12]
+            enabled = is_enabled(a["key"])
+            last_ts = entries[0]["ts"] if entries else None
+            if not enabled:
+                state = "off"
+            elif last_ts and now - last_ts <= active_window:
+                state = "active"
+            else:
+                state = "idle"
+            # el watchdog se pone en alerta si no hay conexion con cTrader
+            if a["key"] == "watchdog" and st.get("oauth_ok") and not st["connected"]:
+                state = "alert"
+            out_agents.append({
+                **a, "enabled": enabled, "state": state, "last_ts": last_ts,
+                "entries": [{
+                    "ts": e["ts"], "kind": e["kind"], "symbol": e["symbol"],
+                    "content": (e["content"] or "")[:600],
+                } for e in entries],
+            })
+        return {
+            "core": {
+                "env": st["env"], "dry_run": st["dry_run"], "halted": st["halted"],
+                "connected": st["connected"], "oauth_ok": st["oauth_ok"],
+                "balance": st.get("balance"), "model": settings.model,
+                "symbols": st["symbols"], "timeframe": st["timeframe"],
+                "playbook_version": st["playbook_version"],
+                "has_anthropic": bool(settings.anthropic_api_key),
+                "server_time": now,
+            },
+            "agents": out_agents,
+        }
+
     # ------------------------------------------------------------- dashboard
 
     @app.get("/", response_class=HTMLResponse)
+    async def brain():
+        from .ui import BRAIN_HTML
+        return HTMLResponse(BRAIN_HTML)
+
+    @app.get("/classic", response_class=HTMLResponse)
     async def home():
         st = await status()
         entries = store.recent_journal(limit=30)
