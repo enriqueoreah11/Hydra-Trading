@@ -73,6 +73,13 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 .feed .k{color:#7ff6ff;font-size:11px}.feed .t{color:#5f7387;font-size:10.5px;float:right}
 .feed .c{color:#a9bcd0;font-size:11.5px;margin-top:5px;white-space:pre-wrap;word-break:break-word;max-height:150px;overflow:auto}
 .empty{color:#5f7387;font-size:12.5px;padding:10px 0}
+.cal-day{color:#7ff6ff;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:16px 0 7px;border-bottom:1px solid #10293650;padding-bottom:4px}
+.cal-row{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:8px;font-size:12px}
+.cal-row.watched{background:#0a1f2c88;border-left:2px solid #38e6ff}
+.cal-t{color:#5f7387;font-size:11px;width:44px;flex:none}
+.cal-dot{width:8px;height:8px;border-radius:99px;flex:none;box-shadow:0 0 8px currentColor}
+.cal-cur{color:#cfe6f2;font-weight:700;width:38px;flex:none;font-size:11px}
+.cal-title{color:#a9bcd0}.cal-det{color:#5f7387;font-size:10.5px}
 #banner{position:fixed;left:50%;bottom:78px;transform:translateX(-50%);z-index:25;background:#08192af0;border:1px solid #1a4a5f;border-radius:12px;padding:11px 16px;max-width:min(760px,94vw);font-size:12.5px;color:#bfe6f5;box-shadow:0 10px 40px #000a}
 #banner code{background:#03121b;padding:2px 7px;border-radius:6px;color:#7ff6ff;border:1px solid #12303f}#banner a{color:#7ff6ff}
 #hint{position:fixed;left:50%;top:60px;transform:translateX(-50%);z-index:8;color:#4d6675;font-size:11px;letter-spacing:1px;pointer-events:none}
@@ -140,7 +147,7 @@ function renderCore(c){
   $('#c-bal').innerHTML='balance <b>'+(c.balance!=null?c.balance:'—')+'</b>';
   $('#c-pb').innerHTML='playbook <b>v'+c.playbook_version+'</b>';
   $('#b-halt').textContent=c.halted?'▶ RESUME':'⏸ HALT';
-  $('#b-cal').style.display=c.calendar_embed_url?'':'none';
+  $('#b-cal').style.display='';
   if(c.voice_enabled===false)$('#voice').style.display='none';
   ttsServer=!!c.tts_server; if(ttsServer)$('#v-voice').style.display='none';
 }
@@ -165,8 +172,24 @@ function toast(t){ const el=$('#toast'); el.textContent=t; el.style.display='blo
 
 $('#b-refresh').onclick=load; $('#b-halt').onclick=doHalt; $('#b-demo').onclick=runDemo; $('#b-cal').onclick=openCalendar;
 async function doHalt(){ const halt=$('#b-halt').textContent.includes('HALT'); await fetch(halt?'/halt':'/resume',{method:'POST'}); toast(halt?'Sistema DETENIDO':'Sistema reanudado'); speak(halt?'Sistema detenido, señor.':'Sistema reanudado, señor.'); load(); }
-function openCalendar(){ if(!DATA||!DATA.core.calendar_embed_url){ toast('Configura CALENDAR_EMBED_URL'); return; }
-  $('#d-e').textContent='📅'; $('#d-name').textContent='Calendario'; $('#d-role').textContent='Fuente externa'; $('#d-body').innerHTML='<iframe src="'+DATA.core.calendar_embed_url+'"></iframe>'; selected=null; $('#drawer').classList.add('open'); }
+async function openCalendar(){ selected=null;
+  $('#d-e').textContent='📅'; $('#d-name').textContent='Calendario económico'; $('#d-role').textContent='Próximos 7 días'; $('#d-body').innerHTML='<div class="empty">Cargando eventos…</div>'; $('#drawer').classList.add('open');
+  let d; try{ d=await (await fetch('/calendar')).json(); }catch(e){ $('#d-body').innerHTML='<div class="empty" style="color:#ff5d73">No se pudo cargar el calendario.</div>'; return; }
+  const ev=d.events||[];
+  if(!ev.length){ $('#d-body').innerHTML='<div class="empty">Sin eventos'+(d.error?': '+escapeHtml(d.error):' en la ventana.')+'</div>'; return; }
+  const ic={high:'#ff5d73',medium:'#fbbf24',low:'#5ad1e6',holiday:'#8aa'};
+  let last='', h='';
+  ev.forEach(e=>{ const dt=new Date(e.ts*1000);
+    const day=dt.toLocaleDateString('es',{weekday:'long',day:'numeric',month:'short'});
+    if(day!==last){ h+='<div class="cal-day">'+day+'</div>'; last=day; }
+    const col=ic[(e.impact||'low').toLowerCase()]||'#5ad1e6';
+    const hm=dt.toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'});
+    const det=[e.forecast&&'prev. '+e.forecast,e.previous&&'ant. '+e.previous].filter(Boolean).join(' · ');
+    h+='<div class="cal-row'+(e.watched?' watched':'')+'"><span class="cal-t">'+hm+'</span>'
+      +'<span class="cal-dot" style="background:'+col+'"></span>'
+      +'<span class="cal-cur">'+escapeHtml(e.currency)+'</span>'
+      +'<span class="cal-title">'+escapeHtml(e.title)+(det?'<span class="cal-det"> '+escapeHtml(det)+'</span>':'')+'</span></div>'; });
+  $('#d-body').innerHTML='<p class="role">🔴 alto · 🟡 medio · 🔵 bajo impacto. Resaltados = afectan tus símbolos.</p>'+h; }
 async function runDemo(){ toast('Corriendo demo…'); speak('Ejecutando análisis de demostración.');
   let r; try{ r=await fetch('/demo',{method:'POST'}); }catch(e){ toast('Error de red'); return; }
   if(!r.ok){ const t=await r.text(); openInfo('▶ Modo demo','<p style="color:#ff5d73">No se pudo correr el demo.</p><p>'+escapeHtml(t)+'</p><p>Configura la key: <code>fly secrets set ANTHROPIC_API_KEY=sk-ant-...</code></p>'); speak('No pude correr el demo. Falta la clave de Anthropic.'); return; }

@@ -251,6 +251,61 @@ Conecta tu cuenta en <a href="/oauth/login">/oauth/login</a> para operar de verd
             "agents": out_agents,
         }
 
+    @app.get("/calendar")
+    async def calendar():
+        """Calendario económico nativo: baja el JSON en el servidor (sin CORS ni
+        bloqueo de iframe) y lo devuelve limpio para pintarlo con el estilo de la app.
+
+        Fuente: CALENDAR_EMBED_URL si apunta a un JSON, si no NEWS_URL
+        (ForexFactory via faireconomy). Devuelve los eventos de los próximos 7 días.
+        """
+        import time as _t
+
+        import httpx as _httpx
+
+        src = (settings.calendar_embed_url or "").strip()
+        if not (src.lower().endswith(".json") or "json" in src.lower()):
+            src = settings.news_url  # fuente por defecto (JSON semanal, sin API key)
+
+        events: list[dict] = []
+        error = None
+        try:
+            async with _httpx.AsyncClient(timeout=20, follow_redirects=True) as http:
+                r = await http.get(src, headers={"User-Agent": "hydra-trading/1.0"})
+                r.raise_for_status()
+                raw = r.json()
+        except Exception as exc:  # noqa: BLE001
+            raw, error = [], str(exc)[:200]
+
+        now = _t.time()
+        horizon = now + 7 * 86400
+        symbols_ccy = set()
+        for s in settings.symbol_list:
+            symbols_ccy |= {s[:3], s[3:6]}
+        for e in (raw or []):
+            date_s = e.get("date") or e.get("dateline") or ""
+            ts = None
+            try:
+                ts = dt.datetime.fromisoformat(str(date_s).replace("Z", "+00:00")).timestamp()
+            except Exception:  # noqa: BLE001
+                continue
+            if ts < now - 3600 or ts > horizon:
+                continue
+            cur = str(e.get("country") or e.get("currency") or "").upper()
+            impact = str(e.get("impact") or "").strip() or "Low"
+            events.append({
+                "ts": ts,
+                "currency": cur,
+                "impact": impact,
+                "title": str(e.get("title", ""))[:120],
+                "forecast": str(e.get("forecast", "") or ""),
+                "previous": str(e.get("previous", "") or ""),
+                "actual": str(e.get("actual", "") or ""),
+                "watched": cur in symbols_ccy,
+            })
+        events.sort(key=lambda x: x["ts"])
+        return {"events": events[:120], "source": src, "server_time": now, "error": error}
+
     # ------------------------------------------------------------- dashboard
 
     @app.get("/", response_class=HTMLResponse)
