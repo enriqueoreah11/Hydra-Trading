@@ -133,13 +133,25 @@ El repo ya trae un `fly.toml` con el puerto correcto (8000) y el volumen. Import
 
 ```bash
 fly launch --no-deploy            # detecta el Dockerfile; conserva el fly.toml del repo
-fly volumes create hydra_data --size 1 --region ams   # volumen persistente para /data
+fly volumes list                  # mira el nombre del volumen ya adjunto (Fly suele crear "data")
+# el fly.toml del repo usa  [mounts] source = "data"  para coincidir con ese volumen.
 fly secrets set ANTHROPIC_API_KEY=sk-...              # y el resto de credenciales:
 fly secrets set CTRADER_CLIENT_ID=... CTRADER_CLIENT_SECRET=... \
                 CTRADER_REDIRECT_URI=https://TU-APP.fly.dev/oauth/callback \
                 TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=...
 fly deploy
 fly logs                          # deberías ver "web escuchando en 0.0.0.0:8000"
+```
+
+**Importante sobre el volumen**: `[mounts] source` en `fly.toml` debe llamarse igual que el
+volumen adjunto a tu máquina (`fly volumes list`). Si el tuyo no se llama `data`, cambia esa
+línea del `fly.toml`. Si diera error de volumen, la vía limpia (aún no hay datos que perder):
+
+```bash
+fly machines list                 # anota el id de la maquina
+fly machine destroy <id> --force  # borra la maquina con el volumen atascado
+fly volumes list                  # deja un solo volumen (destruye extras con: fly volumes destroy <id>)
+fly deploy                        # Fly recrea la maquina montando el volumen del fly.toml
 ```
 
 Si tu app no se llama `hydra-trading`, cambia el campo `app` en `fly.toml` y el `--region`

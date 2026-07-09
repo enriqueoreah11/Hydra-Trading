@@ -31,9 +31,10 @@ primary_region = "ams"   # coincide con tu deploy actual
   path = "/status"
 
 # Volumen persistente: aqui viven los tokens OAuth y la base de datos.
-# Crea el volumen una vez con:  fly volumes create hydra_data --size 1 --region ams
+# "source" DEBE coincidir con el nombre del volumen ya adjunto a la maquina
+# (mira `fly volumes list`). Fly creo uno llamado "data" en el primer launch.
 [mounts]
-  source = "hydra_data"
+  source = "data"
   destination = "/data"
 
 [[vm]]
