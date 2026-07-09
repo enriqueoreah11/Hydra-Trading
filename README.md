@@ -125,6 +125,43 @@ para `/data` + URL pública HTTPS** (para el OAuth y el dashboard).
 **VPS (Hetzner, DigitalOcean, etc.)**: instala Docker, clona el repo, `docker compose up -d`,
 y pon un proxy con HTTPS (Caddy/Traefik) delante del puerto 8000.
 
+### Fly.io paso a paso
+
+El repo ya trae un `fly.toml` con el puerto correcto (8000) y el volumen. Importante: **el
+`internal_port` del `fly.toml` debe coincidir con el puerto de la app** — si no, Fly da
+`timeout trying to get your app`. La app respeta la variable `PORT`, así que ya queda alineado.
+
+```bash
+fly launch --no-deploy            # detecta el Dockerfile; conserva el fly.toml del repo
+fly volumes create hydra_data --size 1 --region ams   # volumen persistente para /data
+fly secrets set ANTHROPIC_API_KEY=sk-...              # y el resto de credenciales:
+fly secrets set CTRADER_CLIENT_ID=... CTRADER_CLIENT_SECRET=... \
+                CTRADER_REDIRECT_URI=https://TU-APP.fly.dev/oauth/callback \
+                TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=...
+fly deploy
+fly logs                          # deberías ver "web escuchando en 0.0.0.0:8000"
+```
+
+Si tu app no se llama `hydra-trading`, cambia el campo `app` en `fly.toml` y el `--region`
+por el que elegiste (mira `fly platform regions`). El dashboard queda en `https://TU-APP.fly.dev`.
+
+## Ver el agente antes de conectar cTrader (modo demo)
+
+¿Quieres ver qué hace el sistema sin arriesgar ni conectar tu cuenta? Con solo `ANTHROPIC_API_KEY`
+configurada (sin nada de cTrader), abre en el navegador:
+
+```
+https://TU-APP.fly.dev/demo
+```
+
+Genera **velas sintéticas** y corre el **Analyst real** sobre ellas: verás su tesis, dirección,
+niveles (SL/TP) y confianza para cada símbolo, más una **vista previa del Risk Manager** (qué
+filtros pasa o por qué sería vetada). No toca ninguna cuenta ni envía órdenes — es solo para
+que entiendas cómo "piensa" el cerebro antes de conectar cTrader en `/oauth/login`.
+
+> El dashboard principal (`/`) también funciona sin conectar: muestra los 11 agentes, el playbook
+> y el diario. Cuando aún no hay cuenta conectada, verás un botón directo al modo demo.
+
 ## Límites duros vs playbook
 
 - **Límites duros** (`.env`): riesgo por operación, pérdida diaria máxima, nº de posiciones,

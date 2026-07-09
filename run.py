@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 
 import uvicorn
 
@@ -41,8 +42,11 @@ async def main() -> None:
     brain = Brain(broker, store)
 
     app = create_app(store, tokens, broker)
+    # Fly.io / Railway / Render inyectan el puerto via $PORT; respetalo si existe.
+    port = int(os.getenv("PORT", str(settings.web_port)))
+    log.info("web escuchando en %s:%s", settings.web_host, port)
     server = uvicorn.Server(uvicorn.Config(
-        app, host=settings.web_host, port=settings.web_port, log_level="info"))
+        app, host=settings.web_host, port=port, log_level="info"))
 
     tasks = [asyncio.create_task(server.serve(), name="web")]
 

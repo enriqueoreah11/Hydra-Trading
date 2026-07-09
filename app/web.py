@@ -68,6 +68,73 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker) -> FastAPI:
         store.set_halted(False, "manual resume")
         return {"halted": False}
 
+    # -------------------------------------------------------------------- demo
+
+    @app.post("/demo")
+    async def demo(token: str | None = Query(None)):
+        """Corre un ciclo de analisis con datos SINTETICOS (sin cTrader)."""
+        _check_token(token)
+        from . import demo as demo_mod
+        try:
+            results = await demo_mod.run_demo(store)
+            return {"ran": True, "results": results}
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(400, str(e))
+
+    @app.get("/demo", response_class=HTMLResponse)
+    async def demo_page(token: str | None = Query(None)):
+        _check_token(token)
+        from . import demo as demo_mod
+        try:
+            results = await demo_mod.run_demo(store)
+        except Exception as e:  # noqa: BLE001
+            return HTMLResponse(
+                f"<h2>⚠️ No se pudo correr el demo</h2><p>{html.escape(str(e))}</p>"
+                "<p>El modo demo necesita <code>ANTHROPIC_API_KEY</code> configurada "
+                "(como secreto en Fly).</p><a href='/'>← volver</a>", status_code=400)
+        cards = ""
+        for r in results:
+            p = r["proposal"]
+            m = r["market"]
+            action = p.get("action")
+            head = ("🟢 COMPRA" if p.get("direction") == "buy" else "🔴 VENTA") \
+                if action == "propose" else "⚪ SIN OPERACION"
+            rp = r.get("risk_preview")
+            risk_html = ""
+            if rp:
+                items = "".join(
+                    f"<li>{'✅' if c['ok'] else '❌'} {html.escape(c['nombre'])} "
+                    f"<span style='color:#888'>({html.escape(c['detalle'])})</span></li>"
+                    for c in rp["checks"])
+                verdict = "✅ pasa los filtros deterministas" if rp["passes_deterministic"] \
+                    else "❌ seria vetada por el Risk Manager"
+                risk_html = (f"<p><b>Vista previa del Risk Manager:</b> {verdict} "
+                             f"(R:R {rp['risk_reward']})</p><ul>{items}</ul>"
+                             f"<p style='color:#888;font-size:.8rem'>{html.escape(rp['nota'])}</p>")
+            cards += (
+                f"<div class='card'><h3>{html.escape(r['symbol'])} — {head} "
+                f"(confianza {p.get('confidence', 0)})</h3>"
+                f"<p><b>Tesis:</b> {html.escape(p.get('thesis', ''))}</p>"
+                f"<p><b>Invalidacion:</b> {html.escape(p.get('invalidation', ''))}</p>"
+                f"<p><b>Niveles:</b> entrada≈ {p.get('last_close')}  "
+                f"SL {p.get('stop_loss')}  TP {p.get('take_profit')}</p>"
+                f"<p style='color:#888;font-size:.8rem'>indicadores: EMA20 {m['ema20']} · "
+                f"EMA50 {m['ema50']} · EMA200 {m['ema200']} · RSI {m['rsi14']} · ATR {m['atr14']}</p>"
+                f"{risk_html}</div>")
+        return HTMLResponse(f"""<!doctype html><html><head><meta charset="utf-8">
+<title>Hydra — demo</title><style>
+ body{{font-family:system-ui,sans-serif;margin:2rem;max-width:900px}}
+ .card{{border:1px solid #ddd;border-radius:10px;padding:1rem;margin:1rem 0}}
+ .banner{{background:#fff8e1;border:1px solid #ffe082;padding:.8rem 1rem;border-radius:8px}}
+</style></head><body>
+<h1>🐉 Hydra — modo demo</h1>
+<div class="banner">⚠️ Datos <b>sintéticos</b> (no es el mercado real) y <b>sin cTrader</b>.
+Sirve para ver cómo el Analyst lee el mercado y cómo el Risk Manager evaluaría la propuesta.
+Conecta tu cuenta en <a href="/oauth/login">/oauth/login</a> para operar de verdad.</div>
+{cards}
+<p><a href="/demo">🔄 correr otra vez</a> · <a href="/">← dashboard</a></p>
+</body></html>""")
+
     # ------------------------------------------------------------------ data
 
     @app.get("/status")
@@ -167,7 +234,13 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker) -> FastAPI:
  <span class="pill">🧪 Validator {"✅" if st["agents"]["validator"] else "—"}</span>
  <span class="pill">🔗 Portfolio {"✅" if st["agents"]["portfolio"] else "—"}</span>
 </p>
-<p>Kill switch: <code>POST /halt</code> · <code>POST /resume</code>
+{"" if st["connected"] else '''<div style="background:#e8f4ff;border:1px solid #90caf9;padding:.8rem 1rem;border-radius:8px;margin:1rem 0">
+ <b>Aun no has conectado cTrader.</b> El cerebro esta en espera, pero puedes ver a los agentes
+ en accion con datos de prueba: <a href="/demo"><b>▶ Probar el analista (modo demo)</b></a>.
+ Para operar de verdad, <a href="/oauth/login">conecta tu cuenta</a>.</div>'''}
+<p>
+ <a href="/demo">▶ modo demo (sin cTrader)</a> ·
+ Kill switch: <code>POST /halt</code> · <code>POST /resume</code>
  {"(requiere ?token=)" if settings.dashboard_token else ""}</p>
 <h2>Diario (ultimas 30 entradas)</h2>
 <table><tr><th>UTC</th><th>agente</th><th>evento</th><th>simbolo</th><th>detalle</th></tr>{rows}</table>
