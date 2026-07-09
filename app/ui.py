@@ -36,7 +36,9 @@ body{background:radial-gradient(1300px 900px at 50% 44%,#08192b 0%,#050c16 55%,#
 .btn.ghost{background:#08131d;color:#9fe6ff;border:1px solid #164a5f;box-shadow:none}
 .btn:active{transform:translateY(1px)}
 #stage{position:absolute;inset:0;z-index:5}
-svg#links{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#corefx{position:absolute;inset:0;width:100%;height:100%;z-index:1}
+svg#links{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2}
+.ring{opacity:.35}
 .link{stroke:#123645;stroke-width:1.3;fill:none}
 .link.active{stroke:url(#flow);stroke-width:2;stroke-dasharray:5 9;animation:flow 1s linear infinite}
 .link.alert{stroke:#5b2330}
@@ -155,6 +157,7 @@ svg#links{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 </div>
 
 <div id="stage">
+  <canvas id="corefx"></canvas>
   <svg id="links"><defs><linearGradient id="flow" x1="0" y1="0" x2="1" y2="0">
     <stop offset="0" stop-color="#0b6f8a"/><stop offset="1" stop-color="#7ff6ff"/></linearGradient></defs></svg>
   <div class="ring" id="ring1"></div><div class="ring" id="ring2"></div>
@@ -363,6 +366,40 @@ $('#activate').onclick=()=>{ $('#boot').classList.add('hide'); setTimeout(()=>$(
   loadVoices(); speak('Sistemas en línea, señor. Los once agentes están conectados. Diga, oye Hydra, cuando me necesite.');
   if(SR){ wakeMode=true; $('#v-wake').classList.add('on'); startRecog(); setV('Escuchando… di <b>“Oye Hydra”</b>'); }
 };
+
+/* ===================== NÚCLEO DE PARTÍCULAS (estilo neural JARVIS) ===================== */
+(function(){
+  const cv=$('#corefx'), g=cv.getContext('2d'); let W2=0,H2=0,CX=0,CY=0;
+  function rs(){ W2=cv.clientWidth||window.innerWidth; H2=cv.clientHeight||window.innerHeight;
+    cv.width=W2*devicePixelRatio; cv.height=H2*devicePixelRatio; g.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+    CX=W2/2; CY=H2/2; g.fillStyle='#04070e'; g.fillRect(0,0,W2,H2); }
+  rs(); window.addEventListener('resize',rs);
+  const P=[], MAX=780;
+  function col(ang){ const up=Math.sin(ang), r=Math.random();
+    if(up<-0.30 && r<0.55) return '255,150,70';   // cálido arriba
+    if(up> 0.30 && r<0.55) return '90,255,150';    // verde abajo
+    if(r<0.10) return '255,95,120';                // chispa roja
+    return '120,246,255'; }                        // cian
+  function spawn(n){ for(let i=0;i<n;i++){ const ang=Math.random()*Math.PI*2;
+    P.push({ang, r:5+Math.random()*8, vr:0.5+Math.random()*2.7, curl:(Math.random()-0.5)*0.05,
+      life:1, dl:0.006+Math.random()*0.011, w:0.5+Math.random()*1.8, c:col(ang), x:CX,y:CY,px:CX,py:CY});
+    if(P.length>MAX) P.shift(); } }
+  function frame(){
+    g.globalCompositeOperation='source-over'; g.fillStyle='rgba(4,7,14,0.13)'; g.fillRect(0,0,W2,H2);
+    g.globalCompositeOperation='lighter';
+    const boost=(typeof speaking!=='undefined'&&speaking)?6:(typeof listeningActive!=='undefined'&&listeningActive)?3:0;
+    spawn(6+boost);
+    for(let i=P.length-1;i>=0;i--){ const p=P[i]; p.px=p.x; p.py=p.y; p.ang+=p.curl; p.vr*=1.007; p.r+=p.vr; p.life-=p.dl;
+      p.x=CX+Math.cos(p.ang)*p.r; p.y=CY+Math.sin(p.ang)*p.r;
+      if(p.life<=0||p.x<-50||p.x>W2+50||p.y<-50||p.y>H2+50){ P.splice(i,1); continue; }
+      const a=Math.max(0,p.life); g.strokeStyle='rgba('+p.c+','+(a*0.9)+')'; g.lineWidth=p.w*(0.4+a);
+      g.shadowColor='rgba('+p.c+',1)'; g.shadowBlur=8; g.beginPath(); g.moveTo(p.px,p.py); g.lineTo(p.x,p.y); g.stroke(); }
+    g.shadowBlur=34; g.shadowColor='#7ff6ff'; g.fillStyle='rgba(190,250,255,0.9)';
+    g.beginPath(); g.arc(CX,CY,3.4,0,7); g.fill();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
 
 window.addEventListener('resize',layout);
 load(); setInterval(load,5000);
