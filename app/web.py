@@ -43,9 +43,14 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
 
     @app.on_event("startup")
     async def _start_brain():
-        if brain is not None and settings.ctrader_account_id and (
-                _brain_state["task"] is None or _brain_state["task"].done()):
-            _brain_state["task"] = asyncio.create_task(brain.run_forever(), name="brain")
+        # NUNCA debe tumbar el arranque de la web: cualquier fallo aquí se ignora.
+        try:
+            if brain is not None and settings.ctrader_account_id and (
+                    _brain_state["task"] is None or _brain_state["task"].done()):
+                _brain_state["task"] = asyncio.create_task(brain.run_forever(), name="brain")
+        except Exception:  # noqa: BLE001
+            import logging
+            logging.getLogger("web").warning("no se pudo arrancar el cerebro al inicio", exc_info=True)
 
     def _check_token(token: str | None) -> None:
         if settings.dashboard_token and token != settings.dashboard_token:
@@ -471,7 +476,7 @@ Conecta tu cuenta en <a href="/oauth/login">/oauth/login</a> para operar de verd
     # ------------------------------------------------------------- dashboard
 
     @app.get("/", response_class=HTMLResponse)
-    async def brain():
+    async def brain_page():
         from .ui import BRAIN_HTML
         return HTMLResponse(BRAIN_HTML)
 
