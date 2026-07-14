@@ -120,7 +120,7 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
   <button class="btn ghost" id="b-refresh">⟳</button>
 </div>
 
-<div id="hint">pasa el cursor por el cerebro · cada punto de conexión es un agente</div>
+<div id="hint">cada círculo es un agente · pasa el cursor para ver qué hace y con quién se conecta</div>
 <div id="stage"><canvas id="corefx"></canvas><div id="tip"></div></div>
 
 <div id="drawer">
@@ -285,81 +285,115 @@ function drawWave(){ const W=innerWidth,H=120; wg.clearRect(0,0,W,H); const targ
   requestAnimationFrame(drawWave); }
 let waveLevelG=0.12; requestAnimationFrame(drawWave);
 
-/* ===================== CEREBRO NEURONAL ===================== */
+/* ============ CONSTELACIÓN DE AGENTES (estrella de datos + agentes + ramas) ============ */
 (function(){
   const cv=$('#corefx'), g=cv.getContext('2d');
-  let W=0,H=0,CX=0,CY=0,rx=0,ry=0, mx=-9999,my=-9999, hoverKey=null, dirty=true;
+  let W=0,H=0,CX=0,CY=0,S=0,Rh=0,Rlab=0, mx=-9999,my=-9999, hoverKey=null, dirty=true;
   const dpr=Math.min(window.devicePixelRatio||1,1.5);
-  function rs(){ W=cv.clientWidth||innerWidth; H=cv.clientHeight||innerHeight; cv.width=W*dpr; cv.height=H*dpr; g.setTransform(dpr,0,0,dpr,0,0); CX=W/2; CY=H*0.52; const S=Math.min(W,H); rx=S*0.33; ry=S*0.40; dirty=true; }
+  function rs(){ W=cv.clientWidth||innerWidth; H=cv.clientHeight||innerHeight; cv.width=W*dpr; cv.height=H*dpr; g.setTransform(dpr,0,0,dpr,0,0); CX=W/2; CY=H*0.53; S=Math.min(W,H); Rh=S*0.25; Rlab=S*0.44; dirty=true; }
   rs(); addEventListener('resize',rs);
   function stateOf(k){ const a=agentByKey(k); return a?a.state:'idle'; }
-  const gap=()=>rx*0.05;
-  // silueta del cerebro (vista superior, dos hemisferios); el frente (arriba) es más angosto
-  function inside(x,y){ const ny=(y-CY)/ry, tp=1-0.16*Math.max(0,-ny), nx=(x-CX)/(rx*tp); return nx*nx+ny*ny<=1; }
-  // posiciones anatómicas de los agentes (nx,ny), repartidas por ambos hemisferios: frontal→occipital
-  const REG=[[-0.45,-0.60],[0.45,-0.60],[-0.62,-0.20],[0.62,-0.20],[-0.40,0.00],[0.40,0.00],[-0.60,0.30],[0.60,0.30],[-0.34,0.56],[0.34,0.56],[-0.16,0.82]];
-  let nodes=[], edges=[], A=[], pulses=[];
-  function build(){
-    const S=Math.min(W,H);
-    nodes=[]; const M=Math.round(S*0.36);
-    for(let i=0;i<M;i++){ const th=i/M*Math.PI*2, ex=Math.cos(th), ey=Math.sin(th), tp=1-0.16*Math.max(0,-ey), wob=1+0.035*Math.sin(th*9);
-      const bx=CX+ex*rx*tp*wob, by=CY+ey*ry*wob; if(Math.abs(bx-CX)<gap()) continue; nodes.push({x:bx,y:by,e:1}); }
-    const N=Math.round(S*1.05); let tries=0;
-    while(nodes.length<N && tries<N*40){ tries++;
-      const x=CX+(Math.random()*2-1)*rx, y=CY+(Math.random()*2-1)*ry;
-      if(!inside(x,y)||Math.abs(x-CX)<gap()) continue; nodes.push({x,y,e:0}); }
-    A=(DATA?DATA.agents:[]).map((a,i)=>{ const r=REG[i%REG.length]; let ax=CX+r[0]*rx*0.9, ay=CY+r[1]*ry*0.9;
-      if(Math.abs(ax-CX)<gap()*2) ax=CX+(r[0]<0?-1:1)*gap()*2.2;
-      return {key:a.key,name:a.name,emoji:a.emoji,role:a.role,x:ax,y:ay,inc:[]}; });
-    const an0=nodes.length; A.forEach(a=>nodes.push({x:a.x,y:a.y,e:0,ag:a}));
-    edges=[]; const md=S*0.072, md2=md*md;
-    for(let i=0;i<nodes.length;i++){ const ni=nodes[i], cand=[];
-      for(let j=0;j<nodes.length;j++){ if(j===i)continue; const nj=nodes[j], dx=nj.x-ni.x, dy=nj.y-ni.y, d=dx*dx+dy*dy; if(d<md2) cand.push([d,j]); }
-      cand.sort((a,b)=>a[0]-b[0]); const K=ni.e?2:3;
-      for(let c=0;c<Math.min(K,cand.length);c++){ const j=cand[c][1]; if(j>i) edges.push({a:i,b:j}); } }
-    edges.forEach((e,ei)=>{ const na=nodes[e.a], nb=nodes[e.b]; if(na.ag) na.ag.inc.push(ei); if(nb.ag) nb.ag.inc.push(ei); });
-    pulses=[]; const NP=Math.max(24,Math.round(edges.length*0.10)); for(let i=0;i<NP;i++) pulses.push(newPulse());
-    dirty=false;
+  function entriesOf(k){ const a=agentByKey(k); return a&&a.entries?a.entries.length:0; }
+  const PAL=['#ffd24a','#ff7a59','#c07cff','#4ad1c8','#5aa0ff','#9be36b','#7ff6ff','#ff5d73','#ff9f43','#6ee7ff','#e879f9'];
+  function hx2(h){ h=(h||'').replace('#',''); if(h.length===3)h=h.split('').map(c=>c+c).join(''); const n=parseInt(h,16); if(isNaN(n))return '127,246,255'; return (n>>16&255)+','+(n>>8&255)+','+(n&255); }
+  function rng(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+  // árbol de ramas que crece hacia afuera desde el agente (sus tareas/funciones)
+  function makeTree(hx,hy,phi,seed,extra){
+    const r=rng(seed), segs=[], leaves=[], B=3+((r()*3)|0);
+    for(let b=0;b<B;b++){ const a1=phi+(b-(B-1)/2)*(1.6/B)+(r()-0.5)*0.15, L1=S*0.075+r()*S*0.04;
+      const x1=hx+Math.cos(a1)*L1, y1=hy+Math.sin(a1)*L1; segs.push([hx,hy,x1,y1]); leaves.push([x1,y1,1.9,r()*6.28]);
+      const C=2+((r()*(2+extra))|0);
+      for(let c=0;c<C;c++){ const a2=a1+(r()-0.5)*0.85, L2=S*0.05+r()*S*0.035;
+        const x2=x1+Math.cos(a2)*L2, y2=y1+Math.sin(a2)*L2; segs.push([x1,y1,x2,y2]); leaves.push([x2,y2,1.4+r()*1.6,r()*6.28]);
+        if(r()<0.6){ const a3=a2+(r()-0.5)*0.85, L3=S*0.033+r()*S*0.025, x3=x2+Math.cos(a3)*L3, y3=y2+Math.sin(a3)*L3;
+          segs.push([x2,y2,x3,y3]); leaves.push([x3,y3,1.2+r()*1.3,r()*6.28]); } } }
+    return {segs,leaves};
   }
-  function pcol(){ const r=Math.random(); if(r<0.08)return '255,120,90'; if(r<0.16)return '110,255,170'; if(r<0.20)return '255,95,120'; return '120,246,255'; }
-  function newPulse(){ return {e:(Math.random()*edges.length)|0, t:Math.random(), sp:0.006+Math.random()*0.013, c:pcol()}; }
+  // conexiones entre agentes = el flujo real del cerebro (qué se conecta con qué)
+  const LINKS=[['sentinel','analyst'],['analyst','risk_manager'],['risk_manager','portfolio'],['portfolio','executor'],
+    ['executor','auditor'],['overnight','executor'],['reviewer','architect'],['architect','validator'],
+    ['validator','analyst'],['watchdog','executor'],['watchdog','sentinel']];
+  let A=[], byKey={};
+  function build(){
+    const ags=DATA?DATA.agents:[], N=ags.length||1;
+    A=ags.map((a,i)=>{ const ang=-Math.PI/2 + i/N*Math.PI*2;
+      const x=CX+Math.cos(ang)*Rh, y=CY+Math.sin(ang)*Rh, lx=CX+Math.cos(ang)*Rlab, ly=CY+Math.sin(ang)*Rlab;
+      const extra=Math.min(2,(entriesOf(a.key)/4)|0);
+      const t=makeTree(x,y,ang,(i+1)*131+7,extra), sg=t.segs;
+      // grafo del árbol: segmentos raíz (salen del agente) y segmentos hijos (para el flujo de energía)
+      const roots=[], next=sg.map(()=>[]);
+      sg.forEach((s,si)=>{ if(Math.abs(s[0]-x)<0.5&&Math.abs(s[1]-y)<0.5) roots.push(si);
+        sg.forEach((s2,sj)=>{ if(si!==sj&&Math.abs(s2[0]-s[2])<0.5&&Math.abs(s2[1]-s[3])<0.5) next[si].push(sj); }); });
+      const sparks=[], ns=Math.max(3,Math.round(sg.length*0.55));
+      for(let s=0;s<ns;s++){ const seg=roots.length?roots[(Math.random()*roots.length)|0]:0; sparks.push({seg,t:Math.random(),sp:0.012+Math.random()*0.020}); }
+      return {key:a.key,name:a.name,emoji:a.emoji,role:a.role,x,y,lx,ly,ang,rgb:hx2(a.ring||PAL[i%PAL.length]),segs:sg,leaves:t.leaves,roots,next,sparks}; });
+    byKey={}; A.forEach(a=>byKey[a.key]=a); dirty=false;
+  }
+  const star=[];
+  function starSpawn(n){ for(let i=0;i<n;i++){ const a=Math.random()*6.283, sp=0.6+Math.random()*3.6;
+    star.push({x:CX,y:CY,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:1,dl:0.009+Math.random()*0.013,c:Math.random()<0.5?'255,214,120':'150,240,255'});
+    if(star.length>360)star.shift(); } }
+  function qpt(a,c,b,t){ const u=1-t; return [u*u*a[0]+2*u*t*c[0]+t*t*b[0], u*u*a[1]+2*u*t*c[1]+t*t*b[1]]; }
   cv.addEventListener('mousemove',e=>{ const r=cv.getBoundingClientRect(); mx=e.clientX-r.left; my=e.clientY-r.top; });
   cv.addEventListener('mouseleave',()=>{ mx=my=-9999; });
   cv.addEventListener('click',()=>{ if(hoverKey) openAgent(hoverKey); else { speakStatus(); toast('HYDRA · '+(DATA?DATA.agents.length:0)+' agentes'); } });
   function frame(now){
     if(!DATA){ requestAnimationFrame(frame); return; }
-    if(dirty||A.length!==DATA.agents.length) build();
-    hoverKey=null; let hd=1e9; for(const a of A){ const dx=a.x-mx,dy=a.y-my,d=dx*dx+dy*dy; if(d<1000&&d<hd){hd=d;hoverKey=a.key;} }
+    if(dirty||A.length!==(DATA.agents||[]).length) build();
+    hoverKey=null; let hd=1e9; for(const a of A){ const dx=a.x-mx,dy=a.y-my,d=dx*dx+dy*dy; if(d<1100&&d<hd){hd=d;hoverKey=a.key;} }
     cv.style.cursor=hoverKey?'pointer':'default';
     const flash=now<wakeUntil?1:0;
     g.globalCompositeOperation='source-over'; g.fillStyle='#04070e'; g.fillRect(0,0,W,H);
     g.globalCompositeOperation='lighter'; g.shadowBlur=0;
-    // malla de conexiones (los surcos del cerebro)
-    g.lineWidth=1; g.strokeStyle='rgba(58,148,178,'+(0.16+flash*0.07)+')'; g.beginPath();
-    for(const e of edges){ const a=nodes[e.a], b=nodes[e.b]; g.moveTo(a.x,a.y); g.lineTo(b.x,b.y); } g.stroke();
-    // conexiones del agente bajo el cursor, resaltadas
-    const hv=hoverKey?A.find(a=>a.key===hoverKey):null;
-    if(hv){ g.strokeStyle='rgba(127,246,255,0.85)'; g.lineWidth=1.5; g.beginPath();
-      for(const ei of hv.inc){ const e=edges[ei], a=nodes[e.a], b=nodes[e.b]; g.moveTo(a.x,a.y); g.lineTo(b.x,b.y); } g.stroke(); }
-    // fisura interhemisférica (surco central)
-    g.strokeStyle='rgba(40,110,140,0.30)'; g.lineWidth=1.4; g.beginPath();
-    g.moveTo(CX,CY-ry*0.84); g.bezierCurveTo(CX-7,CY-ry*0.2, CX+7,CY+ry*0.2, CX,CY+ry*0.9); g.stroke();
-    // pulsos viajando por las conexiones (sinapsis)
-    for(const p of pulses){ const e=edges[p.e]; if(!e){ Object.assign(p,newPulse()); continue; }
-      p.t+=p.sp; if(p.t>=1){ Object.assign(p,newPulse()); continue; }
-      const a=nodes[e.a], b=nodes[e.b], x=a.x+(b.x-a.x)*p.t, y=a.y+(b.y-a.y)*p.t;
-      const tt=Math.max(0,p.t-0.12), tx=a.x+(b.x-a.x)*tt, ty=a.y+(b.y-a.y)*tt;
-      g.strokeStyle='rgba('+p.c+',0.85)'; g.lineWidth=1.7; g.beginPath(); g.moveTo(tx,ty); g.lineTo(x,y); g.stroke();
-      g.fillStyle='rgba('+p.c+',1)'; g.beginPath(); g.arc(x,y,1.5,0,7); g.fill(); }
-    // agentes: ocultos en la malla; activos brillan tenue, el del cursor brilla fuerte
-    for(const a of A){ const st=stateOf(a.key), on=st==='active'||st==='alert', h=a.key===hoverKey;
-      if(!on&&!h) continue;
-      const c=st==='alert'?'255,93,115':(st==='active'?'56,230,255':'150,205,225');
-      g.shadowColor='rgba('+c+',1)'; g.shadowBlur=h?26:13; g.fillStyle='rgba('+c+','+(h?0.95:0.55)+')';
-      g.beginPath(); g.arc(a.x,a.y,h?4.6:2.6,0,7); g.fill();
-      if(h){ g.shadowBlur=16; g.strokeStyle='rgba('+c+',0.9)'; g.lineWidth=1.4; g.beginPath(); g.arc(a.x,a.y,15,0,7); g.stroke(); } }
-    g.shadowBlur=0;
-    const tip=$('#tip'); if(hoverKey){ const a=A.find(x=>x.key===hoverKey); tip.style.left=(a.x+18)+'px'; tip.style.top=a.y+'px'; tip.innerHTML=a.emoji+' <b>'+a.name+'</b> · '+stateOf(a.key)+'<br><span>'+a.role+'</span>'; tip.classList.add('show'); } else tip.classList.remove('show');
+    // radios centro→agente
+    g.strokeStyle='rgba(80,150,180,0.10)'; g.lineWidth=1; g.beginPath();
+    for(const a of A){ g.moveTo(CX,CY); g.lineTo(a.x,a.y); } g.stroke();
+    // conexiones entre agentes (curvas hacia el centro)
+    for(const L of LINKS){ const a=byKey[L[0]], b=byKey[L[1]]; if(!a||!b) continue;
+      const hot=hoverKey&&(L[0]===hoverKey||L[1]===hoverKey);
+      const cx=(a.x+b.x)/2+(CX-(a.x+b.x)/2)*0.42, cy=(a.y+b.y)/2+(CY-(a.y+b.y)/2)*0.42;
+      g.strokeStyle=hot?'rgba(127,246,255,0.85)':'rgba(90,150,180,0.13)'; g.lineWidth=hot?1.7:1;
+      g.beginPath(); g.moveTo(a.x,a.y); g.quadraticCurveTo(cx,cy,b.x,b.y); g.stroke();
+      if(hot){ const p=qpt([a.x,a.y],[cx,cy],[b.x,b.y],(now*0.0006)%1); g.fillStyle='rgba(190,250,255,1)'; g.beginPath(); g.arc(p[0],p[1],2.2,0,7); g.fill(); } }
+    // ramas de cada agente
+    for(const a of A){ const h=a.key===hoverKey, dim=hoverKey&&!h;
+      g.strokeStyle='rgba('+a.rgb+','+(dim?0.10:(h?0.95:0.42))+')'; g.lineWidth=h?1.6:1.1;
+      g.beginPath(); for(const s of a.segs){ g.moveTo(s[0],s[1]); g.lineTo(s[2],s[3]); } g.stroke();
+      for(const l of a.leaves){ const tw=0.55+0.45*Math.sin(now*0.004+l[3]); const al=(dim?0.12:(h?1:0.62))*tw;
+        g.fillStyle='rgba('+a.rgb+','+al+')'; g.beginPath(); g.arc(l[0],l[1],l[2]*(h?1.4:1),0,7); g.fill(); }
+      // energía fluyendo del agente hacia sus ramas (raíz→hoja)
+      for(const sp of a.sparks){ sp.t+=sp.sp*(h?1.8:1);
+        if(sp.t>=1){ const nx=a.next[sp.seg]; sp.seg=(nx&&nx.length)?nx[(Math.random()*nx.length)|0]:(a.roots.length?a.roots[(Math.random()*a.roots.length)|0]:0); sp.t=0; }
+        const s=a.segs[sp.seg]; if(!s) continue; const x=s[0]+(s[2]-s[0])*sp.t, y=s[1]+(s[3]-s[1])*sp.t;
+        const tt=Math.max(0,sp.t-0.22), tx=s[0]+(s[2]-s[0])*tt, ty=s[1]+(s[3]-s[1])*tt;
+        g.strokeStyle='rgba('+a.rgb+','+(dim?0.20:0.75)+')'; g.lineWidth=h?2:1.4; g.beginPath(); g.moveTo(tx,ty); g.lineTo(x,y); g.stroke();
+        g.fillStyle='rgba('+a.rgb+','+(dim?0.35:1)+')'; g.beginPath(); g.arc(x,y,h?2.3:1.7,0,7); g.fill(); } }
+    // estrella de datos (núcleo) — más grande, con halo
+    starSpawn(halted?1:(speaking?16:11));
+    for(let i=star.length-1;i>=0;i--){ const p=star[i]; const px=p.x,py=p.y; p.x+=p.vx; p.y+=p.vy; p.vx*=0.975; p.vy*=0.975; p.life-=p.dl;
+      if(p.life<=0){ star.splice(i,1); continue; } const al=p.life;
+      g.strokeStyle='rgba('+p.c+','+(al*0.8)+')'; g.lineWidth=1.3; g.beginPath(); g.moveTo(px,py); g.lineTo(p.x,p.y); g.stroke(); }
+    const hg=g.createRadialGradient(CX,CY,0,CX,CY,S*0.15); hg.addColorStop(0,halted?'rgba(255,110,130,0.22)':'rgba(255,214,150,0.20)'); hg.addColorStop(1,'rgba(0,0,0,0)');
+    g.fillStyle=hg; g.beginPath(); g.arc(CX,CY,S*0.15,0,7); g.fill();
+    g.shadowColor=halted?'#ff5d73':'#ffe0a0'; g.shadowBlur=34+flash*26;
+    g.fillStyle=halted?'rgba(255,150,165,.98)':'rgba(255,244,214,.98)'; g.beginPath(); g.arc(CX,CY,7+flash*4,0,7); g.fill(); g.shadowBlur=0;
+    // círculos de agente (visibles) con ícono
+    for(const a of A){ const st=stateOf(a.key), h=a.key===hoverKey, on=st==='active'||st==='alert', dim=hoverKey&&!h;
+      const R=h?18:14;
+      if(on||h){ g.shadowColor='rgba('+a.rgb+',1)'; g.shadowBlur=h?26:13; } else g.shadowBlur=0;
+      g.fillStyle='#05090f'; g.beginPath(); g.arc(a.x,a.y,R,0,7); g.fill();
+      g.shadowBlur=0; g.lineWidth=h?2.4:1.7; g.strokeStyle='rgba('+a.rgb+','+(dim?0.4:(h?1:0.85))+')'; g.beginPath(); g.arc(a.x,a.y,R,0,7); g.stroke();
+      if(st==='alert'){ g.strokeStyle='rgba(255,93,115,'+(0.5+0.5*Math.sin(now*0.006))+')'; g.lineWidth=2; g.beginPath(); g.arc(a.x,a.y,R+4,0,7); g.stroke(); }
+      g.globalAlpha=dim?0.5:1; g.font=(h?'16px':'13px')+' system-ui,"Segoe UI Emoji",sans-serif'; g.textAlign='center'; g.textBaseline='middle'; g.fillStyle='#eaffff'; g.fillText(a.emoji,a.x,a.y+0.5); g.globalAlpha=1; }
+    // etiquetas (nombres de agente)
+    g.font='11px system-ui,sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+    for(const a of A){ const dim=hoverKey&&a.key!==hoverKey; g.fillStyle='rgba(214,236,246,'+(dim?0.22:0.82)+')'; g.fillText(a.name.toUpperCase(),a.lx,a.ly); }
+    // tooltip: rol + con quién colabora
+    const tip=$('#tip'); if(hoverKey){ const a=byKey[hoverKey];
+      const nb=LINKS.filter(L=>L[0]===hoverKey||L[1]===hoverKey).map(L=>L[0]===hoverKey?L[1]:L[0]).map(k=>byKey[k]?byKey[k].name:k);
+      tip.style.left=(a.x+22)+'px'; tip.style.top=a.y+'px';
+      tip.innerHTML=a.emoji+' <b>'+a.name+'</b> · '+stateOf(a.key)+'<br><span>'+a.role+'</span>'+(nb.length?'<br><span>↔ '+nb.join(', ')+'</span>':'');
+      tip.classList.add('show'); } else tip.classList.remove('show');
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
