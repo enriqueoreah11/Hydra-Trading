@@ -27,6 +27,8 @@ AGENTS = [
      "role": "Backtest riguroso del playbook contra el histórico antes de activarlo."},
     {"key": "portfolio", "name": "Portfolio", "emoji": "🔗", "ring": "auto",
      "role": "Exposición agregada por divisa y correlación."},
+    {"key": "tester", "name": "Tester", "emoji": "🧬", "ring": "auto",
+     "role": "Prueba TUS estrategias/cBots: backtest contra el histórico y busca entradas."},
 ]
 
 

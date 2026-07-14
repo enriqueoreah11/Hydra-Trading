@@ -219,8 +219,19 @@ function renderDrawer(k){ const a=agentByKey(k); if(!a)return;
       h+='<div class="phelp">'+escapeHtml(p.help||'')+'</div></div>'; });
     h+='<button class="btn" style="margin-top:8px" onclick="saveParams(\''+a.key+'\')">💾 Guardar cambios</button>'; }
   if(a.key==='portfolio'){ h+='<div class="slbl" style="margin-top:16px">CORRELACIONES ENTRE INSTRUMENTOS</div><div id="d-corr" class="empty">Calculando…</div>'; }
+  if(a.key==='tester'){ h+='<div class="slbl" style="margin-top:16px">TU ESTRATEGIA / CBOT</div>'
+    +'<textarea id="t-strat" placeholder="Pega tus reglas o describe qué hace tu cBot. Ej: Compra cuando EMA20 cruza EMA50 al alza y RSI<70; SL 1xATR; TP 2xATR. Vende en la señal inversa." style="width:100%;min-height:120px;background:#08131d;color:#dffaff;border:1px solid #17495d;border-radius:8px;padding:9px;font-family:inherit;font-size:12px"></textarea>'
+    +'<div class="ssec" style="margin-top:8px"><button class="btn" onclick="saveStrategy()">💾 Guardar</button>'
+    +'<button class="btn ghost" onclick="runBacktest()">▶ Probar (backtest)</button>'
+    +'<button class="btn ghost" onclick="scanEntry()">🎯 Buscar entrada</button></div>'
+    +'<div class="phelp">El Tester aplica TUS reglas al histórico (backtest) y al mercado actual. Necesita cTrader conectado y la key de Anthropic. Los resultados aparecen arriba en su actividad.</div>'; }
   $('#d-body').innerHTML=h;
-  if(a.key==='portfolio') loadCorr(); }
+  if(a.key==='portfolio') loadCorr();
+  if(a.key==='tester') loadStrategy(); }
+async function loadStrategy(){ try{ const d=await (await fetch('/tester/strategy')).json(); const t=$('#t-strat'); if(t)t.value=d.strategy||''; }catch(e){} }
+async function saveStrategy(){ const t=$('#t-strat'); if(!t)return; let r; try{ r=await fetch('/tester/strategy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({strategy:t.value})}); }catch(e){ toast('Error de red'); return; } toast(r.ok?'Estrategia guardada ✓':'No se pudo guardar'); }
+async function runBacktest(){ await saveStrategy(); toast('Backtest en marcha…'); speak('Probando tu estrategia, '+SIR+'.'); let r; try{ r=await fetch('/tester/backtest',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); }catch(e){ toast('Error de red'); return; } const j=await r.json().catch(()=>({})); if(!j.ok){ toast(j.reason||'No se pudo iniciar el backtest'); } else { toast('Backtest corriendo — los resultados aparecen en la actividad.'); setTimeout(load,4000); } }
+async function scanEntry(){ await saveStrategy(); toast('Buscando entrada…'); let r; try{ r=await fetch('/tester/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); }catch(e){ toast('Error de red'); return; } const j=await r.json().catch(()=>({})); if(!j.ok){ toast(j.reason||'No se pudo escanear'); } else { toast('Escaneo hecho — mira su actividad.'); setTimeout(load,2500); } }
 async function loadCorr(){ let d; try{ d=await (await fetch('/correlations')).json(); }catch(e){ return; } const el=$('#d-corr'); if(!el) return;
   if(!d.ok){ el.innerHTML=escapeHtml(d.reason||'No disponible.'); return; }
   if(!(d.pairs||[]).length){ el.innerHTML='Sin datos suficientes todavía.'; return; }
@@ -433,7 +444,8 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
   // conexiones entre agentes = el flujo real del cerebro (qué se conecta con qué)
   const LINKS=[['sentinel','analyst'],['analyst','risk_manager'],['risk_manager','portfolio'],['portfolio','executor'],
     ['executor','auditor'],['overnight','executor'],['reviewer','architect'],['architect','validator'],
-    ['validator','analyst'],['watchdog','executor'],['watchdog','sentinel']];
+    ['validator','analyst'],['watchdog','executor'],['watchdog','sentinel'],
+    ['tester','analyst'],['tester','executor']];
   // símbolo vectorial propio de cada agente (dibujado, no un emoji genérico)
   function glyph(k,x,y,s,rgb,al){ g.save(); g.translate(x,y); g.strokeStyle='rgba('+rgb+','+al+')'; g.fillStyle='rgba('+rgb+','+al+')'; g.lineWidth=1.7; g.lineJoin='round'; g.lineCap='round';
     switch(k){
@@ -448,6 +460,9 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       case 'auditor': g.beginPath(); g.moveTo(0,-s*0.9); g.lineTo(0,s*0.55); g.moveTo(-s*0.75,-s*0.5); g.lineTo(s*0.75,-s*0.5); g.moveTo(-s*0.55,s*0.7); g.lineTo(s*0.55,s*0.7); g.stroke(); g.beginPath(); g.arc(-s*0.75,-s*0.12,s*0.3,0,Math.PI); g.stroke(); g.beginPath(); g.arc(s*0.75,-s*0.12,s*0.3,0,Math.PI); g.stroke(); break;
       case 'validator': g.beginPath(); g.moveTo(-s*0.4,-s*0.75); g.lineTo(-s*0.4,-s*0.05); g.lineTo(-s*0.8,s*0.8); g.lineTo(s*0.8,s*0.8); g.lineTo(s*0.4,-s*0.05); g.lineTo(s*0.4,-s*0.75); g.stroke(); g.beginPath(); g.moveTo(-s*0.6,-s*0.75); g.lineTo(s*0.6,-s*0.75); g.stroke(); break;
       case 'portfolio': g.beginPath(); g.arc(0,0,s,0,6.283); g.stroke(); g.beginPath(); g.moveTo(0,0); g.lineTo(0,-s); g.moveTo(0,0); g.lineTo(s*0.85,s*0.5); g.stroke(); break;
+      case 'tester': g.beginPath(); for(let t=-1;t<=1.001;t+=0.1){ const x=Math.sin(t*Math.PI*1.4)*s*0.55; t<=-1?g.moveTo(x,t*s):g.lineTo(x,t*s); } g.stroke();
+        g.beginPath(); for(let t=-1;t<=1.001;t+=0.1){ const x=-Math.sin(t*Math.PI*1.4)*s*0.55; t<=-1?g.moveTo(x,t*s):g.lineTo(x,t*s); } g.stroke();
+        g.beginPath(); for(let t=-0.7;t<=0.71;t+=0.35){ const x=Math.sin(t*Math.PI*1.4)*s*0.55; g.moveTo(x,t*s); g.lineTo(-x,t*s); } g.stroke(); break;
       default: g.beginPath(); g.arc(0,0,s*0.6,0,6.283); g.stroke();
     }
     g.restore(); }

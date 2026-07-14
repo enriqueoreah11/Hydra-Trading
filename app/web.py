@@ -120,6 +120,108 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                 "connected": broker.client.account_authorized,
                 "conn_error": getattr(broker.client, "last_error", "")}
 
+    _tester_state = {"running": False}
+
+    @app.get("/tester/strategy")
+    async def tester_get():
+        try:
+            txt = (settings.data_path / "tester_strategy.txt").read_text()
+        except Exception:  # noqa: BLE001
+            txt = ""
+        return {"strategy": txt}
+
+    @app.post("/tester/strategy")
+    async def tester_save(request: Request):
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            return JSONResponse({"ok": False}, status_code=400)
+        txt = str(body.get("strategy", ""))[:20000]
+        (settings.data_path / "tester_strategy.txt").write_text(txt)
+        return {"ok": True, "len": len(txt)}
+
+    def _strategy() -> str:
+        try:
+            return (settings.data_path / "tester_strategy.txt").read_text().strip()
+        except Exception:  # noqa: BLE001
+            return ""
+
+    def _tester_precheck():
+        if not _strategy():
+            return "Primero guarda tu estrategia."
+        if not settings.anthropic_api_key:
+            return "Falta ANTHROPIC_API_KEY para que el Tester piense."
+        if not broker.client.account_authorized:
+            return "Conecta cTrader para tener datos de mercado."
+        return None
+
+    @app.post("/tester/backtest")
+    async def tester_backtest(request: Request):
+        err = _tester_precheck()
+        if err:
+            return {"ok": False, "reason": err}
+        if _tester_state["running"]:
+            return {"ok": False, "reason": "Ya hay una prueba corriendo."}
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        syms = [body["symbol"].upper()] if body.get("symbol") else settings.symbol_list[:3]
+        strat = _strategy()
+
+        async def _run():
+            from .agents import tester
+            _tester_state["running"] = True
+            store.log("tester", "backtest", f"Iniciando backtest de tu estrategia en {', '.join(syms)}…")
+            try:
+                for s in syms:
+                    try:
+                        candles = await asyncio.wait_for(
+                            broker.candles(s, settings.timeframe, settings.backtest_bars), timeout=20)
+                        r = await tester.backtest(strat, s, settings.timeframe, candles,
+                                                  samples=settings.backtest_samples,
+                                                  horizon=settings.backtest_horizon_bars)
+                    except Exception as exc:  # noqa: BLE001
+                        r = {"symbol": s, "ok": False, "reason": str(exc)[:120]}
+                    if r.get("ok"):
+                        store.log("tester", "result",
+                                  f"{s}: {r['trades']} operaciones · {r['win_rate']}% aciertos "
+                                  f"({r['wins']}W/{r['losses']}L, {r['open']} sin resolver)")
+                    else:
+                        store.log("tester", "result", f"{s}: {r.get('reason', 'sin resultado')}")
+                store.log("tester", "backtest", "Backtest terminado.")
+            finally:
+                _tester_state["running"] = False
+
+        asyncio.create_task(_run())
+        return {"ok": True, "started": True}
+
+    @app.post("/tester/scan")
+    async def tester_scan(request: Request):
+        err = _tester_precheck()
+        if err:
+            return {"ok": False, "reason": err}
+        from .agents import tester
+        from . import indicators
+        strat = _strategy()
+        found = 0
+        for s in settings.symbol_list[:6]:
+            try:
+                candles = await asyncio.wait_for(
+                    broker.candles(s, settings.timeframe, 200), timeout=15)
+                if len(candles) < 60:
+                    continue
+                d = await tester.decide(strat, s, settings.timeframe, indicators.snapshot(candles))
+                if d.get("enter") and d.get("direction") in ("buy", "sell"):
+                    found += 1
+                    store.log("tester", "signal",
+                              f"{s}: {d['direction'].upper()} entry {d.get('entry')} "
+                              f"SL {d.get('stop_loss')} TP {d.get('take_profit')} — {d.get('reason', '')[:160]}")
+            except Exception as exc:  # noqa: BLE001
+                store.log("tester", "signal", f"{s}: error {str(exc)[:100]}")
+        store.log("tester", "scan", f"Escaneo terminado: {found} entrada(s) según tu estrategia.")
+        return {"ok": True, "found": found}
+
     @app.get("/correlations")
     async def correlations():
         """Matriz de correlación de rendimientos entre los instrumentos vigilados."""
