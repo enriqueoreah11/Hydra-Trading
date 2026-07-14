@@ -334,6 +334,25 @@ async function runDemo(){ toast('Corriendo demo…'); speak(L('Ejecutando análi
   const data=await r.json(); renderDemo(data.results); load();
   const props=data.results.filter(x=>x.proposal.action==='propose').length; speak('Análisis completo, '+SIR+'. '+props+' de '+data.results.length+' símbolos con oportunidad.'); }
 function openInfo(t,h){ selected=null; $('#d-e').textContent='ℹ️'; $('#d-name').textContent=t; $('#d-role').textContent=''; $('#d-body').innerHTML=h; $('#drawer').classList.add('open'); }
+async function openMarket(sym){ selected=null; $('#d-e').textContent='📈'; $('#d-name').textContent=(sym==='DXY'?'DXY · Índice del dólar':sym); $('#d-role').textContent='Resumen técnico'; $('#d-body').innerHTML='<div class="empty">Cargando…</div>'; $('#drawer').classList.add('open');
+  let d; try{ d=await (await fetch('/market/'+encodeURIComponent(sym))).json(); }catch(e){ $('#d-body').innerHTML='<div class="empty" style="color:#ff5d73">Error de red.</div>'; return; }
+  if(!d.ok){ $('#d-body').innerHTML='<div class="empty">'+escapeHtml(d.reason||'No disponible')+'</div>'; return; }
+  const vc=d.verdict==='compra'?'#34d399':(d.verdict==='venta'?'#ff5d73':'#fbbf24');
+  const vt={compra:L('COMPRA','BUY'),venta:L('VENTA','SELL'),neutral:'NEUTRAL'}[d.verdict]||d.verdict.toUpperCase();
+  let h='<div class="cfg"><span>Precio</span> <b>'+d.price+'</b></div>';
+  h+='<div class="cfg"><span>Señal ('+d.timeframe+')</span> <b style="color:'+vc+'">'+vt+'</b></div>';
+  h+='<div class="cfg"><span>'+L('Tendencia','Trend')+'</span> <b>'+(d.trend==='alcista'?L('alcista','bullish'):L('bajista','bearish'))+'</b></div>';
+  h+='<div class="slbl">'+L('INDICADORES','INDICATORS')+'</div>';
+  h+='<div class="cfg"><span>RSI 14</span> <b style="color:'+(d.rsi14>70?'#ff5d73':(d.rsi14<30?'#34d399':'#dffaff'))+'">'+d.rsi14+'</b></div>';
+  h+='<div class="cfg"><span>EMA 20 / 50 / 200</span> <b>'+d.ema20+' · '+d.ema50+' · '+d.ema200+'</b></div>';
+  h+='<div class="cfg"><span>ATR 14</span> <b>'+d.atr14+'</b></div>';
+  h+='<div class="slbl">KEY LEVELS</div>';
+  const rs=(d.resistances||[]).slice(0,3), sp=(d.supports||[]).slice(0,3);
+  if(!rs.length&&!sp.length) h+='<div class="empty">—</div>';
+  rs.forEach(r=> h+='<div class="cfg"><span>'+L('Resistencia','Resistance')+'</span> <b style="color:#ff5d73">'+r+'</b></div>');
+  sp.forEach(r=> h+='<div class="cfg"><span>'+L('Soporte','Support')+'</span> <b style="color:#34d399">'+r+'</b></div>');
+  if(sym==='DXY') h+='<div class="empty" style="margin-top:10px">DXY sintético, calculado de la canasta EUR, JPY, GBP, CAD, SEK, CHF.</div>';
+  $('#d-body').innerHTML=h; }
 function renderDemo(results){ let h='<p class="role">Datos sintéticos. Así lee el mercado el Analyst.</p>';
   results.forEach(r=>{ const p=r.proposal,m=r.market; const dir=p.action==='propose'?(p.direction==='buy'?'🟢 COMPRA':'🔴 VENTA'):'⚪ SIN OPERACIÓN';
     h+='<li style="list-style:none;border:1px solid #12303f;border-radius:10px;padding:12px;margin:10px 0;background:#08131e88"><b style="color:#7ff6ff">'+r.symbol+'</b> — '+dir+' <span style="color:#5f7387">(confianza '+(p.confidence||0)+')</span>';
@@ -517,8 +536,9 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       return {key:a.key,name:a.name,emoji:a.emoji,role:a.role,baseAng,x:CX,y:CY,ang:baseAng,lx:CX,ly:CY,lalign:'center',rgb:hx2(PAL[i%PAL.length]),segs:sg,leaves:t.leaves,roots,next,sparks}; });
     byKey={}; A.forEach(a=>byKey[a.key]=a);
     const syms=(DATA&&DATA.core&&DATA.core.symbols)||[];
-    MK=syms.map((sym,i)=>{ const n=Math.max(1,syms.length), yy=0.72*(1-2*(i+0.5)/n), r=Math.sqrt(Math.max(0,1-yy*yy)), th=i*2.39996+0.9;
-      const m=mktMeta(sym); return {sym,name:m.name,col:m.col,x3:Math.cos(th)*r,y3:yy,z3:Math.sin(th)*r,sx:0,sy:0,ph:i*2.1}; });
+    const allm=syms.concat(['DXY']);   // DXY sintético (índice del dólar) como instrumento extra
+    MK=allm.map((sym,i)=>{ const n=Math.max(1,allm.length), yy=0.72*(1-2*(i+0.5)/n), r=Math.sqrt(Math.max(0,1-yy*yy)), th=i*2.39996+0.9;
+      const m=sym==='DXY'?{name:'DXY',col:'220,190,120'}:mktMeta(sym); return {sym,name:m.name,col:m.col,x3:Math.cos(th)*r,y3:yy,z3:Math.sin(th)*r,sx:0,sy:0,ph:i*2.1}; });
     dirty=false;
   }
   function qpt(a,c,b,t){ const u=1-t; return [u*u*a[0]+2*u*t*c[0]+t*t*b[0], u*u*a[1]+2*u*t*c[1]+t*t*b[1]]; }
@@ -527,7 +547,7 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
   function openHydra(){ const names=(DATA?DATA.agents:[]).map(a=>a.emoji+' '+a.name).join(' · ');
     openInfo('🐉 HYDRA · orquestador','<p class="role">El núcleo que coordina a todos los agentes: recibe sus señales, decide y ejecuta como un solo cerebro.</p><div class="empty">Controla a: '+names+'</div>');
     speak('Hydra en línea, '+SIR+'. Coordino a los '+(DATA?DATA.agents.length:0)+' agentes.'); }
-  cv.addEventListener('click',()=>{ if(hoverKey==='__hydra') openHydra(); else if(hoverKey) openAgent(hoverKey); else { speakStatus(); toast('HYDRA · '+(DATA?DATA.agents.length:0)+' agentes'); } });
+  cv.addEventListener('click',()=>{ if(hoverKey==='__hydra') openHydra(); else if(hoverKey) openAgent(hoverKey); else if(hoverM>=0) openMarket(MK[hoverM].sym); else { speakStatus(); toast('HYDRA · '+(DATA?DATA.agents.length:0)+' agentes'); } });
   function frame(now){
     if(!DATA){ requestAnimationFrame(frame); return; }
     if(dirty||A.length!==(DATA.agents||[]).length) build();
@@ -571,6 +591,7 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       g.fillStyle='rgba('+m.col+','+((0.45+depth*0.5)*pu)+')'; g.beginPath(); g.arc(m.sx,m.sy,R,0,7); g.fill(); g.shadowBlur=0;
       g.font=(hm?'700 10px':'9px')+' system-ui,sans-serif'; g.textAlign='center'; g.textBaseline='top';
       g.fillStyle='rgba('+m.col+','+(hm?1:(0.30+depth*0.55))+')'; g.fillText(m.name,m.sx,m.sy+R+3); }
+    if(hoverM>=0) cv.style.cursor='pointer';
     // conexiones de HYDRA (centro) → agentes. Base tenue + resaltado del agente señalado/abierto
     const hyHover=hoverKey==='__hydra';
     g.lineWidth=1; g.strokeStyle='rgba(90,150,180,0.12)'; g.beginPath();
@@ -627,7 +648,7 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       tip.innerHTML=a.emoji+' <b>'+a.name+'</b> · '+stateOf(a.key)+'<br><span>'+a.role+'</span>'+(nb.length?'<br><span>↔ '+nb.join(', ')+'</span>':'')+'<br><span style="opacity:.7">clic para ver sus tareas</span>';
       tip.classList.add('show'); }
     else if(hoverM>=0){ const m=MK[hoverM]; tip.style.left=(m.sx+20)+'px'; tip.style.top=m.sy+'px';
-      tip.innerHTML='📈 <b>'+m.name+'</b> · '+m.sym+'<br><span>mercado vigilado — los agentes buscan oportunidades aquí</span>';
+      tip.innerHTML='📈 <b>'+m.name+'</b> · '+m.sym+'<br><span style="opacity:.75">'+L('clic para ver precio y técnicos','click for price & technicals')+'</span>';
       tip.classList.add('show'); } else tip.classList.remove('show');
     requestAnimationFrame(frame);
   }

@@ -258,6 +258,69 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         store.log("tester", "scan", f"Escaneo terminado: {found} entrada(s) según tu estrategia.")
         return {"ok": True, "found": found}
 
+    async def _dxy_snapshot():
+        """DXY sintético: se calcula de la canasta de divisas (no existe como símbolo en cTrader)."""
+        from .broker import Candle
+        from . import indicators
+        weights = {"EURUSD": -0.576, "USDJPY": 0.136, "GBPUSD": -0.119,
+                   "USDCAD": 0.091, "USDSEK": 0.042, "USDCHF": 0.036}
+        series: dict[str, list] = {}
+        for p in weights:
+            try:
+                cs = await asyncio.wait_for(broker.candles(p, settings.timeframe, 220), timeout=12)
+                series[p] = [c.close for c in cs]
+            except Exception:  # noqa: BLE001
+                series[p] = []
+        essential = ["EURUSD", "USDJPY", "GBPUSD", "USDCAD", "USDCHF"]
+        if any(len(series.get(p, [])) < 60 for p in essential):
+            return None
+        L = min(len(v) for v in series.values() if v)
+        closes = []
+        for i in range(L):
+            val = 50.14348112
+            for p, w in weights.items():
+                v = series.get(p) or []
+                px = v[len(v) - L + i] if v else 1.0
+                val *= px ** w
+            closes.append(val)
+        cndls, prev = [], closes[0]
+        for c in closes:
+            cndls.append(Candle(ts=0, open=prev, high=max(prev, c), low=min(prev, c), close=c, volume=0))
+            prev = c
+        return indicators.snapshot(cndls)
+
+    def _summarize(s: dict) -> dict:
+        price = s["last_close"]; e20, e50, e200 = s["ema20"], s["ema50"], s["ema200"]
+        rsi, atr = s["rsi14"], s["atr14"]; lv = s.get("levels", {})
+        bulls = sum([price > e200, e20 > e50, rsi > 50, price > e20])
+        bears = sum([price < e200, e20 < e50, rsi < 50, price < e20])
+        verdict = "compra" if bulls >= 3 else ("venta" if bears >= 3 else "neutral")
+        return {"price": round(price, 5), "ema20": e20, "ema50": e50, "ema200": e200,
+                "rsi14": rsi, "atr14": atr, "trend": "alcista" if price > e200 else "bajista",
+                "verdict": verdict, "supports": lv.get("supports", []),
+                "resistances": lv.get("resistances", [])}
+
+    @app.get("/market/{symbol}")
+    async def market_tech(symbol: str):
+        """Resumen técnico de un instrumento: precio, indicadores y key levels."""
+        symbol = symbol.upper()
+        if not broker.client.account_authorized:
+            return {"ok": False, "reason": "Conecta cTrader para ver los datos."}
+        from . import indicators
+        try:
+            if symbol == "DXY":
+                snap = await _dxy_snapshot()
+                if not snap:
+                    return {"ok": False, "reason": "No pude calcular el DXY (faltan pares de divisas en tu broker)."}
+            else:
+                candles = await asyncio.wait_for(broker.candles(symbol, settings.timeframe, 250), timeout=15)
+                if len(candles) < 60:
+                    return {"ok": False, "reason": "Pocos datos para este símbolo."}
+                snap = indicators.snapshot(candles)
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "reason": str(exc)[:140]}
+        return {"ok": True, "symbol": symbol, "timeframe": settings.timeframe, **_summarize(snap)}
+
     @app.get("/correlations")
     async def correlations():
         """Matriz de correlación de rendimientos entre los instrumentos vigilados."""
