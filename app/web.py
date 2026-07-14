@@ -274,18 +274,18 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             except Exception as exc:  # noqa: BLE001
                 series[p] = []
                 diag[p] = str(exc)[:60]
-        essential = ["EURUSD", "USDJPY", "GBPUSD", "USDCAD", "USDCHF"]
-        missing = [f"{p} ({diag.get(p, '?')})" for p in essential if len(series.get(p, [])) < 60]
-        if missing:
-            return {"__error__": "Pares que fallan: " + "; ".join(missing)}
-        L = min(len(v) for v in series.values() if v)
+        # HÍBRIDO: usa los pares que SÍ existen; si falta uno (p.ej. CHF 3.6%) se omite.
+        avail = [p for p in weights if len(series.get(p, [])) >= 60]
+        if "EURUSD" not in avail or len(avail) < 3:
+            miss = [f"{p} ({diag.get(p, '?')})" for p in weights if p not in avail]
+            return {"__error__": "Faltan pares clave: " + "; ".join(miss)}
+        L = min(len(series[p]) for p in avail)
         closes = []
         for i in range(L):
             val = 50.14348112
-            for p, w in weights.items():
-                v = series.get(p) or []
-                px = v[len(v) - L + i] if v else 1.0
-                val *= px ** w
+            for p in avail:
+                v = series[p]
+                val *= v[len(v) - L + i] ** weights[p]
             closes.append(val)
         cndls, prev = [], closes[0]
         for c in closes:
