@@ -73,6 +73,15 @@ class CTraderClient:
         if self._ws:
             await self._ws.close()
 
+    async def reconnect(self) -> None:
+        """Cierra y vuelve a conectar (para aplicar cuenta/entorno nuevos)."""
+        await self.stop()
+        self._tasks.clear()
+        self._stopping = False
+        self._connected.clear()
+        self.account_authorized = False
+        await self.start()
+
     async def wait_connected(self, timeout: float = 60) -> None:
         await asyncio.wait_for(self._connected.wait(), timeout)
 

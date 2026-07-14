@@ -258,7 +258,7 @@ function renderSysInfo(){ if(!DATA){ $('#sys-info').innerHTML='<div class="empty
   let h='<div class="cfg"><span>cTrader</span> '+conn+'</div>';
   if(c.connected&&c.account_id) h+='<div class="cfg"><span>Cuenta activa</span> <b>#'+c.account_id+' · '+((c.ctrader_env||'demo').toUpperCase())+'</b></div>';
   if(!c.oauth_ok) h+='<a class="btn" href="/oauth/login" style="display:inline-block;margin:10px 0;text-decoration:none">🔌 Conectar mi cuenta de cTrader</a>';
-  if(c.oauth_ok&&!c.connected) h+='<div id="sys-accounts" class="empty">Autorizado. Buscando el número de tu cuenta…</div>';
+  if(c.oauth_ok) h+='<div id="sys-accounts" class="empty">Cargando cuentas…</div>';
   h+='<div class="cfg"><span>Modo</span> <b>'+(c.dry_run?'PAPEL (demo)':'REAL')+'</b></div>';
   h+='<div class="cfg"><span>Símbolos</span> <b>'+((c.symbols||[]).join(', ')||'—')+'</b></div>';
   h+='<div class="cfg"><span>Modelo IA</span> <b>'+(c.model||'—')+'</b></div>';
@@ -267,16 +267,19 @@ function renderSysInfo(){ if(!DATA){ $('#sys-info').innerHTML='<div class="empty
   h+='<div class="cfg"><span>Anthropic key</span> <b>'+(c.has_anthropic?'puesta ✅':'falta ❌')+'</b></div>';
   h+='<div class="empty" style="margin-top:12px">Los ajustes se cambian con <code>fly secrets set …</code> y luego <code>fly deploy</code>.</div>';
   $('#sys-info').innerHTML=h;
-  if(c.oauth_ok&&!c.connected) loadAccounts(); }
+  if(c.oauth_ok) loadAccounts(); }
 async function loadAccounts(){ let d; try{ d=await (await fetch('/accounts')).json(); }catch(e){ return; }
   const el=$('#sys-accounts'); if(!el) return;
-  if(!d.ok||!(d.accounts||[]).length){ el.innerHTML='No pude listar tu cuenta'+(d&&d.reason?': '+escapeHtml(d.reason):'.'); return; }
-  let h='<div style="color:#cfe6f2;font-size:12px;margin-bottom:6px">Falta decirle a Hydra <b>a cuál cuenta</b> conectarse. Tus cuentas:</div>';
-  d.accounts.forEach(a=>{ const env=a.live?'live':'demo';
-    h+='<div class="cfg"><span>#'+a.id+(a.login?' · login '+a.login:'')+'</span> <b>'+(a.live?'LIVE':'DEMO')+'</b></div>'
-      +'<div class="empty" style="margin:4px 0 12px"><code>fly secrets set CTRADER_ACCOUNT_ID='+a.id+' CTRADER_ENV='+env+'</code></div>'; });
-  h+='<div class="empty">Corre el comando de tu cuenta y Fly reinicia solo; en ~1 min queda conectada.</div>';
-  el.innerHTML=h; }
+  if(!d.ok||!(d.accounts||[]).length){ el.innerHTML='No pude listar tus cuentas'+(d&&d.reason?': '+escapeHtml(d.reason):'.'); return; }
+  const opts=d.accounts.map(a=>'<option value="'+a.id+'" data-env="'+(a.live?'live':'demo')+'"'+(a.id==d.current?' selected':'')+'>#'+a.id+' · '+(a.live?'LIVE ⚠️':'DEMO')+(a.login?' · login '+a.login:'')+'</option>').join('');
+  el.innerHTML='<div class="prm"><label>Cuenta que usa Hydra</label><select id="acc-sel">'+opts+'</select>'
+    +'<div class="phelp">Elige tu cuenta. Usa una <b>DEMO</b> para practicar; LIVE opera con dinero real.</div></div>'
+    +'<button class="btn" onclick="selectAccount()">✓ Usar esta cuenta</button>'; }
+async function selectAccount(){ const sel=$('#acc-sel'); if(!sel) return; const o=sel.options[sel.selectedIndex]; const id=+o.value, env=o.getAttribute('data-env');
+  if(env==='live' && !confirm('⚠️ Es una cuenta REAL (LIVE): opera con dinero real. Para practicar usa una DEMO. ¿Continuar?')) return;
+  toast('Cambiando de cuenta…');
+  let r; try{ r=await fetch('/account/select',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,env:env})}); }catch(e){ toast('Error de red'); return; }
+  if(r.ok){ toast('Cuenta seleccionada ✓ conectando…'); speak('Cuenta cambiada, '+SIR+'. Conectando.'); setTimeout(load,2500); } else { toast('No se pudo cambiar de cuenta'); } }
 async function doHalt(){ const halt=$('#b-halt').textContent.includes('HALT'); await fetch(halt?'/halt':'/resume',{method:'POST'}); toast(halt?'Sistema DETENIDO':'Sistema reanudado'); speak(halt?'Sistema detenido, '+SIR+'.':'Sistema reanudado, '+SIR+'.'); load(); }
 async function openCalendar(){ selected=null;
   $('#d-e').textContent='📅'; $('#d-name').textContent='Calendario económico'; $('#d-role').textContent='Próximos 7 días'; $('#d-body').innerHTML='<div class="empty">Cargando eventos…</div>'; $('#drawer').classList.add('open');

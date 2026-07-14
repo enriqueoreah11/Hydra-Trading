@@ -41,7 +41,7 @@ async def main() -> None:
     broker = Broker(client, settings.ctrader_account_id)
     brain = Brain(broker, store)
 
-    app = create_app(store, tokens, broker)
+    app = create_app(store, tokens, broker, brain=brain)
     # Fly.io / Railway / Render inyectan el puerto via $PORT; respetalo si existe.
     port = int(os.getenv("PORT", str(settings.web_port)))
     log.info("web escuchando en %s:%s", settings.web_host, port)
@@ -51,13 +51,11 @@ async def main() -> None:
     tasks = [asyncio.create_task(server.serve(), name="web")]
 
     if settings.ctrader_client_id and tokens.has_tokens:
-        # abre la conexion + auth de app aunque falte account_id (permite listar cuentas)
+        # abre la conexion + auth de app aunque falte account_id (permite listar/elegir cuenta).
+        # el cerebro lo arranca el evento startup de la app (o el selector de cuenta en la UI).
         await client.start()
-        if settings.ctrader_account_id:
-            tasks.append(asyncio.create_task(brain.run_forever(), name="brain"))
-        else:
-            log.warning("conexion cTrader lista (app), pero falta CTRADER_ACCOUNT_ID: "
-                        "visita /accounts para ver tu numero de cuenta y define CTRADER_ACCOUNT_ID.")
+        if not settings.ctrader_account_id:
+            log.warning("conexion cTrader lista (app), pero falta cuenta: eligela en ⚙ Sistema o /accounts.")
     else:
         log.warning(
             "brain idle: falta configuracion. Pasos: 1) define CTRADER_CLIENT_ID/SECRET, "

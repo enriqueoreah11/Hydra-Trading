@@ -18,11 +18,33 @@ from .oauth import TokenStore, build_auth_url
 from .store import Store
 
 
-def create_app(store: Store, tokens: TokenStore, broker: Broker) -> FastAPI:
+def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> FastAPI:
     app = FastAPI(title="hydra-trading")
     # aplica los parámetros y claves que el usuario haya ajustado desde la UI (persisten en el volumen)
     agent_params.load_overrides(settings.data_path / "overrides.json")
     secrets_store.load()
+    _brain_state = {"task": None}
+
+    def _apply_account(aid: int, env: str) -> None:
+        settings.ctrader_account_id = int(aid)
+        settings.ctrader_env = env if env in ("demo", "live") else "demo"
+        broker.account_id = int(aid)
+        broker.client.account_id = int(aid)
+        broker.client.ws_url = settings.ws_url
+
+    # aplica la cuenta elegida desde la UI (si existe), antes de que el cliente arranque
+    try:
+        _acc = json.loads((settings.data_path / "account.json").read_text())
+        if _acc.get("account_id"):
+            _apply_account(int(_acc["account_id"]), _acc.get("env", "demo"))
+    except Exception:  # noqa: BLE001
+        pass
+
+    @app.on_event("startup")
+    async def _start_brain():
+        if brain is not None and settings.ctrader_account_id and (
+                _brain_state["task"] is None or _brain_state["task"].done()):
+            _brain_state["task"] = asyncio.create_task(brain.run_forever(), name="brain")
 
     def _check_token(token: str | None) -> None:
         if settings.dashboard_token and token != settings.dashboard_token:
@@ -63,6 +85,30 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker) -> FastAPI:
             "<p>Pon el <code>ctidTraderAccountId</code> elegido en la variable "
             "<code>CTRADER_ACCOUNT_ID</code> y reinicia el servicio.</p>"
             "<a href='/'>← dashboard</a>")
+
+    @app.post("/account/select")
+    async def account_select(request: Request):
+        """Elige la cuenta de cTrader desde la UI: la aplica, persiste y reconecta."""
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            raise HTTPException(400, "JSON inválido")
+        aid = int(body.get("id", 0) or 0)
+        env = body.get("env", "demo")
+        if aid <= 0:
+            raise HTTPException(400, "id de cuenta inválido")
+        _apply_account(aid, env)
+        (settings.data_path / "account.json").write_text(json.dumps({"account_id": aid, "env": env}))
+        store.log("system", "account", f"cuenta seleccionada {aid} ({env})")
+        try:
+            await broker.client.reconnect()
+            await broker.client.wait_connected(timeout=12)
+        except Exception:  # noqa: BLE001
+            pass
+        # arranca el cerebro si hay uno y no está corriendo ya
+        if brain is not None and (_brain_state["task"] is None or _brain_state["task"].done()):
+            _brain_state["task"] = asyncio.create_task(brain.run_forever(), name="brain")
+        return {"ok": True, "account_id": aid, "env": env}
 
     @app.get("/correlations")
     async def correlations():
