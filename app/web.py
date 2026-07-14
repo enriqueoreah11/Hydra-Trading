@@ -19,6 +19,17 @@ from .config import settings
 from .oauth import TokenStore, build_auth_url
 from .store import Store
 
+# Modelos disponibles desde la UI, del más barato al más caro.
+# El costo por 1M tokens es aproximado (entrada/salida) y solo sirve de guía.
+MODELS: dict[str, dict] = {
+    "claude-haiku-4-5-20251001": {"label": "Haiku 4.5", "tier": "económico",
+                                  "hint": "el más barato (~20-30x menos que Opus)"},
+    "claude-sonnet-5": {"label": "Sonnet 5", "tier": "balance",
+                        "hint": "balance costo/calidad (recomendado)"},
+    "claude-opus-4-8": {"label": "Opus 4.8", "tier": "máximo",
+                        "hint": "el más capaz y el más caro"},
+}
+
 
 def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> FastAPI:
     app = FastAPI(title="hydra-trading")
@@ -62,6 +73,13 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         _lg = (settings.data_path / "lang.txt").read_text().strip()
         if _lg in ("es", "en", "mix"):
             settings.owner_lang = _lg
+    except Exception:  # noqa: BLE001
+        pass
+    # modelo elegido desde la UI (controla el costo de la API de Anthropic)
+    try:
+        _md = (settings.data_path / "model.txt").read_text().strip()
+        if _md in MODELS:
+            settings.model = _md
     except Exception:  # noqa: BLE001
         pass
 
@@ -127,6 +145,24 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         settings.owner_lang = lg
         (settings.data_path / "lang.txt").write_text(lg)
         return {"ok": True, "lang": lg}
+
+    @app.get("/model")
+    async def get_model():
+        return {"model": settings.model,
+                "options": [{"id": k, **v} for k, v in MODELS.items()]}
+
+    @app.post("/model")
+    async def set_model(request: Request):
+        try:
+            md = (await request.json()).get("model", "")
+        except Exception:  # noqa: BLE001
+            md = ""
+        if md not in MODELS:
+            return JSONResponse({"ok": False, "error": "modelo desconocido"}, status_code=400)
+        settings.model = md
+        (settings.data_path / "model.txt").write_text(md)
+        store.log("system", "model", f"modelo cambiado a {md}")
+        return {"ok": True, "model": md}
 
     @app.post("/account/select")
     async def account_select(request: Request):

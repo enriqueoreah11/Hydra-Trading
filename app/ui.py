@@ -265,6 +265,15 @@ async function setLang(lg){ try{ await fetch('/lang',{method:'POST',headers:{'Co
   if(recog){ try{ recog.lang=voiceLang(); if(running)recog.stop(); }catch(_){} }
   toast(L('Idioma: '+({es:'Español',mix:'Español + inglés',en:'English'}[lg]), 'Language: '+({es:'Spanish',mix:'Spanish + English',en:'English'}[lg])));
   speak(L('Listo, hablaré así.','Done, I will speak like this.')); renderSysInfo(); }
+const MODELS=[
+  {id:'claude-haiku-4-5-20251001',label:'Haiku',hint:'el más barato (~20-30x menos que Opus)'},
+  {id:'claude-sonnet-5',label:'Sonnet',hint:'balance costo/calidad (recomendado)'},
+  {id:'claude-opus-4-8',label:'Opus',hint:'el más capaz y el más caro'}];
+async function setModel(id){ const m=MODELS.find(x=>x.id===id)||{label:id};
+  let r; try{ r=await fetch('/model',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:id})}); }catch(e){ toast('Error de red'); return; }
+  if(r.ok){ toast('Modelo IA: '+m.label+' ✓'); speak(L('Cambié el modelo a '+m.label+', '+SIR+'.','Switched the model to '+m.label+', '+SIR+'.')); load(); setTimeout(renderSysInfo,600); }
+  else if(r.status===404){ toast('Falta redesplegar: git pull && fly deploy.'); }
+  else { toast('No se pudo cambiar el modelo'); } }
 async function renderSecrets(){ let d; try{ d=await (await fetch('/secrets')).json(); }catch(e){ $('#sys-keys').innerHTML='<div class="empty">No disponible.</div>'; return; }
   let h='';
   if(!d.master_key) h+='<div class="empty">Para guardar claves cifradas, pon una vez la llave maestra:<br><code>fly secrets set APP_SECRET_KEY=una-frase-larga-secreta</code><br>y redespliega. Sin ella solo se ve el estado.</div>';
@@ -287,7 +296,8 @@ function renderSysInfo(){ if(!DATA){ $('#sys-info').innerHTML='<div class="empty
   if(c.oauth_ok) h+='<div id="sys-accounts" class="empty">Cargando cuentas…</div>';
   h+='<div class="cfg"><span>Modo</span> <b>'+(c.dry_run?'PAPEL (demo)':'REAL')+'</b></div>';
   h+='<div class="cfg"><span>Símbolos</span> <b>'+((c.symbols||[]).join(', ')||'—')+'</b></div>';
-  h+='<div class="cfg"><span>Modelo IA</span> <b>'+(c.model||'—')+'</b></div>';
+  h+='<div class="cfg"><span>Modelo IA</span> <span>'+MODELS.map(m=>'<button class="btn ghost'+((c.model||'')===m.id?' on':'')+'" style="padding:5px 9px;margin-left:5px" title="'+m.hint+'" onclick="setModel(\''+m.id+'\')">'+m.label+'</button>').join('')+'</span></div>';
+  h+='<div class="phelp" style="margin:-4px 0 8px">'+((MODELS.find(m=>m.id===(c.model||''))||{}).hint||'')+'. Menos capaz = más barato. El costo se reduce también subiendo <b>«analiza cada (min)»</b> del agente Analista.</div>';
   h+='<div class="cfg"><span>Voz neural</span> <b>'+(c.tts_server?'activa ✅':'navegador')+'</b> · <a href="/tts/health" target="_blank" style="color:#7ff6ff">diagnóstico</a></div>';
   h+='<div class="cfg"><span>Te llama</span> <b>'+(c.owner_name||'Krauser')+'</b></div>';
   h+='<div class="cfg"><span>Idioma</span> <span>'+['es','mix','en'].map(lg=>'<button class="btn ghost'+((c.owner_lang||'mix')===lg?' on':'')+'" style="padding:5px 9px;margin-left:5px" onclick="setLang(\''+lg+'\')">'+({es:'ES',mix:'ES+EN',en:'EN'}[lg])+'</button>').join('')+'</span></div>';

@@ -19,7 +19,9 @@ class Settings(BaseSettings):
 
     # --- Anthropic ---
     anthropic_api_key: str = ""
-    model: str = "claude-opus-4-8"
+    # Modelo por defecto. Sonnet 5 da un balance costo/calidad para el análisis rutinario.
+    # Opus 4.8 es ~5-10x más caro; Haiku 4.5 es ~20-30x más barato. Cambia desde la UI (Sistema).
+    model: str = "claude-sonnet-5"
 
     # --- Trading universe & cadence ---
     # Principales metales, energia e indices. OJO: el nombre exacto depende del broker
