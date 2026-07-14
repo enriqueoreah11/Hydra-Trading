@@ -24,6 +24,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
     agent_params.load_overrides(settings.data_path / "overrides.json")
     secrets_store.load()
     _brain_state = {"task": None}
+    _bal_cache = {"value": None}   # último balance conocido (para que /status no se cuelgue)
 
     def _apply_account(aid: int, env: str) -> None:
         settings.ctrader_account_id = int(aid)
@@ -322,11 +323,16 @@ Conecta tu cuenta en <a href="/oauth/login">/oauth/login</a> para operar de verd
         }
         out["conn_error"] = getattr(broker.client, "last_error", "")
         if broker.client.account_authorized:
+            # timeout corto para NO exceder el health check (5-8s); si tarda, usamos el último conocido
             try:
-                trader = await broker.trader()
+                trader = await asyncio.wait_for(broker.trader(), timeout=2.5)
                 out["balance"] = trader["balance"]
+                _bal_cache["value"] = trader["balance"]
             except Exception as exc:  # noqa: BLE001
-                out["balance_error"] = str(exc)[:160]
+                if _bal_cache["value"] is not None:
+                    out["balance"] = _bal_cache["value"]
+                else:
+                    out["balance_error"] = str(exc)[:160]
         return out
 
     @app.get("/positions")
