@@ -78,6 +78,14 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 .feed .k{color:#7ff6ff;font-size:11px}.feed .t{color:#5f7387;font-size:10.5px;float:right}
 .feed .c{color:#a9bcd0;font-size:11.5px;margin-top:5px;white-space:pre-wrap;word-break:break-word;max-height:150px;overflow:auto}
 .empty{color:#5f7387;font-size:12.5px;padding:10px 0}
+#sistema{position:fixed;top:0;right:0;height:100%;width:min(380px,94vw);z-index:32;background:linear-gradient(180deg,#06121cf7,#04080ef7);border-left:1px solid #12414f;box-shadow:-20px 0 60px #000b;transform:translateX(105%);transition:transform .42s var(--ease-drawer);display:flex;flex-direction:column}
+#sistema.open{transform:none}
+#sistema .hd{padding:16px 18px;border-bottom:1px solid #103040;display:flex;gap:12px;align-items:center}
+#sistema .hd .e{font-size:26px}#sistema .hd h2{margin:0;font-size:16px;color:#e6f7ff;letter-spacing:1px}#sistema .hd .role{font-size:11px;color:var(--dim)}
+#sistema .hd .x{margin-left:auto;cursor:pointer;color:#5f7387;font-size:16px}
+#sistema .sbody{padding:14px 18px;overflow:auto}
+.slbl{font-size:10px;letter-spacing:2px;color:#5f7387;margin:18px 0 9px}
+.ssec{display:flex;flex-wrap:wrap;gap:8px}
 .cfg{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:9px 2px;border-bottom:1px solid #10293650;font-size:12.5px;color:#a9bcd0}
 .cfg span{color:#5f7387}.cfg b{color:#dffaff}.cfg code{background:#03121b;padding:1px 6px;border-radius:5px;color:#7ff6ff}
 .cal-day{color:#7ff6ff;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:16px 0 7px;border-bottom:1px solid #10293650;padding-bottom:4px}
@@ -123,21 +131,37 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     <g stroke="#7ff6ff" stroke-width="6" fill="none"><path d="M60 16 L101.8 46.4 L85.9 95.6 L34.1 95.6 L18.2 46.4 Z"/><path d="M60 16 L85.9 95.6 M60 16 L34.1 95.6 M101.8 46.4 L34.1 95.6 M101.8 46.4 L18.2 46.4 M85.9 95.6 L18.2 46.4" opacity="0.6"/></g>
     <g fill="#dffaff"><circle cx="60" cy="16" r="9"/><circle cx="101.8" cy="46.4" r="9"/><circle cx="85.9" cy="95.6" r="9"/><circle cx="34.1" cy="95.6" r="9"/><circle cx="18.2" cy="46.4" r="9"/></g>
   </svg> HYDRA</span>
-  <span class="chip" id="c-mode">modo —</span>
-  <span class="chip" id="c-conn">conexión —</span>
-  <span class="chip" id="c-bal">balance —</span>
-  <span class="chip" id="c-pb">playbook —</span>
   <span id="vstatus"></span>
   <span class="spacer"></span>
-  <button class="btn ghost" id="b-mic" title="Hablar (clic, o di “Oye Hydra”)">🎙️</button>
-  <button class="btn ghost on" id="b-wake" title="Palabra mágica: “Oye Hydra”">👂 OYE HYDRA</button>
-  <button class="btn ghost" id="b-clap" title="Activar aplaudiendo 2 veces">👏 APLAUSO</button>
-  <button class="btn ghost on" id="b-speak" title="Voz de respuesta">🔊 VOZ</button>
-  <button class="btn" id="b-demo">▶ DEMO</button>
-  <button class="btn ghost" id="b-cal">📅 CALENDARIO</button>
-  <button class="btn ghost" id="b-halt">⏸ HALT</button>
-  <button class="btn ghost" id="b-config" title="Configuración y conexión">⚙</button>
-  <button class="btn ghost" id="b-refresh" title="Actualizar datos">⟳</button>
+  <button class="btn ghost" id="b-sistema" title="Sistema: voz, acciones y configuración">⚙ SISTEMA</button>
+</div>
+
+<div id="sistema">
+  <div class="hd"><div class="e">⚙</div><div><h2>Sistema</h2><div class="role">Voz, acciones y configuración</div></div><div class="x" onclick="closeSistema()">✕</div></div>
+  <div class="sbody">
+    <div class="ssec">
+      <span class="chip" id="c-mode">modo —</span>
+      <span class="chip" id="c-conn">conexión —</span>
+      <span class="chip" id="c-bal">balance —</span>
+      <span class="chip" id="c-pb">playbook —</span>
+    </div>
+    <div class="slbl">VOZ</div>
+    <div class="ssec">
+      <button class="btn ghost" id="b-mic" title="Hablar (clic, o di “Oye Hydra”)">🎙️ Hablar</button>
+      <button class="btn ghost on" id="b-wake" title="Palabra mágica">👂 Oye Hydra</button>
+      <button class="btn ghost" id="b-clap" title="Activar aplaudiendo 2 veces">👏 Aplauso</button>
+      <button class="btn ghost on" id="b-speak" title="Voz de respuesta">🔊 Voz</button>
+    </div>
+    <div class="slbl">ACCIONES</div>
+    <div class="ssec">
+      <button class="btn" id="b-demo">▶ Demo</button>
+      <button class="btn ghost" id="b-cal">📅 Calendario</button>
+      <button class="btn ghost" id="b-halt">⏸ Halt</button>
+      <button class="btn ghost" id="b-refresh">⟳ Actualizar</button>
+    </div>
+    <div class="slbl">CONEXIÓN Y CONFIGURACIÓN</div>
+    <div id="sys-info"></div>
+  </div>
 </div>
 
 <div id="hint">los agentes forman el orbe · pasa el cursor para ver qué hace · haz clic para desplegar sus tareas</div>
@@ -190,20 +214,21 @@ function banner(c){ const b=$('#banner'); let m='';
   b.style.display=m?'block':'none'; b.innerHTML=m; }
 function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('show'); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),3800); }
 
-$('#b-refresh').onclick=()=>{ toast('Datos actualizados'); load(); }; $('#b-halt').onclick=doHalt; $('#b-demo').onclick=runDemo; $('#b-cal').onclick=openCalendar; $('#b-config').onclick=openConfig;
-function openConfig(){ if(!DATA){ toast('Cargando…'); return; } const c=DATA.core;
+$('#b-refresh').onclick=()=>{ toast('Datos actualizados'); load(); }; $('#b-halt').onclick=doHalt; $('#b-demo').onclick=runDemo; $('#b-cal').onclick=openCalendar;
+$('#b-sistema').onclick=()=>{ renderSysInfo(); $('#sistema').classList.add('open'); };
+function closeSistema(){ $('#sistema').classList.remove('open'); }
+function renderSysInfo(){ if(!DATA){ $('#sys-info').innerHTML='<div class="empty">Cargando…</div>'; return; } const c=DATA.core;
   const conn=c.connected?'<b style="color:#34d399">conectado</b>':(c.oauth_ok?'<b style="color:#fbbf24">autorizado, conectando…</b>':'<b style="color:#ff5d73">sin conexión</b>');
-  let h='<p class="role">Estado y conexión de Hydra.</p>';
-  h+='<div class="cfg"><span>cTrader</span> '+conn+'</div>';
+  let h='<div class="cfg"><span>cTrader</span> '+conn+'</div>';
   if(!c.connected) h+='<a class="btn" href="/oauth/login" style="display:inline-block;margin:10px 0;text-decoration:none">🔌 Conectar mi cuenta de cTrader</a>';
-  h+='<div class="cfg"><span>Modo</span> <b>'+(c.dry_run?'PAPEL (demo, no envía órdenes reales)':'REAL')+'</b></div>';
+  h+='<div class="cfg"><span>Modo</span> <b>'+(c.dry_run?'PAPEL (demo)':'REAL')+'</b></div>';
   h+='<div class="cfg"><span>Símbolos</span> <b>'+((c.symbols||[]).join(', ')||'—')+'</b></div>';
   h+='<div class="cfg"><span>Modelo IA</span> <b>'+(c.model||'—')+'</b></div>';
-  h+='<div class="cfg"><span>Voz neural</span> <b>'+(c.tts_server?'activa ✅':'navegador (genérica)')+'</b> · <a href="/tts/health" target="_blank" style="color:#7ff6ff">diagnóstico</a></div>';
+  h+='<div class="cfg"><span>Voz neural</span> <b>'+(c.tts_server?'activa ✅':'navegador')+'</b> · <a href="/tts/health" target="_blank" style="color:#7ff6ff">diagnóstico</a></div>';
   h+='<div class="cfg"><span>Te llama</span> <b>'+(c.owner_name||'Krauser')+'</b></div>';
   h+='<div class="cfg"><span>Anthropic key</span> <b>'+(c.has_anthropic?'puesta ✅':'falta ❌')+'</b></div>';
   h+='<div class="empty" style="margin-top:12px">Los ajustes se cambian con <code>fly secrets set …</code> y luego <code>fly deploy</code>.</div>';
-  openInfo('⚙ Configuración', h); }
+  $('#sys-info').innerHTML=h; }
 async function doHalt(){ const halt=$('#b-halt').textContent.includes('HALT'); await fetch(halt?'/halt':'/resume',{method:'POST'}); toast(halt?'Sistema DETENIDO':'Sistema reanudado'); speak(halt?'Sistema detenido, '+SIR+'.':'Sistema reanudado, '+SIR+'.'); load(); }
 async function openCalendar(){ selected=null;
   $('#d-e').textContent='📅'; $('#d-name').textContent='Calendario económico'; $('#d-role').textContent='Próximos 7 días'; $('#d-body').innerHTML='<div class="empty">Cargando eventos…</div>'; $('#drawer').classList.add('open');
