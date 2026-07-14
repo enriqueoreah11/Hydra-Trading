@@ -10,6 +10,34 @@ from .ctrader import CTraderClient
 
 log = logging.getLogger("broker")
 
+# Cada bróker nombra los índices/materias primas distinto. Estos son grupos de
+# nombres equivalentes: si pedimos uno y no existe, probamos los demás del grupo.
+# (Todo se compara sin símbolos ni separadores: "US Tech 100" -> "USTECH100".)
+_ALIAS_GROUPS: list[list[str]] = [
+    ["US100", "USTEC", "NAS100", "NASDAQ100", "NASDAQ", "USTECH100", "USTEC100", "NDX", "USNAS100"],
+    ["US30", "DJ30", "DOW", "DOW30", "WS30", "US30USD", "USADOW", "DJIA"],
+    ["US500", "SPX500", "SP500", "SPX", "US500USD", "USSPX500", "SPXUSD"],
+    ["XAUUSD", "GOLD", "XAUUSD"],
+    ["XAGUSD", "SILVER", "XAGUSD"],
+    ["XTIUSD", "USOIL", "WTI", "OIL", "CRUDE", "USCRUDE", "WTIUSD", "OILUSD"],
+    ["XBRUSD", "UKOIL", "BRENT", "BRENTUSD", "UKOUSD"],
+    ["US2000", "US2000", "RUSSELL2000", "RUT", "US2000USD"],
+    ["DE40", "GER40", "DAX", "DAX40", "GER30", "DE30", "DEU40"],
+    ["UK100", "FTSE100", "FTSE", "UK100GBP"],
+    ["JP225", "JPN225", "NIKKEI", "NIKKEI225", "JP225USD"],
+]
+
+
+def _norm(s: str) -> str:
+    return "".join(ch for ch in s.upper() if ch.isalnum())
+
+
+_ALIAS_LOOKUP: dict[str, list[str]] = {}
+for _grp in _ALIAS_GROUPS:
+    _keys = [_norm(x) for x in _grp]
+    for _k in _keys:
+        _ALIAS_LOOKUP.setdefault(_k, []).extend(k for k in _keys if k != _k)
+
 
 @dataclass
 class SymbolInfo:
@@ -73,13 +101,23 @@ class Broker:
         sid = self._symbols_by_name.get(name.upper())
         if sid is None:
             # tolerante al formato del broker: EUR/USD, EURUSD.i, EURUSD-RAW, etc.
-            key = "".join(ch for ch in name.upper() if ch.isalnum())
-            norm = {"".join(c for c in nm if c.isalnum()): s for nm, s in self._symbols_by_name.items()}
+            key = _norm(name)
+            norm = {_norm(nm): s for nm, s in self._symbols_by_name.items()}
             sid = norm.get(key)
+            # alias entre brokers: US100 <-> USTEC, XAUUSD <-> GOLD, XTIUSD <-> USOIL, etc.
             if sid is None:
-                for nk, s in norm.items():
-                    if nk.startswith(key):
-                        sid = s
+                for alt in _ALIAS_LOOKUP.get(key, []):
+                    sid = norm.get(alt)
+                    if sid is not None:
+                        break
+            # último recurso: coincidencia por prefijo (EURUSD -> EURUSD.i)
+            if sid is None:
+                for candidate in [key, *_ALIAS_LOOKUP.get(key, [])]:
+                    for nk, s in norm.items():
+                        if nk.startswith(candidate):
+                            sid = s
+                            break
+                    if sid is not None:
                         break
         if sid is None:
             raise ValueError(f"symbol {name!r} not found on this account")
