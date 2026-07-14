@@ -72,8 +72,21 @@ class Broker:
             await self._load_symbols()
         sid = self._symbols_by_name.get(name.upper())
         if sid is None:
+            # tolerante al formato del broker: EUR/USD, EURUSD.i, EURUSD-RAW, etc.
+            key = "".join(ch for ch in name.upper() if ch.isalnum())
+            norm = {"".join(c for c in nm if c.isalnum()): s for nm, s in self._symbols_by_name.items()}
+            sid = norm.get(key)
+            if sid is None:
+                for nk, s in norm.items():
+                    if nk.startswith(key):
+                        sid = s
+                        break
+        if sid is None:
             raise ValueError(f"symbol {name!r} not found on this account")
         return sid
+
+    def symbol_names(self) -> list[str]:
+        return sorted(self._symbols_by_name.keys())
 
     async def symbol_info(self, name: str) -> SymbolInfo:
         sid = await self.symbol_id(name)

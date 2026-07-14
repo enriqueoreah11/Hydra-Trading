@@ -265,15 +265,19 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         weights = {"EURUSD": -0.576, "USDJPY": 0.136, "GBPUSD": -0.119,
                    "USDCAD": 0.091, "USDSEK": 0.042, "USDCHF": 0.036}
         series: dict[str, list] = {}
+        diag: dict[str, str] = {}
         for p in weights:
             try:
                 cs = await asyncio.wait_for(broker.candles(p, settings.timeframe, 220), timeout=12)
                 series[p] = [c.close for c in cs]
-            except Exception:  # noqa: BLE001
+                diag[p] = f"{len(series[p])} velas"
+            except Exception as exc:  # noqa: BLE001
                 series[p] = []
+                diag[p] = str(exc)[:60]
         essential = ["EURUSD", "USDJPY", "GBPUSD", "USDCAD", "USDCHF"]
-        if any(len(series.get(p, [])) < 60 for p in essential):
-            return None
+        missing = [f"{p} ({diag.get(p, '?')})" for p in essential if len(series.get(p, [])) < 60]
+        if missing:
+            return {"__error__": "Pares que fallan: " + "; ".join(missing)}
         L = min(len(v) for v in series.values() if v)
         closes = []
         for i in range(L):
@@ -300,6 +304,20 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                 "verdict": verdict, "supports": lv.get("supports", []),
                 "resistances": lv.get("resistances", [])}
 
+    @app.get("/symbols")
+    async def symbols_list(q: str = ""):
+        """Lista los símbolos del broker (para saber cómo se llaman los pares)."""
+        if not broker.client.account_authorized:
+            return {"ok": False, "reason": "Conecta cTrader."}
+        try:
+            await broker.symbol_id(settings.symbol_list[0] if settings.symbol_list else "EURUSD")
+        except Exception:  # noqa: BLE001 - solo para forzar la carga de símbolos
+            pass
+        names = broker.symbol_names()
+        if q:
+            names = [n for n in names if q.upper() in n]
+        return {"ok": True, "count": len(names), "symbols": names[:400]}
+
     @app.get("/market/{symbol}")
     async def market_tech(symbol: str):
         """Resumen técnico de un instrumento: precio, indicadores y key levels."""
@@ -311,7 +329,9 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             if symbol == "DXY":
                 snap = await _dxy_snapshot()
                 if not snap:
-                    return {"ok": False, "reason": "No pude calcular el DXY (faltan pares de divisas en tu broker)."}
+                    return {"ok": False, "reason": "No pude calcular el DXY."}
+                if snap.get("__error__"):
+                    return {"ok": False, "reason": snap["__error__"]}
             else:
                 candles = await asyncio.wait_for(broker.candles(symbol, settings.timeframe, 250), timeout=15)
                 if len(candles) < 60:
