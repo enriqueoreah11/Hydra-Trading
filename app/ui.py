@@ -126,7 +126,7 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
   </div>
   <div class="bt">HYDRA</div><div class="bs">RED NEURONAL · 11 AGENTES</div>
   <button id="activate">⏻ ACTIVAR SISTEMA</button>
-  <div class="bs" style="opacity:.6">pulsa para encender voz y micrófono</div>
+  <div class="bs" style="opacity:.6">pulsa para encender el sistema</div>
 </div>
 
 <div id="top">
@@ -151,7 +151,7 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     <div class="slbl">VOZ</div>
     <div class="ssec">
       <button class="btn ghost" id="b-mic" title="Hablar (clic, o di “Oye Hydra”)">🎙️ Hablar</button>
-      <button class="btn ghost on" id="b-wake" title="Palabra mágica">👂 Oye Hydra</button>
+      <button class="btn ghost" id="b-wake" title="Palabra mágica">👂 Oye Hydra</button>
       <button class="btn ghost" id="b-clap" title="Activar aplaudiendo 2 veces">👏 Aplauso</button>
       <button class="btn ghost on" id="b-speak" title="Voz de respuesta">🔊 Voz</button>
     </div>
@@ -310,7 +310,7 @@ function browserSpeak(t){ if(!('speechSynthesis'in window))return; try{ speechSy
   u.onstart=()=>{speaking=true;}; u.onend=()=>{speaking=false;}; u.onerror=()=>{speaking=false;}; speechSynthesis.speak(u); }catch(_){}}
 
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-let recog=null,running=false,wakeMode=true,awaiting=false,awaitTimer=null;
+let recog=null,running=false,wakeMode=false,awaiting=false,awaitTimer=null,micDenied=false;
 const WAKE=['oye hydra','hola hydra','hey hydra','oye idra','oye hidra','hydra','hidra','jarvis'];
 function setV(t){ const el=$('#vstatus'); if(!el)return; el.innerHTML=t||''; el.style.display=t?'inline-block':'none'; if(el._t)clearTimeout(el._t); if(t)el._t=setTimeout(()=>{el.style.display='none';},6000); }
 function coreHear(on){ listeningActive=on; $('#b-mic').classList.toggle('mic-on',on); }
@@ -318,15 +318,15 @@ function wakeFlash(){ wakeUntil=performance.now()+700; }
 if(!SR){ setV('Voz no soportada — usa Chrome.'); }
 else{ recog=new SR(); recog.lang='es-ES'; recog.interimResults=true; recog.continuous=true;
   recog.onresult=e=>{ let interim=''; for(let i=e.resultIndex;i<e.results.length;i++){ const r=e.results[i]; if(r.isFinal) handlePhrase(norm(r[0].transcript)); else interim+=r[0].transcript; } if(interim)setV('“'+interim+'”'); };
-  recog.onerror=e=>{ if(e.error==='not-allowed')setV('Permiso de micrófono denegado.'); };
-  recog.onend=()=>{ running=false; coreHear(false); if(wakeMode||awaiting){ setTimeout(startRecog,300);} else setV('Di <b>“Oye Hydra…”</b>'); };
+  recog.onerror=e=>{ if(e.error==='not-allowed'){ micDenied=true; wakeMode=false; $('#b-wake').classList.remove('on'); setV(''); toast('Micrófono bloqueado. Actívalo en Ajustes de Safari → Sitios web → Micrófono → Permitir.'); } };
+  recog.onend=()=>{ running=false; coreHear(false); if((wakeMode||awaiting)&&!micDenied){ setTimeout(startRecog,300);} else setV(''); };
 }
-function startRecog(){ if(!recog||running)return; try{ recog.start(); running=true; coreHear(true);}catch(_){}}
+function startRecog(){ if(!recog||running||micDenied)return; try{ recog.start(); running=true; coreHear(true);}catch(_){}}
 function handlePhrase(t){ if(awaiting){ clearTimeout(awaitTimer); awaiting=false; wakeFlash(); runCmd(t); return; }
   const w=WAKE.find(w=>t.includes(w)); if(!w)return; wakeFlash(); const rest=t.slice(t.indexOf(w)+w.length).trim();
   if(rest.length>2){ runCmd(rest); } else { speak('A la orden, '+SIR+'.'); setV('<b>Le escucho…</b>'); awaiting=true; awaitTimer=setTimeout(()=>{awaiting=false;setV('Di <b>“Oye Hydra…”</b>');},9000); } }
-$('#b-mic').onclick=()=>{ if(!SR){toast('Usa Chrome para la voz');return;} awaiting=true; setV('<b>Le escucho…</b>'); speak('Dígame, '+SIR+'.'); if(!running)startRecog(); };
-$('#b-wake').onclick=()=>{ wakeMode=!wakeMode; $('#b-wake').classList.toggle('on',wakeMode); if(wakeMode){ toast('Palabra mágica activada'); startRecog(); } else { toast('Palabra mágica apagada'); if(recog&&running)recog.stop(); } };
+$('#b-mic').onclick=()=>{ if(!SR){toast('Usa Chrome para la voz');return;} micDenied=false; awaiting=true; setV('<b>Le escucho…</b>'); speak('Dígame, '+SIR+'.'); if(!running)startRecog(); };
+$('#b-wake').onclick=()=>{ wakeMode=!wakeMode; $('#b-wake').classList.toggle('on',wakeMode); if(wakeMode){ micDenied=false; try{localStorage.setItem('hydraWake','1');}catch(_){} toast('Escuchando “Oye Hydra”'); startRecog(); } else { try{localStorage.removeItem('hydraWake');}catch(_){} toast('Palabra mágica apagada'); if(recog&&running)recog.stop(); } };
 
 let clapOn=false,clapStream=null,clapRAF=null,clapTimes=[];
 $('#b-clap').onclick=async()=>{ if(clapOn){stopClap();}else{await startClap();} };
@@ -358,8 +358,8 @@ function speakStatus(){ if(!DATA){ speak('Aún cargando.'); return; } const c=DA
   speak('Modo '+(c.dry_run?'papel':'real')+', '+conn+'. Balance '+(c.balance!=null?c.balance:'desconocido')+'. '+act+' de '+DATA.agents.length+' agentes activos, '+SIR+'.'); }
 
 $('#activate').onclick=()=>{ $('#boot').classList.add('hide'); setTimeout(()=>$('#boot').style.display='none',700);
-  loadVoices(); speak('Sistemas en línea, '+SIR+'. Los once agentes están conectados. Diga, oye Hydra, cuando me necesite.');
-  if(SR){ wakeMode=true; $('#b-wake').classList.add('on'); startRecog(); setV('Escuchando… di <b>“Oye Hydra”</b>'); }
+  loadVoices(); speak('Sistemas en línea, '+SIR+'. Los once agentes están conectados. Toca oye Hydra cuando quieras activar el micrófono.');
+  if(SR) setV('Toca 👂 Oye Hydra para activar la voz');
   if(!ttsServer) setTimeout(()=>toast('💡 Voz neural apagada (suena genérica). Actívala: fly secrets set TTS_PROVIDER=elevenlabs TTS_API_KEY=… ELEVENLABS_VOICE_ID=…'),2500); };
 
 /* ===================== ONDA DE AUDIO ===================== */
@@ -385,10 +385,11 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
   function hx2(h){ h=(h||'').replace('#',''); if(h.length===3)h=h.split('').map(c=>c+c).join(''); const n=parseInt(h,16); if(isNaN(n))return '127,246,255'; return (n>>16&255)+','+(n>>8&255)+','+(n&255); }
   function rng(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
   // árbol de ramas que crece hacia afuera desde el agente (sus tareas/funciones)
-  function makeTree(hx,hy,phi,seed,extra){
+  // árbol en coordenadas LOCALES (agente en 0,0; crece hacia +x = radial). Al dibujar se rota con el agente.
+  function makeTree(seed,extra){
     const r=rng(seed), segs=[], leaves=[], B=3+((r()*3)|0);
-    for(let b=0;b<B;b++){ const a1=phi+(b-(B-1)/2)*(1.6/B)+(r()-0.5)*0.15, L1=S*0.075+r()*S*0.04;
-      const x1=hx+Math.cos(a1)*L1, y1=hy+Math.sin(a1)*L1; segs.push([hx,hy,x1,y1]); leaves.push([x1,y1,1.9,r()*6.28]);
+    for(let b=0;b<B;b++){ const a1=(b-(B-1)/2)*(1.6/B)+(r()-0.5)*0.15, L1=S*0.075+r()*S*0.04;
+      const x1=Math.cos(a1)*L1, y1=Math.sin(a1)*L1; segs.push([0,0,x1,y1]); leaves.push([x1,y1,1.9,r()*6.28]);
       const C=2+((r()*(2+extra))|0);
       for(let c=0;c<C;c++){ const a2=a1+(r()-0.5)*0.85, L2=S*0.05+r()*S*0.035;
         const x2=x1+Math.cos(a2)*L2, y2=y1+Math.sin(a2)*L2; segs.push([x1,y1,x2,y2]); leaves.push([x2,y2,1.4+r()*1.6,r()*6.28]);
@@ -431,18 +432,16 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
   let A=[], byKey={}, curOpen=null, openAt=0;
   function build(){
     const ags=DATA?DATA.agents:[], N=ags.length||1;
-    A=ags.map((a,i)=>{ const ang=-Math.PI/2 + i/N*Math.PI*2, ox=Math.cos(ang), oy=Math.sin(ang);
-      const x=CX+ox*Rh, y=CY+oy*Rh, lx=x+ox*24, ly=y+oy*24;                 // nombre pegado al punto, hacia afuera del orbe
-      const lalign=ox>0.35?'left':(ox<-0.35?'right':'center');
+    A=ags.map((a,i)=>{ const baseAng=-Math.PI/2 + i/N*Math.PI*2;
       const extra=Math.min(2,(entriesOf(a.key)/4)|0);
-      const t=makeTree(x,y,ang,(i+1)*131+7,extra), sg=t.segs;
-      // grafo del árbol: segmentos raíz (salen del agente) y segmentos hijos (para el flujo de energía)
+      const t=makeTree((i+1)*131+7,extra), sg=t.segs;
+      // grafo del árbol (coords locales): raíces salen de (0,0); hijos encadenan por sus extremos
       const roots=[], next=sg.map(()=>[]);
-      sg.forEach((s,si)=>{ if(Math.abs(s[0]-x)<0.5&&Math.abs(s[1]-y)<0.5) roots.push(si);
+      sg.forEach((s,si)=>{ if(Math.abs(s[0])<0.5&&Math.abs(s[1])<0.5) roots.push(si);
         sg.forEach((s2,sj)=>{ if(si!==sj&&Math.abs(s2[0]-s[2])<0.5&&Math.abs(s2[1]-s[3])<0.5) next[si].push(sj); }); });
       const sparks=[], ns=Math.max(3,Math.round(sg.length*0.55));
       for(let s=0;s<ns;s++){ const seg=roots.length?roots[(Math.random()*roots.length)|0]:0; sparks.push({seg,t:Math.random(),sp:0.012+Math.random()*0.020}); }
-      return {key:a.key,name:a.name,emoji:a.emoji,role:a.role,x,y,lx,ly,ang,rgb:hx2(PAL[i%PAL.length]),segs:sg,leaves:t.leaves,roots,next,sparks}; });
+      return {key:a.key,name:a.name,emoji:a.emoji,role:a.role,baseAng,x:CX,y:CY,ang:baseAng,lx:CX,ly:CY,lalign:'center',rgb:hx2(PAL[i%PAL.length]),segs:sg,leaves:t.leaves,roots,next,sparks}; });
     byKey={}; A.forEach(a=>byKey[a.key]=a);
     const syms=(DATA&&DATA.core&&DATA.core.symbols)||[];
     MK=syms.map((sym,i)=>{ const n=Math.max(1,syms.length), yy=0.72*(1-2*(i+0.5)/n), r=Math.sqrt(Math.max(0,1-yy*yy)), th=i*2.39996+0.9;
@@ -459,6 +458,11 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
   function frame(now){
     if(!DATA){ requestAnimationFrame(frame); return; }
     if(dirty||A.length!==(DATA.agents||[]).length) build();
+    // órbita lenta: los agentes giran alrededor de Hydra (que queda al centro)
+    const orb=now*0.00006;
+    for(const a of A){ a.ang=a.baseAng+orb; const c=Math.cos(a.ang), s=Math.sin(a.ang);
+      a.x=CX+c*Rh; a.y=CY+s*Rh; a.lx=a.x+c*24; a.ly=a.y+s*24;
+      a.lalign=c>0.35?'left':(c<-0.35?'right':'center'); }
     hoverKey=null; let hd=1e9; for(const a of A){ const dx=a.x-mx,dy=a.y-my,d=dx*dx+dy*dy; if(d<1100&&d<hd){hd=d;hoverKey=a.key;} }
     { const dx=CX-mx,dy=CY-my,d=dx*dx+dy*dy; if(d<729&&d<hd){ hd=d; hoverKey='__hydra'; } }   // núcleo Hydra (27px)
     cv.style.cursor=hoverKey?'pointer':'default';
@@ -506,16 +510,16 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       if(hot){ const p=qpt([a.x,a.y],[cx,cy],[b.x,b.y],(now*0.0006)%1); g.fillStyle='rgba(190,250,255,1)'; g.beginPath(); g.arc(p[0],p[1],2.2,0,7); g.fill(); } }
     // RAMIFICACIONES: sólo del agente abierto (al hacer click), creciendo desde su punto
     if(sel&&byKey[sel]&&grow>0.01){ const a=byKey[sel];
-      g.save(); const sc=0.25+0.75*grow; g.translate(a.x,a.y); g.scale(sc,sc); g.translate(-a.x,-a.y); g.globalAlpha=grow;
+      g.save(); const sc=0.25+0.75*grow; g.translate(a.x,a.y); g.rotate(a.ang); g.scale(sc,sc); g.globalAlpha=grow;   // coords locales, rota con el agente
       g.strokeStyle='rgba('+a.rgb+',0.95)'; g.lineWidth=1.5; g.beginPath(); for(const s of a.segs){ g.moveTo(s[0],s[1]); g.lineTo(s[2],s[3]); } g.stroke();
       for(const l of a.leaves){ const tw=0.6+0.4*Math.sin(now*0.004+l[3]); g.fillStyle='rgba('+a.rgb+','+tw+')'; g.beginPath(); g.arc(l[0],l[1],l[2]*1.3,0,7); g.fill(); }
-      g.restore();
       if(grow>0.98){ for(const sp of a.sparks){ sp.t+=sp.sp*1.5;
         if(sp.t>=1){ const nx=a.next[sp.seg]; sp.seg=(nx&&nx.length)?nx[(Math.random()*nx.length)|0]:(a.roots.length?a.roots[(Math.random()*a.roots.length)|0]:0); sp.t=0; }
         const s=a.segs[sp.seg]; if(!s) continue; const x=s[0]+(s[2]-s[0])*sp.t, y=s[1]+(s[3]-s[1])*sp.t;
         const tt=Math.max(0,sp.t-0.22), tx=s[0]+(s[2]-s[0])*tt, ty=s[1]+(s[3]-s[1])*tt;
         g.strokeStyle='rgba('+a.rgb+',0.8)'; g.lineWidth=1.6; g.beginPath(); g.moveTo(tx,ty); g.lineTo(x,y); g.stroke();
-        g.fillStyle='rgba('+a.rgb+',1)'; g.beginPath(); g.arc(x,y,2,0,7); g.fill(); } } }
+        g.fillStyle='rgba('+a.rgb+',1)'; g.beginPath(); g.arc(x,y,2,0,7); g.fill(); } }
+      g.restore(); }
     // círculos de agente en el borde del orbe, con su símbolo propio
     for(const a of A){ const st=stateOf(a.key), h=a.key===hoverKey, o=a.key===sel, on=st==='active'||st==='alert', dim=(hoverKey&&!h&&!o);
       const R=(h||o)?18:14;
