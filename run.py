@@ -50,9 +50,14 @@ async def main() -> None:
 
     tasks = [asyncio.create_task(server.serve(), name="web")]
 
-    if settings.ctrader_client_id and tokens.has_tokens and settings.ctrader_account_id:
+    if settings.ctrader_client_id and tokens.has_tokens:
+        # abre la conexion + auth de app aunque falte account_id (permite listar cuentas)
         await client.start()
-        tasks.append(asyncio.create_task(brain.run_forever(), name="brain"))
+        if settings.ctrader_account_id:
+            tasks.append(asyncio.create_task(brain.run_forever(), name="brain"))
+        else:
+            log.warning("conexion cTrader lista (app), pero falta CTRADER_ACCOUNT_ID: "
+                        "visita /accounts para ver tu numero de cuenta y define CTRADER_ACCOUNT_ID.")
     else:
         log.warning(
             "brain idle: falta configuracion. Pasos: 1) define CTRADER_CLIENT_ID/SECRET, "

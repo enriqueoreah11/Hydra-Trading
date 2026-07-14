@@ -60,7 +60,10 @@ class CTraderClient:
         self._event_handlers.append(handler)
 
     async def start(self) -> None:
-        """Connect and keep the connection alive forever (until stop())."""
+        """Connect and keep the connection alive forever (until stop()). Idempotente."""
+        if self._tasks:
+            return
+        self._stopping = False
         self._tasks.append(asyncio.create_task(self._run(), name="ctrader-run"))
 
     async def stop(self) -> None:

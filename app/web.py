@@ -1,6 +1,7 @@
 """FastAPI dashboard: estado, OAuth de cTrader, diario, playbook y kill switch."""
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import html
 import json
@@ -45,7 +46,10 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker) -> FastAPI:
         accounts: list[dict] = []
         try:
             token = await tokens.get_access_token()
-            accounts = await broker.list_accounts(token)
+            # abre la conexión (auth de app, no requiere account_id) para poder listar cuentas, con timeout
+            await broker.client.start()
+            await broker.client.wait_connected(timeout=12)
+            accounts = await asyncio.wait_for(broker.list_accounts(token), timeout=12)
         except Exception:  # noqa: BLE001 - listing accounts is best-effort here
             pass
         rows = "".join(
@@ -103,7 +107,9 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker) -> FastAPI:
             return {"ok": False, "reason": "sin OAuth — conecta cTrader primero"}
         try:
             token = await tokens.get_access_token()
-            accs = await broker.list_accounts(token)
+            await broker.client.start()
+            await broker.client.wait_connected(timeout=12)
+            accs = await asyncio.wait_for(broker.list_accounts(token), timeout=12)
             return {"ok": True, "current": settings.ctrader_account_id, "env": settings.ctrader_env,
                     "accounts": [{"id": a.get("ctidTraderAccountId"), "live": a.get("isLive"),
                                   "login": a.get("traderLogin")} for a in accs]}
