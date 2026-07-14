@@ -53,6 +53,7 @@ class CTraderClient:
         self._connected = asyncio.Event()
         self._stopping = False
         self.account_authorized = False
+        self.last_error = ""          # último error de conexión/autorización (para diagnóstico)
 
     # ------------------------------------------------------------------ public
 
@@ -113,6 +114,7 @@ class CTraderClient:
                     hb = asyncio.create_task(self._heartbeat())
                     try:
                         await self._authenticate()
+                        self.last_error = ""
                         backoff = 2
                         await self._read_loop(ws)
                     finally:
@@ -120,6 +122,7 @@ class CTraderClient:
             except asyncio.CancelledError:
                 return
             except Exception as e:  # noqa: BLE001 - reconnect on any transport error
+                self.last_error = f"{type(e).__name__}: {str(e)[:180]}"
                 log.warning("connection lost (%s); reconnecting in %ss", e, backoff)
             self._connected.clear()
             self.account_authorized = False

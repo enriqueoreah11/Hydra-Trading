@@ -91,24 +91,28 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         """Elige la cuenta de cTrader desde la UI: la aplica, persiste y reconecta."""
         try:
             body = await request.json()
+            aid = int(body.get("id", 0) or 0)
         except Exception:  # noqa: BLE001
-            raise HTTPException(400, "JSON inválido")
-        aid = int(body.get("id", 0) or 0)
+            return JSONResponse({"ok": False, "error": "datos inválidos"}, status_code=400)
         env = body.get("env", "demo")
         if aid <= 0:
-            raise HTTPException(400, "id de cuenta inválido")
-        _apply_account(aid, env)
-        (settings.data_path / "account.json").write_text(json.dumps({"account_id": aid, "env": env}))
-        store.log("system", "account", f"cuenta seleccionada {aid} ({env})")
+            return JSONResponse({"ok": False, "error": "id de cuenta inválido"}, status_code=400)
+        try:
+            _apply_account(aid, env)
+            (settings.data_path / "account.json").write_text(json.dumps({"account_id": aid, "env": env}))
+            store.log("system", "account", f"cuenta seleccionada {aid} ({env})")
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": f"al aplicar: {exc}"[:160]}, status_code=500)
         try:
             await broker.client.reconnect()
             await broker.client.wait_connected(timeout=12)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - la cuenta ya quedó guardada; la conexión puede tardar
             pass
-        # arranca el cerebro si hay uno y no está corriendo ya
         if brain is not None and (_brain_state["task"] is None or _brain_state["task"].done()):
             _brain_state["task"] = asyncio.create_task(brain.run_forever(), name="brain")
-        return {"ok": True, "account_id": aid, "env": env}
+        return {"ok": True, "account_id": aid, "env": env,
+                "connected": broker.client.account_authorized,
+                "conn_error": getattr(broker.client, "last_error", "")}
 
     @app.get("/correlations")
     async def correlations():
@@ -316,12 +320,13 @@ Conecta tu cuenta en <a href="/oauth/login">/oauth/login</a> para operar de verd
                 "telegram": bool(settings.telegram_bot_token and settings.telegram_chat_id),
             },
         }
+        out["conn_error"] = getattr(broker.client, "last_error", "")
         if broker.client.account_authorized:
             try:
                 trader = await broker.trader()
                 out["balance"] = trader["balance"]
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # noqa: BLE001
+                out["balance_error"] = str(exc)[:160]
         return out
 
     @app.get("/positions")
@@ -388,6 +393,7 @@ Conecta tu cuenta en <a href="/oauth/login">/oauth/login</a> para operar de verd
                 "env": st["env"], "dry_run": st["dry_run"], "halted": st["halted"],
                 "connected": st["connected"], "oauth_ok": st["oauth_ok"],
                 "account_id": st["account_id"], "ctrader_env": settings.ctrader_env,
+                "conn_error": st.get("conn_error", ""), "balance_error": st.get("balance_error", ""),
                 "balance": st.get("balance"), "model": settings.model,
                 "symbols": st["symbols"], "timeframe": st["timeframe"],
                 "playbook_version": st["playbook_version"],
