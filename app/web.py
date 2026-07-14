@@ -60,6 +60,42 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker) -> FastAPI:
             "<code>CTRADER_ACCOUNT_ID</code> y reinicia el servicio.</p>"
             "<a href='/'>← dashboard</a>")
 
+    @app.get("/correlations")
+    async def correlations():
+        """Matriz de correlación de rendimientos entre los instrumentos vigilados."""
+        import math
+        if not broker.client.account_authorized:
+            return {"ok": False, "reason": "Conecta cTrader para calcular correlaciones con datos reales."}
+        closes: dict[str, list[float]] = {}
+        for s in settings.symbol_list:
+            try:
+                cs = await broker.candles(s, settings.timeframe, 150)
+                closes[s] = [c.close for c in cs]
+            except Exception:  # noqa: BLE001
+                pass
+
+        def rets(v):
+            return [(v[i] - v[i - 1]) / v[i - 1] for i in range(1, len(v)) if v[i - 1]]
+
+        R = {s: rets(v) for s, v in closes.items() if len(v) > 5}
+        keys = list(R)
+        pairs = []
+        for i in range(len(keys)):
+            for j in range(i + 1, len(keys)):
+                n = min(len(R[keys[i]]), len(R[keys[j]]))
+                if n < 8:
+                    continue
+                a, b = R[keys[i]][-n:], R[keys[j]][-n:]
+                ma, mb = sum(a) / n, sum(b) / n
+                cov = sum((a[k] - ma) * (b[k] - mb) for k in range(n))
+                va = sum((x - ma) ** 2 for x in a)
+                vb = sum((x - mb) ** 2 for x in b)
+                if va <= 0 or vb <= 0:
+                    continue
+                pairs.append({"a": keys[i], "b": keys[j], "corr": round(cov / math.sqrt(va * vb), 2)})
+        pairs.sort(key=lambda p: -abs(p["corr"]))
+        return {"ok": True, "pairs": pairs, "max": settings.max_correlation, "timeframe": settings.timeframe}
+
     @app.get("/accounts")
     async def accounts_list():
         """Lista las cuentas autorizadas (ctidTraderAccountId) para saber cuál poner en CTRADER_ACCOUNT_ID."""
@@ -299,6 +335,7 @@ Conecta tu cuenta en <a href="/oauth/login">/oauth/login</a> para operar de verd
             "core": {
                 "env": st["env"], "dry_run": st["dry_run"], "halted": st["halted"],
                 "connected": st["connected"], "oauth_ok": st["oauth_ok"],
+                "account_id": st["account_id"], "ctrader_env": settings.ctrader_env,
                 "balance": st.get("balance"), "model": settings.model,
                 "symbols": st["symbols"], "timeframe": st["timeframe"],
                 "playbook_version": st["playbook_version"],

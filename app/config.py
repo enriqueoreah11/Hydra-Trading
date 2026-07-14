@@ -76,11 +76,11 @@ class Settings(BaseSettings):
     auditor_interval_min: int = 20
     auto_halt_on_discrepancy: bool = True    # halt trading if an unexplained discrepancy appears
 
-    # --- Playbook validator (light backtest gate for the Architect) ---
+    # --- Playbook validator (backtest gate for the Architect) ---
     validate_playbook: bool = True
-    backtest_bars: int = 400                 # history depth per symbol
-    backtest_samples: int = 12               # decision points sampled per symbol (LLM cost driver)
-    backtest_horizon_bars: int = 24          # bars ahead to resolve each simulated trade
+    backtest_bars: int = 700                 # history depth per symbol (más = más robusto)
+    backtest_samples: int = 24               # decision points sampled per symbol (LLM cost driver)
+    backtest_horizon_bars: int = 30          # bars ahead to resolve each simulated trade
 
     # --- Portfolio risk / correlation ---
     enable_portfolio_check: bool = True

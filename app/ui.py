@@ -217,7 +217,16 @@ function renderDrawer(k){ const a=agentByKey(k); if(!a)return;
       else { h+='<input data-p="'+p.name+'" value="'+escapeHtml(String(p.value==null?'':p.value))+'">'; }
       h+='<div class="phelp">'+escapeHtml(p.help||'')+'</div></div>'; });
     h+='<button class="btn" style="margin-top:8px" onclick="saveParams(\''+a.key+'\')">💾 Guardar cambios</button>'; }
-  $('#d-body').innerHTML=h; }
+  if(a.key==='portfolio'){ h+='<div class="slbl" style="margin-top:16px">CORRELACIONES ENTRE INSTRUMENTOS</div><div id="d-corr" class="empty">Calculando…</div>'; }
+  $('#d-body').innerHTML=h;
+  if(a.key==='portfolio') loadCorr(); }
+async function loadCorr(){ let d; try{ d=await (await fetch('/correlations')).json(); }catch(e){ return; } const el=$('#d-corr'); if(!el) return;
+  if(!d.ok){ el.innerHTML=escapeHtml(d.reason||'No disponible.'); return; }
+  if(!(d.pairs||[]).length){ el.innerHTML='Sin datos suficientes todavía.'; return; }
+  let h='<div class="empty" style="margin-bottom:6px">Correlación de rendimientos ('+d.timeframe+', −1 a 1). 🔴 = muy correlacionados; Portfolio bloquea apuestas redundantes si supera '+d.max+'.</div>';
+  d.pairs.slice(0,20).forEach(p=>{ const ac=Math.abs(p.corr), col=ac>=d.max?'#ff5d73':(ac>0.4?'#fbbf24':'#5f7387');
+    h+='<div class="cfg"><span>'+escapeHtml(p.a)+' ↔ '+escapeHtml(p.b)+'</span> <b style="color:'+col+'">'+p.corr+'</b></div>'; });
+  el.innerHTML=h; }
 async function saveParams(k){ const body={}; document.querySelectorAll('#d-body [data-p]').forEach(el=>{ body[el.getAttribute('data-p')]=el.value; });
   let r; try{ r=await fetch('/agent/'+k+'/params',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); }catch(e){ toast('Error de red'); return; }
   if(r.ok){ toast('Parámetros guardados ✓'); speak('Ajustes guardados.'); load(); } else { toast('No se pudo guardar'); } }
@@ -246,6 +255,7 @@ async function saveSecrets(){ const els=document.querySelectorAll('#sys-keys [da
 function renderSysInfo(){ if(!DATA){ $('#sys-info').innerHTML='<div class="empty">Cargando…</div>'; return; } const c=DATA.core;
   const conn=c.connected?'<b style="color:#34d399">conectado</b>':(c.oauth_ok?'<b style="color:#fbbf24">autorizado, conectando…</b>':'<b style="color:#ff5d73">sin conexión</b>');
   let h='<div class="cfg"><span>cTrader</span> '+conn+'</div>';
+  if(c.connected&&c.account_id) h+='<div class="cfg"><span>Cuenta activa</span> <b>#'+c.account_id+' · '+((c.ctrader_env||'demo').toUpperCase())+'</b></div>';
   if(!c.oauth_ok) h+='<a class="btn" href="/oauth/login" style="display:inline-block;margin:10px 0;text-decoration:none">🔌 Conectar mi cuenta de cTrader</a>';
   if(c.oauth_ok&&!c.connected) h+='<div id="sys-accounts" class="empty">Autorizado. Buscando el número de tu cuenta…</div>';
   h+='<div class="cfg"><span>Modo</span> <b>'+(c.dry_run?'PAPEL (demo)':'REAL')+'</b></div>';

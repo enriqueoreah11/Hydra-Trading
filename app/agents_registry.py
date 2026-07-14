@@ -24,7 +24,7 @@ AGENTS = [
     {"key": "auditor", "name": "Auditor", "emoji": "🧾", "ring": "auto",
      "role": "Reconcilia broker vs diario; puede activar el auto-halt."},
     {"key": "validator", "name": "Validator", "emoji": "🧪", "ring": "auto",
-     "role": "Backtest ligero del playbook antes de activarlo."},
+     "role": "Backtest riguroso del playbook contra el histórico antes de activarlo."},
     {"key": "portfolio", "name": "Portfolio", "emoji": "🔗", "ring": "auto",
      "role": "Exposición agregada por divisa y correlación."},
 ]

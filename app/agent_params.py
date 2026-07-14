@@ -28,7 +28,7 @@ _META: dict[str, tuple[str, str]] = {
     "enable_portfolio_check": ("Revisión de portafolio", "Activa el control de correlación y exposición."),
     "overnight_interval_min": ("Revisa cada (min)", "Frecuencia de gestión de posiciones abiertas de noche."),
     "review_hour_utc": ("Hora de revisión (UTC)", "Hora a la que corre la autocrítica diaria."),
-    "validate_playbook": ("Validar antes de aplicar", "Backtest ligero antes de aceptar cambios de estrategia."),
+    "validate_playbook": ("Validar antes de aplicar", "Backtest contra el histórico antes de aceptar cambios de estrategia."),
     "enable_news": ("Bloqueo por noticias", "Evita abrir cerca de eventos de alto impacto."),
     "news_impact_min": ("Impacto que bloquea", "Impacto mínimo que activa el bloqueo: High, Medium o Low."),
     "news_blackout_before_min": ("Bloqueo antes (min)", "Minutos antes del evento en que no abre nuevas entradas."),
