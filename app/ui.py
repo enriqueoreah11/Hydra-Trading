@@ -164,6 +164,8 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     </div>
     <div class="slbl">CONEXIÓN Y CONFIGURACIÓN</div>
     <div id="sys-info"></div>
+    <div class="slbl">🔑 CLAVES (API KEYS)</div>
+    <div id="sys-keys"></div>
   </div>
 </div>
 
@@ -228,8 +230,19 @@ function banner(c){ const b=$('#banner'); let m='';
 function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('show'); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),3800); }
 
 $('#b-refresh').onclick=()=>{ toast('Datos actualizados'); load(); }; $('#b-halt').onclick=doHalt; $('#b-demo').onclick=runDemo; $('#b-cal').onclick=openCalendar;
-$('#b-sistema').onclick=()=>{ renderSysInfo(); $('#sistema').classList.add('open'); };
+$('#b-sistema').onclick=()=>{ renderSysInfo(); renderSecrets(); $('#sistema').classList.add('open'); };
 function closeSistema(){ $('#sistema').classList.remove('open'); }
+async function renderSecrets(){ let d; try{ d=await (await fetch('/secrets')).json(); }catch(e){ $('#sys-keys').innerHTML='<div class="empty">No disponible.</div>'; return; }
+  let h='';
+  if(!d.master_key) h+='<div class="empty">Para guardar claves cifradas, pon una vez la llave maestra:<br><code>fly secrets set APP_SECRET_KEY=una-frase-larga-secreta</code><br>y redespliega. Sin ella solo se ve el estado.</div>';
+  (d.items||[]).forEach(it=>{ h+='<div class="prm"><label>'+escapeHtml(it.label)+' '+(it.set?'<span style="color:#34d399">'+escapeHtml(it.hint)+'</span>':'<span style="color:#ff5d73">falta</span>')+'</label>';
+    h+='<input type="password" autocomplete="new-password" data-s="'+it.name+'" placeholder="'+(it.set?'nueva clave (vacío = sin cambio)':'pega la clave')+'"'+(d.master_key?'':' disabled')+'></div>'; });
+  if(d.master_key) h+='<button class="btn" style="margin-top:6px" onclick="saveSecrets()">🔒 Guardar claves</button>';
+  $('#sys-keys').innerHTML=h; }
+async function saveSecrets(){ const els=document.querySelectorAll('#sys-keys [data-s]'); let n=0;
+  for(const el of els){ const v=(el.value||'').trim(); if(!v)continue;
+    try{ const r=await fetch('/secrets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:el.getAttribute('data-s'),value:v})}); if(r.ok)n++; el.value=''; }catch(e){} }
+  toast(n?('Guardadas '+n+' clave(s) 🔒'):'Sin cambios'); renderSecrets(); }
 function renderSysInfo(){ if(!DATA){ $('#sys-info').innerHTML='<div class="empty">Cargando…</div>'; return; } const c=DATA.core;
   const conn=c.connected?'<b style="color:#34d399">conectado</b>':(c.oauth_ok?'<b style="color:#fbbf24">autorizado, conectando…</b>':'<b style="color:#ff5d73">sin conexión</b>');
   let h='<div class="cfg"><span>cTrader</span> '+conn+'</div>';

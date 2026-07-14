@@ -9,6 +9,7 @@ from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from . import agent_params
+from . import secrets_store
 from . import tts as tts_mod
 from .broker import Broker
 from .config import settings
@@ -18,8 +19,9 @@ from .store import Store
 
 def create_app(store: Store, tokens: TokenStore, broker: Broker) -> FastAPI:
     app = FastAPI(title="hydra-trading")
-    # aplica los parámetros que el usuario haya ajustado desde la UI (persisten en el volumen)
+    # aplica los parámetros y claves que el usuario haya ajustado desde la UI (persisten en el volumen)
     agent_params.load_overrides(settings.data_path / "overrides.json")
+    secrets_store.load()
 
     def _check_token(token: str | None) -> None:
         if settings.dashboard_token and token != settings.dashboard_token:
@@ -105,6 +107,29 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker) -> FastAPI:
             raise HTTPException(400, "JSON inválido")
         applied = agent_params.apply_and_save(settings.data_path / "overrides.json", key, body)
         return {"ok": True, "applied": applied}
+
+    @app.get("/secrets")
+    async def secrets_status():
+        """Estado de las claves (sin exponer valores)."""
+        return secrets_store.status()
+
+    @app.post("/secrets")
+    async def secrets_set(request: Request):
+        """Guarda (cifrada) una clave nueva. Nunca devuelve el valor."""
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            raise HTTPException(400, "JSON inválido")
+        name, value = body.get("name", ""), body.get("value", "")
+        if not secrets_store.can_edit(name):
+            raise HTTPException(400, "clave no permitida")
+        if not str(value).strip():
+            return {"ok": False, "reason": "vacío"}
+        try:
+            secrets_store.save(name, str(value).strip())
+        except RuntimeError as exc:
+            raise HTTPException(400, str(exc))
+        return {"ok": True}
 
     @app.get("/tts/health")
     async def tts_health():

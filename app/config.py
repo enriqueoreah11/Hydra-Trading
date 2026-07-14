@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     ctrader_env: str = "demo"                # "demo" | "live"
     ctrader_account_id: int = 0              # ctidTraderAccountId (see dashboard after OAuth)
 
+    # --- Llave maestra para cifrar las claves guardadas desde la UI ---
+    app_secret_key: str = ""                 # pon APP_SECRET_KEY en Fly para activar la bóveda cifrada
+
     # --- Anthropic ---
     anthropic_api_key: str = ""
     model: str = "claude-opus-4-8"
