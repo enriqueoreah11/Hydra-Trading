@@ -89,8 +89,15 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker) -> FastAPI:
         text = (await request.body()).decode("utf-8", "ignore")
         audio = await tts_mod.synth(text)
         if not audio:
-            raise HTTPException(400, "TTS neural no configurado")
+            # devolvemos el motivo real para poder diagnosticar (la UI lo muestra)
+            raise HTTPException(503, tts_mod.last_error() or "TTS neural no configurado")
         return Response(content=audio, media_type="audio/mpeg")
+
+    @app.get("/tts/health")
+    async def tts_health():
+        """Diagnóstico de la voz neural: dice si está configurada y prueba una síntesis real."""
+        from . import tts as tts_mod
+        return await tts_mod.diagnose()
 
     @app.get("/demo", response_class=HTMLResponse)
     async def demo_page(token: str | None = Query(None)):

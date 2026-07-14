@@ -230,8 +230,11 @@ function loadVoices(){ if(!('speechSynthesis'in window))return; esVoices=speechS
 if('speechSynthesis'in window){ loadVoices(); speechSynthesis.onvoiceschanged=loadVoices; }
 $('#b-speak').onclick=()=>{ speakOn=!speakOn; $('#b-speak').classList.toggle('on',speakOn); toast(speakOn?'Voz activada':'Voz silenciada'); if(speakOn)speak('Voz activada.'); };
 function speak(t){ if(!speakOn)return; if(ttsServer){ serverSpeak(t); return; } browserSpeak(t); }
+let ttsWarned=false;
 async function serverSpeak(t){ try{ speaking=true; if(ttsAudio)ttsAudio.pause();
-    const r=await fetch('/tts',{method:'POST',headers:{'Content-Type':'text/plain'},body:t}); if(!r.ok)throw 0;
+    const r=await fetch('/tts',{method:'POST',headers:{'Content-Type':'text/plain'},body:t});
+    if(!r.ok){ const why=await r.text().catch(()=>''); if(!ttsWarned){ ttsWarned=true; toast('Voz neural falló → uso la del navegador. '+(why||'').slice(0,90)); } throw 0; }
+    ttsWarned=false;
     const url=URL.createObjectURL(await r.blob()); ttsAudio=new Audio(url);
     ttsAudio.onended=()=>{speaking=false;URL.revokeObjectURL(url);}; ttsAudio.onerror=()=>{speaking=false;browserSpeak(t);}; await ttsAudio.play();
   }catch(_){ speaking=false; browserSpeak(t); } }
