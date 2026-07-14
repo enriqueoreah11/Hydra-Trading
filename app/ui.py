@@ -166,8 +166,7 @@ function prettify(s){ try{ return escapeHtml(JSON.stringify(JSON.parse(s),null,1
 function escapeHtml(s){ return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 function banner(c){ const b=$('#banner'); let m='';
   if(!c.has_anthropic) m='🔑 Falta la key para que los agentes piensen: <code>fly secrets set ANTHROPIC_API_KEY=sk-ant-...</code>';
-  else if(!c.oauth_ok) m='🔌 Cerebro listo, sin cuenta. Di <b>“Oye Hydra, corre el demo”</b>. Para operar, <a href="/oauth/login">conecta cTrader</a>.';
-  else if(!c.connected) m='⏳ Autorizado, conectando con cTrader…';
+  else if(!c.connected&&c.oauth_ok) m='⏳ Autorizado, conectando con cTrader…';
   b.style.display=m?'block':'none'; b.innerHTML=m; }
 function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('show'); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),3800); }
 
@@ -353,11 +352,15 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
   function qpt(a,c,b,t){ const u=1-t; return [u*u*a[0]+2*u*t*c[0]+t*t*b[0], u*u*a[1]+2*u*t*c[1]+t*t*b[1]]; }
   cv.addEventListener('mousemove',e=>{ const r=cv.getBoundingClientRect(); mx=e.clientX-r.left; my=e.clientY-r.top; });
   cv.addEventListener('mouseleave',()=>{ mx=my=-9999; });
-  cv.addEventListener('click',()=>{ if(hoverKey) openAgent(hoverKey); else { speakStatus(); toast('HYDRA · '+(DATA?DATA.agents.length:0)+' agentes'); } });
+  function openHydra(){ const names=(DATA?DATA.agents:[]).map(a=>a.emoji+' '+a.name).join(' · ');
+    openInfo('🐉 HYDRA · orquestador','<p class="role">El núcleo que coordina a todos los agentes: recibe sus señales, decide y ejecuta como un solo cerebro.</p><div class="empty">Controla a: '+names+'</div>');
+    speak('Hydra en línea, señor. Coordino a los '+(DATA?DATA.agents.length:0)+' agentes.'); }
+  cv.addEventListener('click',()=>{ if(hoverKey==='__hydra') openHydra(); else if(hoverKey) openAgent(hoverKey); else { speakStatus(); toast('HYDRA · '+(DATA?DATA.agents.length:0)+' agentes'); } });
   function frame(now){
     if(!DATA){ requestAnimationFrame(frame); return; }
     if(dirty||A.length!==(DATA.agents||[]).length) build();
     hoverKey=null; let hd=1e9; for(const a of A){ const dx=a.x-mx,dy=a.y-my,d=dx*dx+dy*dy; if(d<1100&&d<hd){hd=d;hoverKey=a.key;} }
+    { const dx=CX-mx,dy=CY-my,d=dx*dx+dy*dy; if(d<729&&d<hd){ hd=d; hoverKey='__hydra'; } }   // núcleo Hydra (27px)
     cv.style.cursor=hoverKey?'pointer':'default';
     const sel=(typeof selected!=='undefined')?selected:null;         // agente abierto (por click)
     if(sel!==curOpen){ curOpen=sel; openAt=now; }
@@ -374,8 +377,11 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       const tw=0.7+0.3*Math.sin(now*0.003+p.ph), al=(0.12+depth*0.5)*tw, sz=1.1+depth*2.6, col=p.gold?'255,214,140':'150,225,255';
       g.fillStyle='rgba('+col+','+(al*0.35)+')'; g.beginPath(); g.arc(sx,sy,sz*2,0,7); g.fill();
       g.fillStyle='rgba('+col+','+al+')'; g.beginPath(); g.arc(sx,sy,sz,0,7); g.fill(); }
-    // núcleo
-    g.shadowColor=halted?'#ff5d73':'#bfeaff'; g.shadowBlur=28+flash*24; g.fillStyle=halted?'rgba(255,150,165,.9)':'rgba(215,246,255,.92)'; g.beginPath(); g.arc(CX,CY,5+flash*3,0,7); g.fill(); g.shadowBlur=0;
+    // conexiones de HYDRA (centro) → TODOS los agentes; se iluminan al señalar el núcleo
+    const hyHover=hoverKey==='__hydra';
+    g.lineWidth=hyHover?1.6:1; g.strokeStyle=hyHover?'rgba(127,246,255,0.7)':'rgba(90,150,180,0.12)'; g.beginPath();
+    for(const a of A){ g.moveTo(CX,CY); g.lineTo(a.x,a.y); } g.stroke();
+    if(hyHover){ const t=(now*0.0007)%1; g.fillStyle='rgba(190,250,255,0.9)'; for(const a of A){ g.beginPath(); g.arc(CX+(a.x-CX)*t,CY+(a.y-CY)*t,2,0,7); g.fill(); } }
     // conexiones entre agentes (curvas); se iluminan al pasar el cursor o si el agente está abierto
     for(const L of LINKS){ const a=byKey[L[0]], b=byKey[L[1]]; if(!a||!b) continue;
       const hot=(hoverKey&&(L[0]===hoverKey||L[1]===hoverKey))||(sel&&(L[0]===sel||L[1]===sel));
@@ -403,11 +409,25 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       g.shadowBlur=0; g.lineWidth=(h||o)?2.4:1.7; g.strokeStyle='rgba('+a.rgb+','+(dim?0.45:((h||o)?1:0.88))+')'; g.beginPath(); g.arc(a.x,a.y,R,0,7); g.stroke();
       if(st==='alert'){ g.strokeStyle='rgba(255,93,115,'+(0.5+0.5*Math.sin(now*0.006))+')'; g.lineWidth=2; g.beginPath(); g.arc(a.x,a.y,R+4,0,7); g.stroke(); }
       glyph(a.key,a.x,a.y,(h||o)?10.5:8.5,a.rgb,dim?0.5:0.98); }
+    // emblema HYDRA (orquestador central) — encima del orbe, conectado a todos
+    const hyR=hyHover?26:22, hp=0.5+0.5*Math.sin(now*0.003), hyc=halted?'255,93,115':'127,246,255', em=halted?'255,150,165':'205,246,255';
+    g.shadowColor='rgba('+hyc+',1)'; g.shadowBlur=hyHover?32:20+flash*18;
+    g.fillStyle='#05090f'; g.beginPath(); g.arc(CX,CY,hyR,0,7); g.fill(); g.shadowBlur=0;
+    g.strokeStyle='rgba('+hyc+','+(0.7+0.3*hp)+')'; g.lineWidth=hyHover?2.6:2; g.beginPath(); g.arc(CX,CY,hyR,0,7); g.stroke();
+    g.save(); g.translate(CX,CY); g.lineJoin='round'; g.strokeStyle='rgba('+em+',1)'; g.lineWidth=1.8;
+    g.beginPath(); g.moveTo(0,-10); g.lineTo(10,0); g.lineTo(0,10); g.lineTo(-10,0); g.closePath(); g.stroke();
+    g.fillStyle='rgba('+em+',1)'; g.beginPath(); g.moveTo(0,-4.5); g.lineTo(4.5,0); g.lineTo(0,4.5); g.lineTo(-4.5,0); g.closePath(); g.fill();
+    g.restore();
+    g.font='700 10px system-ui,sans-serif'; g.textAlign='center'; g.textBaseline='middle'; g.fillStyle='rgba('+em+',0.95)'; g.fillText('HYDRA',CX,CY+hyR+11);
     // etiquetas (nombres) pegadas a su punto
     g.font='10.5px system-ui,sans-serif'; g.textBaseline='middle';
     for(const a of A){ const dim=hoverKey&&a.key!==hoverKey&&a.key!==sel; g.textAlign=a.lalign; g.fillStyle='rgba(216,238,248,'+(dim?0.25:0.9)+')'; g.fillText(a.name.toUpperCase(),a.lx,a.ly); }
     // tooltip al pasar el cursor: rol + con quién colabora + pista de click
-    const tip=$('#tip'); if(hoverKey){ const a=byKey[hoverKey];
+    const tip=$('#tip');
+    if(hoverKey==='__hydra'){ tip.style.left=(CX+30)+'px'; tip.style.top=CY+'px';
+      tip.innerHTML='🐉 <b>HYDRA</b> · orquestador<br><span>Coordina a todos los agentes como un solo cerebro.</span><br><span style="opacity:.7">clic para ver el conjunto</span>';
+      tip.classList.add('show'); }
+    else if(hoverKey){ const a=byKey[hoverKey];
       const nb=LINKS.filter(L=>L[0]===hoverKey||L[1]===hoverKey).map(L=>L[0]===hoverKey?L[1]:L[0]).map(k=>byKey[k]?byKey[k].name:k);
       tip.style.left=(a.x+24)+'px'; tip.style.top=a.y+'px';
       tip.innerHTML=a.emoji+' <b>'+a.name+'</b> · '+stateOf(a.key)+'<br><span>'+a.role+'</span>'+(nb.length?'<br><span>↔ '+nb.join(', ')+'</span>':'')+'<br><span style="opacity:.7">clic para ver sus tareas</span>';
