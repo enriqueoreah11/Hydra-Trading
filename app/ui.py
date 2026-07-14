@@ -120,7 +120,7 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
   <button class="btn ghost" id="b-refresh">⟳</button>
 </div>
 
-<div id="hint">cada círculo es un agente · pasa el cursor para ver qué hace y con quién se conecta</div>
+<div id="hint">los agentes forman el orbe · pasa el cursor para ver qué hace · haz clic para desplegar sus tareas</div>
 <div id="stage"><canvas id="corefx"></canvas><div id="tip"></div></div>
 
 <div id="drawer">
@@ -313,11 +313,32 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
   const LINKS=[['sentinel','analyst'],['analyst','risk_manager'],['risk_manager','portfolio'],['portfolio','executor'],
     ['executor','auditor'],['overnight','executor'],['reviewer','architect'],['architect','validator'],
     ['validator','analyst'],['watchdog','executor'],['watchdog','sentinel']];
-  let A=[], byKey={};
+  // símbolo vectorial propio de cada agente (dibujado, no un emoji genérico)
+  function glyph(k,x,y,s,rgb,al){ g.save(); g.translate(x,y); g.strokeStyle='rgba('+rgb+','+al+')'; g.fillStyle='rgba('+rgb+','+al+')'; g.lineWidth=1.7; g.lineJoin='round'; g.lineCap='round';
+    switch(k){
+      case 'analyst': g.beginPath(); g.moveTo(-s,s*0.5); g.lineTo(-s*0.3,-s*0.15); g.lineTo(s*0.15,s*0.25); g.lineTo(s,-s*0.6); g.stroke(); g.beginPath(); g.moveTo(s*0.5,-s*0.6); g.lineTo(s,-s*0.6); g.lineTo(s,-s*0.12); g.stroke(); break;
+      case 'risk_manager': g.beginPath(); g.moveTo(0,-s); g.lineTo(s*0.8,-s*0.55); g.lineTo(s*0.8,s*0.15); g.quadraticCurveTo(s*0.8,s*0.75,0,s); g.quadraticCurveTo(-s*0.8,s*0.75,-s*0.8,s*0.15); g.lineTo(-s*0.8,-s*0.55); g.closePath(); g.stroke(); break;
+      case 'executor': g.beginPath(); g.moveTo(s*0.15,-s); g.lineTo(-s*0.55,s*0.1); g.lineTo(-s*0.05,s*0.1); g.lineTo(-s*0.15,s); g.lineTo(s*0.55,-s*0.1); g.lineTo(s*0.05,-s*0.1); g.closePath(); g.stroke(); break;
+      case 'overnight': g.beginPath(); g.arc(0,0,s,Math.PI*0.42,Math.PI*1.58,false); g.arc(s*0.45,0,s*0.82,Math.PI*1.35,Math.PI*0.65,true); g.closePath(); g.stroke(); break;
+      case 'reviewer': g.beginPath(); g.arc(0,0,s,0,6.283); g.stroke(); g.beginPath(); g.moveTo(-s*0.42,s*0.02); g.lineTo(-s*0.08,s*0.4); g.lineTo(s*0.48,-s*0.4); g.stroke(); break;
+      case 'architect': g.beginPath(); g.moveTo(0,-s); g.lineTo(-s*0.62,s*0.75); g.moveTo(0,-s); g.lineTo(s*0.62,s*0.75); g.moveTo(-s*0.32,s*0.05); g.lineTo(s*0.32,s*0.05); g.stroke(); g.beginPath(); g.arc(0,-s,s*0.13,0,6.283); g.stroke(); break;
+      case 'sentinel': g.beginPath(); g.moveTo(-s,0); g.quadraticCurveTo(0,-s*0.75,s,0); g.quadraticCurveTo(0,s*0.75,-s,0); g.closePath(); g.stroke(); g.beginPath(); g.arc(0,0,s*0.28,0,6.283); g.stroke(); break;
+      case 'watchdog': g.beginPath(); g.moveTo(-s,0); g.lineTo(-s*0.4,0); g.lineTo(-s*0.15,-s*0.7); g.lineTo(s*0.1,s*0.7); g.lineTo(s*0.35,0); g.lineTo(s,0); g.stroke(); break;
+      case 'auditor': g.beginPath(); g.moveTo(0,-s*0.9); g.lineTo(0,s*0.55); g.moveTo(-s*0.75,-s*0.5); g.lineTo(s*0.75,-s*0.5); g.moveTo(-s*0.55,s*0.7); g.lineTo(s*0.55,s*0.7); g.stroke(); g.beginPath(); g.arc(-s*0.75,-s*0.12,s*0.3,0,Math.PI); g.stroke(); g.beginPath(); g.arc(s*0.75,-s*0.12,s*0.3,0,Math.PI); g.stroke(); break;
+      case 'validator': g.beginPath(); g.moveTo(-s*0.4,-s*0.75); g.lineTo(-s*0.4,-s*0.05); g.lineTo(-s*0.8,s*0.8); g.lineTo(s*0.8,s*0.8); g.lineTo(s*0.4,-s*0.05); g.lineTo(s*0.4,-s*0.75); g.stroke(); g.beginPath(); g.moveTo(-s*0.6,-s*0.75); g.lineTo(s*0.6,-s*0.75); g.stroke(); break;
+      case 'portfolio': g.beginPath(); g.arc(0,0,s,0,6.283); g.stroke(); g.beginPath(); g.moveTo(0,0); g.lineTo(0,-s); g.moveTo(0,0); g.lineTo(s*0.85,s*0.5); g.stroke(); break;
+      default: g.beginPath(); g.arc(0,0,s*0.6,0,6.283); g.stroke();
+    }
+    g.restore(); }
+  // orbe formado por muchos orbes pequeños (esfera fibonacci que gira)
+  const ORB=[]; (function(){ const n=130, ga=Math.PI*(3-Math.sqrt(5)); for(let i=0;i<n;i++){ const yy=1-(i/(n-1))*2, r=Math.sqrt(Math.max(0,1-yy*yy)), th=ga*i;
+    ORB.push({x:Math.cos(th)*r, y:yy, z:Math.sin(th)*r, ph:i*1.3, gold:(i*2654435761>>>0)%100<26}); } })();
+  let A=[], byKey={}, curOpen=null, openAt=0;
   function build(){
     const ags=DATA?DATA.agents:[], N=ags.length||1;
-    A=ags.map((a,i)=>{ const ang=-Math.PI/2 + i/N*Math.PI*2;
-      const x=CX+Math.cos(ang)*Rh, y=CY+Math.sin(ang)*Rh, lx=CX+Math.cos(ang)*Rlab, ly=CY+Math.sin(ang)*Rlab;
+    A=ags.map((a,i)=>{ const ang=-Math.PI/2 + i/N*Math.PI*2, ox=Math.cos(ang), oy=Math.sin(ang);
+      const x=CX+ox*Rh, y=CY+oy*Rh, lx=x+ox*24, ly=y+oy*24;                 // nombre pegado al punto, hacia afuera del orbe
+      const lalign=ox>0.35?'left':(ox<-0.35?'right':'center');
       const extra=Math.min(2,(entriesOf(a.key)/4)|0);
       const t=makeTree(x,y,ang,(i+1)*131+7,extra), sg=t.segs;
       // grafo del árbol: segmentos raíz (salen del agente) y segmentos hijos (para el flujo de energía)
@@ -326,13 +347,9 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
         sg.forEach((s2,sj)=>{ if(si!==sj&&Math.abs(s2[0]-s[2])<0.5&&Math.abs(s2[1]-s[3])<0.5) next[si].push(sj); }); });
       const sparks=[], ns=Math.max(3,Math.round(sg.length*0.55));
       for(let s=0;s<ns;s++){ const seg=roots.length?roots[(Math.random()*roots.length)|0]:0; sparks.push({seg,t:Math.random(),sp:0.012+Math.random()*0.020}); }
-      return {key:a.key,name:a.name,emoji:a.emoji,role:a.role,x,y,lx,ly,ang,rgb:hx2(a.ring||PAL[i%PAL.length]),segs:sg,leaves:t.leaves,roots,next,sparks}; });
+      return {key:a.key,name:a.name,emoji:a.emoji,role:a.role,x,y,lx,ly,ang,rgb:hx2(PAL[i%PAL.length]),segs:sg,leaves:t.leaves,roots,next,sparks}; });
     byKey={}; A.forEach(a=>byKey[a.key]=a); dirty=false;
   }
-  const star=[];
-  function starSpawn(n){ for(let i=0;i<n;i++){ const a=Math.random()*6.283, sp=0.6+Math.random()*3.6;
-    star.push({x:CX,y:CY,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,life:1,dl:0.009+Math.random()*0.013,c:Math.random()<0.5?'255,214,120':'150,240,255'});
-    if(star.length>360)star.shift(); } }
   function qpt(a,c,b,t){ const u=1-t; return [u*u*a[0]+2*u*t*c[0]+t*t*b[0], u*u*a[1]+2*u*t*c[1]+t*t*b[1]]; }
   cv.addEventListener('mousemove',e=>{ const r=cv.getBoundingClientRect(); mx=e.clientX-r.left; my=e.clientY-r.top; });
   cv.addEventListener('mouseleave',()=>{ mx=my=-9999; });
@@ -342,57 +359,58 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     if(dirty||A.length!==(DATA.agents||[]).length) build();
     hoverKey=null; let hd=1e9; for(const a of A){ const dx=a.x-mx,dy=a.y-my,d=dx*dx+dy*dy; if(d<1100&&d<hd){hd=d;hoverKey=a.key;} }
     cv.style.cursor=hoverKey?'pointer':'default';
-    const flash=now<wakeUntil?1:0;
+    const sel=(typeof selected!=='undefined')?selected:null;         // agente abierto (por click)
+    if(sel!==curOpen){ curOpen=sel; openAt=now; }
+    const grow=sel?Math.min(1,(now-openAt)/450):0;
+    const flash=now<wakeUntil?1:0, Rorb=Rh;
     g.globalCompositeOperation='source-over'; g.fillStyle='#04070e'; g.fillRect(0,0,W,H);
     g.globalCompositeOperation='lighter'; g.shadowBlur=0;
-    // radios centro→agente
-    g.strokeStyle='rgba(80,150,180,0.10)'; g.lineWidth=1; g.beginPath();
-    for(const a of A){ g.moveTo(CX,CY); g.lineTo(a.x,a.y); } g.stroke();
-    // conexiones entre agentes (curvas hacia el centro)
+    // volumen del orbe (glow interno)
+    const vg=g.createRadialGradient(CX,CY,Rorb*0.08,CX,CY,Rorb); vg.addColorStop(0,halted?'rgba(255,110,130,0.12)':'rgba(90,185,225,0.13)'); vg.addColorStop(0.7,'rgba(40,95,125,0.05)'); vg.addColorStop(1,'rgba(0,0,0,0)');
+    g.fillStyle=vg; g.beginPath(); g.arc(CX,CY,Rorb,0,7); g.fill();
+    // orbe hecho de orbes pequeños (gira lentamente)
+    const rot=now*0.00018, ca=Math.cos(rot), sa=Math.sin(rot);
+    for(const p of ORB){ const X=p.x*ca-p.z*sa, Z=p.x*sa+p.z*ca; const sx=CX+X*Rorb, sy=CY+p.y*Rorb, depth=(Z+1)/2;
+      const tw=0.7+0.3*Math.sin(now*0.003+p.ph), al=(0.12+depth*0.5)*tw, sz=1.1+depth*2.6, col=p.gold?'255,214,140':'150,225,255';
+      g.fillStyle='rgba('+col+','+(al*0.35)+')'; g.beginPath(); g.arc(sx,sy,sz*2,0,7); g.fill();
+      g.fillStyle='rgba('+col+','+al+')'; g.beginPath(); g.arc(sx,sy,sz,0,7); g.fill(); }
+    // núcleo
+    g.shadowColor=halted?'#ff5d73':'#bfeaff'; g.shadowBlur=28+flash*24; g.fillStyle=halted?'rgba(255,150,165,.9)':'rgba(215,246,255,.92)'; g.beginPath(); g.arc(CX,CY,5+flash*3,0,7); g.fill(); g.shadowBlur=0;
+    // conexiones entre agentes (curvas); se iluminan al pasar el cursor o si el agente está abierto
     for(const L of LINKS){ const a=byKey[L[0]], b=byKey[L[1]]; if(!a||!b) continue;
-      const hot=hoverKey&&(L[0]===hoverKey||L[1]===hoverKey);
+      const hot=(hoverKey&&(L[0]===hoverKey||L[1]===hoverKey))||(sel&&(L[0]===sel||L[1]===sel));
       const cx=(a.x+b.x)/2+(CX-(a.x+b.x)/2)*0.42, cy=(a.y+b.y)/2+(CY-(a.y+b.y)/2)*0.42;
       g.strokeStyle=hot?'rgba(127,246,255,0.85)':'rgba(90,150,180,0.13)'; g.lineWidth=hot?1.7:1;
       g.beginPath(); g.moveTo(a.x,a.y); g.quadraticCurveTo(cx,cy,b.x,b.y); g.stroke();
       if(hot){ const p=qpt([a.x,a.y],[cx,cy],[b.x,b.y],(now*0.0006)%1); g.fillStyle='rgba(190,250,255,1)'; g.beginPath(); g.arc(p[0],p[1],2.2,0,7); g.fill(); } }
-    // ramas de cada agente
-    for(const a of A){ const h=a.key===hoverKey, dim=hoverKey&&!h;
-      g.strokeStyle='rgba('+a.rgb+','+(dim?0.10:(h?0.95:0.42))+')'; g.lineWidth=h?1.6:1.1;
-      g.beginPath(); for(const s of a.segs){ g.moveTo(s[0],s[1]); g.lineTo(s[2],s[3]); } g.stroke();
-      for(const l of a.leaves){ const tw=0.55+0.45*Math.sin(now*0.004+l[3]); const al=(dim?0.12:(h?1:0.62))*tw;
-        g.fillStyle='rgba('+a.rgb+','+al+')'; g.beginPath(); g.arc(l[0],l[1],l[2]*(h?1.4:1),0,7); g.fill(); }
-      // energía fluyendo del agente hacia sus ramas (raíz→hoja)
-      for(const sp of a.sparks){ sp.t+=sp.sp*(h?1.8:1);
+    // RAMIFICACIONES: sólo del agente abierto (al hacer click), creciendo desde su punto
+    if(sel&&byKey[sel]&&grow>0.01){ const a=byKey[sel];
+      g.save(); const sc=0.25+0.75*grow; g.translate(a.x,a.y); g.scale(sc,sc); g.translate(-a.x,-a.y); g.globalAlpha=grow;
+      g.strokeStyle='rgba('+a.rgb+',0.95)'; g.lineWidth=1.5; g.beginPath(); for(const s of a.segs){ g.moveTo(s[0],s[1]); g.lineTo(s[2],s[3]); } g.stroke();
+      for(const l of a.leaves){ const tw=0.6+0.4*Math.sin(now*0.004+l[3]); g.fillStyle='rgba('+a.rgb+','+tw+')'; g.beginPath(); g.arc(l[0],l[1],l[2]*1.3,0,7); g.fill(); }
+      g.restore();
+      if(grow>0.98){ for(const sp of a.sparks){ sp.t+=sp.sp*1.5;
         if(sp.t>=1){ const nx=a.next[sp.seg]; sp.seg=(nx&&nx.length)?nx[(Math.random()*nx.length)|0]:(a.roots.length?a.roots[(Math.random()*a.roots.length)|0]:0); sp.t=0; }
         const s=a.segs[sp.seg]; if(!s) continue; const x=s[0]+(s[2]-s[0])*sp.t, y=s[1]+(s[3]-s[1])*sp.t;
         const tt=Math.max(0,sp.t-0.22), tx=s[0]+(s[2]-s[0])*tt, ty=s[1]+(s[3]-s[1])*tt;
-        g.strokeStyle='rgba('+a.rgb+','+(dim?0.20:0.75)+')'; g.lineWidth=h?2:1.4; g.beginPath(); g.moveTo(tx,ty); g.lineTo(x,y); g.stroke();
-        g.fillStyle='rgba('+a.rgb+','+(dim?0.35:1)+')'; g.beginPath(); g.arc(x,y,h?2.3:1.7,0,7); g.fill(); } }
-    // estrella de datos (núcleo) — más grande, con halo
-    starSpawn(halted?1:(speaking?16:11));
-    for(let i=star.length-1;i>=0;i--){ const p=star[i]; const px=p.x,py=p.y; p.x+=p.vx; p.y+=p.vy; p.vx*=0.975; p.vy*=0.975; p.life-=p.dl;
-      if(p.life<=0){ star.splice(i,1); continue; } const al=p.life;
-      g.strokeStyle='rgba('+p.c+','+(al*0.8)+')'; g.lineWidth=1.3; g.beginPath(); g.moveTo(px,py); g.lineTo(p.x,p.y); g.stroke(); }
-    const hg=g.createRadialGradient(CX,CY,0,CX,CY,S*0.15); hg.addColorStop(0,halted?'rgba(255,110,130,0.22)':'rgba(255,214,150,0.20)'); hg.addColorStop(1,'rgba(0,0,0,0)');
-    g.fillStyle=hg; g.beginPath(); g.arc(CX,CY,S*0.15,0,7); g.fill();
-    g.shadowColor=halted?'#ff5d73':'#ffe0a0'; g.shadowBlur=34+flash*26;
-    g.fillStyle=halted?'rgba(255,150,165,.98)':'rgba(255,244,214,.98)'; g.beginPath(); g.arc(CX,CY,7+flash*4,0,7); g.fill(); g.shadowBlur=0;
-    // círculos de agente (visibles) con ícono
-    for(const a of A){ const st=stateOf(a.key), h=a.key===hoverKey, on=st==='active'||st==='alert', dim=hoverKey&&!h;
-      const R=h?18:14;
-      if(on||h){ g.shadowColor='rgba('+a.rgb+',1)'; g.shadowBlur=h?26:13; } else g.shadowBlur=0;
+        g.strokeStyle='rgba('+a.rgb+',0.8)'; g.lineWidth=1.6; g.beginPath(); g.moveTo(tx,ty); g.lineTo(x,y); g.stroke();
+        g.fillStyle='rgba('+a.rgb+',1)'; g.beginPath(); g.arc(x,y,2,0,7); g.fill(); } } }
+    // círculos de agente en el borde del orbe, con su símbolo propio
+    for(const a of A){ const st=stateOf(a.key), h=a.key===hoverKey, o=a.key===sel, on=st==='active'||st==='alert', dim=(hoverKey&&!h&&!o);
+      const R=(h||o)?18:14;
+      if(on||h||o){ g.shadowColor='rgba('+a.rgb+',1)'; g.shadowBlur=(h||o)?24:12; } else g.shadowBlur=0;
       g.fillStyle='#05090f'; g.beginPath(); g.arc(a.x,a.y,R,0,7); g.fill();
-      g.shadowBlur=0; g.lineWidth=h?2.4:1.7; g.strokeStyle='rgba('+a.rgb+','+(dim?0.4:(h?1:0.85))+')'; g.beginPath(); g.arc(a.x,a.y,R,0,7); g.stroke();
+      g.shadowBlur=0; g.lineWidth=(h||o)?2.4:1.7; g.strokeStyle='rgba('+a.rgb+','+(dim?0.45:((h||o)?1:0.88))+')'; g.beginPath(); g.arc(a.x,a.y,R,0,7); g.stroke();
       if(st==='alert'){ g.strokeStyle='rgba(255,93,115,'+(0.5+0.5*Math.sin(now*0.006))+')'; g.lineWidth=2; g.beginPath(); g.arc(a.x,a.y,R+4,0,7); g.stroke(); }
-      g.globalAlpha=dim?0.5:1; g.font=(h?'16px':'13px')+' system-ui,"Segoe UI Emoji",sans-serif'; g.textAlign='center'; g.textBaseline='middle'; g.fillStyle='#eaffff'; g.fillText(a.emoji,a.x,a.y+0.5); g.globalAlpha=1; }
-    // etiquetas (nombres de agente)
-    g.font='11px system-ui,sans-serif'; g.textAlign='center'; g.textBaseline='middle';
-    for(const a of A){ const dim=hoverKey&&a.key!==hoverKey; g.fillStyle='rgba(214,236,246,'+(dim?0.22:0.82)+')'; g.fillText(a.name.toUpperCase(),a.lx,a.ly); }
-    // tooltip: rol + con quién colabora
+      glyph(a.key,a.x,a.y,(h||o)?10.5:8.5,a.rgb,dim?0.5:0.98); }
+    // etiquetas (nombres) pegadas a su punto
+    g.font='10.5px system-ui,sans-serif'; g.textBaseline='middle';
+    for(const a of A){ const dim=hoverKey&&a.key!==hoverKey&&a.key!==sel; g.textAlign=a.lalign; g.fillStyle='rgba(216,238,248,'+(dim?0.25:0.9)+')'; g.fillText(a.name.toUpperCase(),a.lx,a.ly); }
+    // tooltip al pasar el cursor: rol + con quién colabora + pista de click
     const tip=$('#tip'); if(hoverKey){ const a=byKey[hoverKey];
       const nb=LINKS.filter(L=>L[0]===hoverKey||L[1]===hoverKey).map(L=>L[0]===hoverKey?L[1]:L[0]).map(k=>byKey[k]?byKey[k].name:k);
-      tip.style.left=(a.x+22)+'px'; tip.style.top=a.y+'px';
-      tip.innerHTML=a.emoji+' <b>'+a.name+'</b> · '+stateOf(a.key)+'<br><span>'+a.role+'</span>'+(nb.length?'<br><span>↔ '+nb.join(', ')+'</span>':'');
+      tip.style.left=(a.x+24)+'px'; tip.style.top=a.y+'px';
+      tip.innerHTML=a.emoji+' <b>'+a.name+'</b> · '+stateOf(a.key)+'<br><span>'+a.role+'</span>'+(nb.length?'<br><span>↔ '+nb.join(', ')+'</span>':'')+'<br><span style="opacity:.7">clic para ver sus tareas</span>';
       tip.classList.add('show'); } else tip.classList.remove('show');
     requestAnimationFrame(frame);
   }
