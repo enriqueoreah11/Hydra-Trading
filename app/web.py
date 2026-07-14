@@ -60,6 +60,20 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker) -> FastAPI:
             "<code>CTRADER_ACCOUNT_ID</code> y reinicia el servicio.</p>"
             "<a href='/'>← dashboard</a>")
 
+    @app.get("/accounts")
+    async def accounts_list():
+        """Lista las cuentas autorizadas (ctidTraderAccountId) para saber cuál poner en CTRADER_ACCOUNT_ID."""
+        if not tokens.has_tokens:
+            return {"ok": False, "reason": "sin OAuth — conecta cTrader primero"}
+        try:
+            token = await tokens.get_access_token()
+            accs = await broker.list_accounts(token)
+            return {"ok": True, "current": settings.ctrader_account_id, "env": settings.ctrader_env,
+                    "accounts": [{"id": a.get("ctidTraderAccountId"), "live": a.get("isLive"),
+                                  "login": a.get("traderLogin")} for a in accs]}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "reason": str(exc)[:200]}
+
     # -------------------------------------------------------------- controls
 
     @app.post("/halt")

@@ -246,7 +246,8 @@ async function saveSecrets(){ const els=document.querySelectorAll('#sys-keys [da
 function renderSysInfo(){ if(!DATA){ $('#sys-info').innerHTML='<div class="empty">Cargando…</div>'; return; } const c=DATA.core;
   const conn=c.connected?'<b style="color:#34d399">conectado</b>':(c.oauth_ok?'<b style="color:#fbbf24">autorizado, conectando…</b>':'<b style="color:#ff5d73">sin conexión</b>');
   let h='<div class="cfg"><span>cTrader</span> '+conn+'</div>';
-  if(!c.connected) h+='<a class="btn" href="/oauth/login" style="display:inline-block;margin:10px 0;text-decoration:none">🔌 Conectar mi cuenta de cTrader</a>';
+  if(!c.oauth_ok) h+='<a class="btn" href="/oauth/login" style="display:inline-block;margin:10px 0;text-decoration:none">🔌 Conectar mi cuenta de cTrader</a>';
+  if(c.oauth_ok&&!c.connected) h+='<div id="sys-accounts" class="empty">Autorizado. Buscando el número de tu cuenta…</div>';
   h+='<div class="cfg"><span>Modo</span> <b>'+(c.dry_run?'PAPEL (demo)':'REAL')+'</b></div>';
   h+='<div class="cfg"><span>Símbolos</span> <b>'+((c.symbols||[]).join(', ')||'—')+'</b></div>';
   h+='<div class="cfg"><span>Modelo IA</span> <b>'+(c.model||'—')+'</b></div>';
@@ -254,7 +255,17 @@ function renderSysInfo(){ if(!DATA){ $('#sys-info').innerHTML='<div class="empty
   h+='<div class="cfg"><span>Te llama</span> <b>'+(c.owner_name||'Krauser')+'</b></div>';
   h+='<div class="cfg"><span>Anthropic key</span> <b>'+(c.has_anthropic?'puesta ✅':'falta ❌')+'</b></div>';
   h+='<div class="empty" style="margin-top:12px">Los ajustes se cambian con <code>fly secrets set …</code> y luego <code>fly deploy</code>.</div>';
-  $('#sys-info').innerHTML=h; }
+  $('#sys-info').innerHTML=h;
+  if(c.oauth_ok&&!c.connected) loadAccounts(); }
+async function loadAccounts(){ let d; try{ d=await (await fetch('/accounts')).json(); }catch(e){ return; }
+  const el=$('#sys-accounts'); if(!el) return;
+  if(!d.ok||!(d.accounts||[]).length){ el.innerHTML='No pude listar tu cuenta'+(d&&d.reason?': '+escapeHtml(d.reason):'.'); return; }
+  let h='<div style="color:#cfe6f2;font-size:12px;margin-bottom:6px">Falta decirle a Hydra <b>a cuál cuenta</b> conectarse. Tus cuentas:</div>';
+  d.accounts.forEach(a=>{ const env=a.live?'live':'demo';
+    h+='<div class="cfg"><span>#'+a.id+(a.login?' · login '+a.login:'')+'</span> <b>'+(a.live?'LIVE':'DEMO')+'</b></div>'
+      +'<div class="empty" style="margin:4px 0 12px"><code>fly secrets set CTRADER_ACCOUNT_ID='+a.id+' CTRADER_ENV='+env+'</code></div>'; });
+  h+='<div class="empty">Corre el comando de tu cuenta y Fly reinicia solo; en ~1 min queda conectada.</div>';
+  el.innerHTML=h; }
 async function doHalt(){ const halt=$('#b-halt').textContent.includes('HALT'); await fetch(halt?'/halt':'/resume',{method:'POST'}); toast(halt?'Sistema DETENIDO':'Sistema reanudado'); speak(halt?'Sistema detenido, '+SIR+'.':'Sistema reanudado, '+SIR+'.'); load(); }
 async function openCalendar(){ selected=null;
   $('#d-e').textContent='📅'; $('#d-name').textContent='Calendario económico'; $('#d-role').textContent='Próximos 7 días'; $('#d-body').innerHTML='<div class="empty">Cargando eventos…</div>'; $('#drawer').classList.add('open');
