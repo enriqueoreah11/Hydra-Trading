@@ -258,7 +258,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         store.log("tester", "scan", f"Escaneo terminado: {found} entrada(s) según tu estrategia.")
         return {"ok": True, "found": found}
 
-    async def _dxy_snapshot():
+    async def _dxy_snapshot(tf: str):
         """DXY sintético: se calcula de la canasta de divisas (no existe como símbolo en cTrader)."""
         from .broker import Candle
         from . import indicators
@@ -268,7 +268,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         diag: dict[str, str] = {}
         for p in weights:
             try:
-                cs = await asyncio.wait_for(broker.candles(p, settings.timeframe, 220), timeout=12)
+                cs = await asyncio.wait_for(broker.candles(p, tf, 220), timeout=12)
                 series[p] = [c.close for c in cs]
                 diag[p] = f"{len(series[p])} velas"
             except Exception as exc:  # noqa: BLE001
@@ -318,28 +318,31 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             names = [n for n in names if q.upper() in n]
         return {"ok": True, "count": len(names), "symbols": names[:400]}
 
+    _TFS = {"M1", "M5", "M15", "M30", "H1", "H4", "D1"}
+
     @app.get("/market/{symbol}")
-    async def market_tech(symbol: str):
-        """Resumen técnico de un instrumento: precio, indicadores y key levels."""
+    async def market_tech(symbol: str, tf: str = Query("")):
+        """Resumen técnico de un instrumento en la temporalidad tf."""
         symbol = symbol.upper()
+        timeframe = tf.upper() if tf.upper() in _TFS else settings.timeframe
         if not broker.client.account_authorized:
             return {"ok": False, "reason": "Conecta cTrader para ver los datos."}
         from . import indicators
         try:
             if symbol == "DXY":
-                snap = await _dxy_snapshot()
+                snap = await _dxy_snapshot(timeframe)
                 if not snap:
                     return {"ok": False, "reason": "No pude calcular el DXY."}
                 if snap.get("__error__"):
                     return {"ok": False, "reason": snap["__error__"]}
             else:
-                candles = await asyncio.wait_for(broker.candles(symbol, settings.timeframe, 250), timeout=15)
+                candles = await asyncio.wait_for(broker.candles(symbol, timeframe, 250), timeout=15)
                 if len(candles) < 60:
                     return {"ok": False, "reason": "Pocos datos para este símbolo."}
                 snap = indicators.snapshot(candles)
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "reason": str(exc)[:140]}
-        return {"ok": True, "symbol": symbol, "timeframe": settings.timeframe, **_summarize(snap)}
+        return {"ok": True, "symbol": symbol, "timeframe": timeframe, **_summarize(snap)}
 
     @app.get("/correlations")
     async def correlations():
