@@ -152,6 +152,7 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     <div class="ssec">
       <button class="btn ghost" id="b-mic" title="Hablar (clic, o di “Oye Hydra”)">🎙️ Hablar</button>
       <button class="btn ghost" id="b-wake" title="Palabra mágica">👂 Oye Hydra</button>
+      <button class="btn ghost" id="b-mute" title="Dejar de oír el micrófono ahora">🔇 No oír</button>
       <button class="btn ghost" id="b-clap" title="Activar aplaudiendo 2 veces">👏 Aplauso</button>
       <button class="btn ghost on" id="b-speak" title="Voz de respuesta">🔊 Voz</button>
     </div>
@@ -331,7 +332,7 @@ function browserSpeak(t){ if(!('speechSynthesis'in window))return; try{ speechSy
   u.onstart=()=>{speaking=true;}; u.onend=()=>{speaking=false;}; u.onerror=()=>{speaking=false;}; speechSynthesis.speak(u); }catch(_){}}
 
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-let recog=null,running=false,wakeMode=false,awaiting=false,awaitTimer=null,micDenied=false;
+let recog=null,running=false,wakeMode=false,awaiting=false,awaitTimer=null,micDenied=false,micMuted=false;
 const WAKE=['oye hydra','hola hydra','hey hydra','oye idra','oye hidra','hydra','hidra','jarvis'];
 function setV(t){ const el=$('#vstatus'); if(!el)return; el.innerHTML=t||''; el.style.display=t?'inline-block':'none'; if(el._t)clearTimeout(el._t); if(t)el._t=setTimeout(()=>{el.style.display='none';},6000); }
 function coreHear(on){ listeningActive=on; $('#b-mic').classList.toggle('mic-on',on); }
@@ -342,12 +343,15 @@ else{ recog=new SR(); recog.lang='es-ES'; recog.interimResults=true; recog.conti
   recog.onerror=e=>{ if(e.error==='not-allowed'){ micDenied=true; wakeMode=false; $('#b-wake').classList.remove('on'); setV(''); toast('Micrófono bloqueado. Actívalo en Ajustes de Safari → Sitios web → Micrófono → Permitir.'); } };
   recog.onend=()=>{ running=false; coreHear(false); if((wakeMode||awaiting)&&!micDenied){ setTimeout(startRecog,300);} else setV(''); };
 }
-function startRecog(){ if(!recog||running||micDenied)return; try{ recog.start(); running=true; coreHear(true);}catch(_){}}
+function startRecog(){ if(!recog||running||micDenied||micMuted)return; try{ recog.start(); running=true; coreHear(true);}catch(_){}}
 function handlePhrase(t){ if(awaiting){ clearTimeout(awaitTimer); awaiting=false; wakeFlash(); runCmd(t); return; }
   const w=WAKE.find(w=>t.includes(w)); if(!w)return; wakeFlash(); const rest=t.slice(t.indexOf(w)+w.length).trim();
   if(rest.length>2){ runCmd(rest); } else { speak('A la orden, '+SIR+'.'); setV('<b>Le escucho…</b>'); awaiting=true; awaitTimer=setTimeout(()=>{awaiting=false;setV('Di <b>“Oye Hydra…”</b>');},9000); } }
-$('#b-mic').onclick=()=>{ if(!SR){toast('Usa Chrome para la voz');return;} micDenied=false; awaiting=true; setV('<b>Le escucho…</b>'); speak('Dígame, '+SIR+'.'); if(!running)startRecog(); };
-$('#b-wake').onclick=()=>{ wakeMode=!wakeMode; $('#b-wake').classList.toggle('on',wakeMode); if(wakeMode){ micDenied=false; try{localStorage.setItem('hydraWake','1');}catch(_){} toast('Escuchando “Oye Hydra”'); startRecog(); } else { try{localStorage.removeItem('hydraWake');}catch(_){} toast('Palabra mágica apagada'); if(recog&&running)recog.stop(); } };
+$('#b-mic').onclick=()=>{ if(!SR){toast('Usa Chrome para la voz');return;} micDenied=false; micMuted=false; $('#b-mute').classList.remove('on'); awaiting=true; setV('<b>Le escucho…</b>'); speak('Dígame, '+SIR+'.'); if(!running)startRecog(); };
+$('#b-wake').onclick=()=>{ wakeMode=!wakeMode; $('#b-wake').classList.toggle('on',wakeMode); if(wakeMode){ micDenied=false; micMuted=false; $('#b-mute').classList.remove('on'); try{localStorage.setItem('hydraWake','1');}catch(_){} toast('Escuchando “Oye Hydra”'); startRecog(); } else { try{localStorage.removeItem('hydraWake');}catch(_){} toast('Palabra mágica apagada'); if(recog&&running)recog.stop(); } };
+$('#b-mute').onclick=()=>{ micMuted=!micMuted; $('#b-mute').classList.toggle('on',micMuted);
+  if(micMuted){ wakeMode=false; awaiting=false; $('#b-wake').classList.remove('on'); try{localStorage.removeItem('hydraWake');}catch(_){} if(recog&&running)recog.stop(); if(typeof clapOn!=='undefined'&&clapOn)stopClap(); setV(''); toast('Micrófono silenciado 🔇'); speak('Dejo de escuchar, '+SIR+'.'); }
+  else { toast('Micrófono disponible. Toca 👂 Oye Hydra para escuchar.'); } };
 
 let clapOn=false,clapStream=null,clapRAF=null,clapTimes=[];
 $('#b-clap').onclick=async()=>{ if(clapOn){stopClap();}else{await startClap();} };
