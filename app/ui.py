@@ -78,6 +78,8 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 .feed .k{color:#7ff6ff;font-size:11px}.feed .t{color:#5f7387;font-size:10.5px;float:right}
 .feed .c{color:#a9bcd0;font-size:11.5px;margin-top:5px;white-space:pre-wrap;word-break:break-word;max-height:150px;overflow:auto}
 .empty{color:#5f7387;font-size:12.5px;padding:10px 0}
+.cfg{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:9px 2px;border-bottom:1px solid #10293650;font-size:12.5px;color:#a9bcd0}
+.cfg span{color:#5f7387}.cfg b{color:#dffaff}.cfg code{background:#03121b;padding:1px 6px;border-radius:5px;color:#7ff6ff}
 .cal-day{color:#7ff6ff;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:16px 0 7px;border-bottom:1px solid #10293650;padding-bottom:4px}
 .cal-row{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:8px;font-size:12px}
 .cal-row.watched{background:#0a1f2c88;border-left:2px solid #38e6ff}
@@ -134,7 +136,8 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
   <button class="btn" id="b-demo">▶ DEMO</button>
   <button class="btn ghost" id="b-cal">📅 CALENDARIO</button>
   <button class="btn ghost" id="b-halt">⏸ HALT</button>
-  <button class="btn ghost" id="b-refresh">⟳</button>
+  <button class="btn ghost" id="b-config" title="Configuración y conexión">⚙</button>
+  <button class="btn ghost" id="b-refresh" title="Actualizar datos">⟳</button>
 </div>
 
 <div id="hint">los agentes forman el orbe · pasa el cursor para ver qué hace · haz clic para desplegar sus tareas</div>
@@ -187,7 +190,20 @@ function banner(c){ const b=$('#banner'); let m='';
   b.style.display=m?'block':'none'; b.innerHTML=m; }
 function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('show'); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),3800); }
 
-$('#b-refresh').onclick=load; $('#b-halt').onclick=doHalt; $('#b-demo').onclick=runDemo; $('#b-cal').onclick=openCalendar;
+$('#b-refresh').onclick=()=>{ toast('Datos actualizados'); load(); }; $('#b-halt').onclick=doHalt; $('#b-demo').onclick=runDemo; $('#b-cal').onclick=openCalendar; $('#b-config').onclick=openConfig;
+function openConfig(){ if(!DATA){ toast('Cargando…'); return; } const c=DATA.core;
+  const conn=c.connected?'<b style="color:#34d399">conectado</b>':(c.oauth_ok?'<b style="color:#fbbf24">autorizado, conectando…</b>':'<b style="color:#ff5d73">sin conexión</b>');
+  let h='<p class="role">Estado y conexión de Hydra.</p>';
+  h+='<div class="cfg"><span>cTrader</span> '+conn+'</div>';
+  if(!c.connected) h+='<a class="btn" href="/oauth/login" style="display:inline-block;margin:10px 0;text-decoration:none">🔌 Conectar mi cuenta de cTrader</a>';
+  h+='<div class="cfg"><span>Modo</span> <b>'+(c.dry_run?'PAPEL (demo, no envía órdenes reales)':'REAL')+'</b></div>';
+  h+='<div class="cfg"><span>Símbolos</span> <b>'+((c.symbols||[]).join(', ')||'—')+'</b></div>';
+  h+='<div class="cfg"><span>Modelo IA</span> <b>'+(c.model||'—')+'</b></div>';
+  h+='<div class="cfg"><span>Voz neural</span> <b>'+(c.tts_server?'activa ✅':'navegador (genérica)')+'</b> · <a href="/tts/health" target="_blank" style="color:#7ff6ff">diagnóstico</a></div>';
+  h+='<div class="cfg"><span>Te llama</span> <b>'+(c.owner_name||'Krauser')+'</b></div>';
+  h+='<div class="cfg"><span>Anthropic key</span> <b>'+(c.has_anthropic?'puesta ✅':'falta ❌')+'</b></div>';
+  h+='<div class="empty" style="margin-top:12px">Los ajustes se cambian con <code>fly secrets set …</code> y luego <code>fly deploy</code>.</div>';
+  openInfo('⚙ Configuración', h); }
 async function doHalt(){ const halt=$('#b-halt').textContent.includes('HALT'); await fetch(halt?'/halt':'/resume',{method:'POST'}); toast(halt?'Sistema DETENIDO':'Sistema reanudado'); speak(halt?'Sistema detenido, '+SIR+'.':'Sistema reanudado, '+SIR+'.'); load(); }
 async function openCalendar(){ selected=null;
   $('#d-e').textContent='📅'; $('#d-name').textContent='Calendario económico'; $('#d-role').textContent='Próximos 7 días'; $('#d-body').innerHTML='<div class="empty">Cargando eventos…</div>'; $('#drawer').classList.add('open');
@@ -420,11 +436,16 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       g.fillStyle='rgba('+m.col+','+((0.45+depth*0.5)*pu)+')'; g.beginPath(); g.arc(m.sx,m.sy,R,0,7); g.fill(); g.shadowBlur=0;
       g.font=(hm?'700 10px':'9px')+' system-ui,sans-serif'; g.textAlign='center'; g.textBaseline='top';
       g.fillStyle='rgba('+m.col+','+(hm?1:(0.30+depth*0.55))+')'; g.fillText(m.name,m.sx,m.sy+R+3); }
-    // conexiones de HYDRA (centro) → TODOS los agentes; se iluminan al señalar el núcleo
+    // conexiones de HYDRA (centro) → agentes. Base tenue + resaltado del agente señalado/abierto
     const hyHover=hoverKey==='__hydra';
-    g.lineWidth=hyHover?1.6:1; g.strokeStyle=hyHover?'rgba(127,246,255,0.7)':'rgba(90,150,180,0.12)'; g.beginPath();
+    g.lineWidth=1; g.strokeStyle='rgba(90,150,180,0.12)'; g.beginPath();
     for(const a of A){ g.moveTo(CX,CY); g.lineTo(a.x,a.y); } g.stroke();
-    if(hyHover){ const t=(now*0.0007)%1; g.fillStyle='rgba(190,250,255,0.9)'; for(const a of A){ g.beginPath(); g.arc(CX+(a.x-CX)*t,CY+(a.y-CY)*t,2,0,7); g.fill(); } }
+    // se ilumina el radio a Hydra del agente abierto (sel) o señalado; o TODOS si señalas el núcleo
+    const litHydra=hyHover?A.map(a=>a.key):[sel,hoverKey].filter(Boolean);
+    if(litHydra.length){ g.lineWidth=1.7; g.strokeStyle='rgba(127,246,255,0.8)'; g.beginPath();
+      for(const a of A){ if(litHydra.indexOf(a.key)>=0){ g.moveTo(CX,CY); g.lineTo(a.x,a.y); } } g.stroke();
+      const t=(now*0.0007)%1; g.fillStyle='rgba(190,250,255,0.95)';
+      for(const a of A){ if(litHydra.indexOf(a.key)>=0){ g.beginPath(); g.arc(CX+(a.x-CX)*t,CY+(a.y-CY)*t,2.2,0,7); g.fill(); } } }
     // conexiones entre agentes (curvas); se iluminan al pasar el cursor o si el agente está abierto
     for(const L of LINKS){ const a=byKey[L[0]], b=byKey[L[1]]; if(!a||!b) continue;
       const hot=(hoverKey&&(L[0]===hoverKey||L[1]===hoverKey))||(sel&&(L[0]===sel||L[1]===sel));
