@@ -251,6 +251,7 @@ Conecta tu cuenta en <a href="/oauth/login">/oauth/login</a> para operar de verd
                 "playbook_version": st["playbook_version"],
                 "has_anthropic": bool(settings.anthropic_api_key),
                 "voice_enabled": settings.voice_enabled,
+                "owner_name": settings.owner_name,
                 "tts_server": tts_mod.available(),
                 "calendar_embed_url": settings.calendar_embed_url,
                 "server_time": now,

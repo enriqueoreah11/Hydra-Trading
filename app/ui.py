@@ -167,7 +167,7 @@ function renderCore(c){
   $('#b-halt').textContent=c.halted?'▶ RESUME':'⏸ HALT';
   $('#b-cal').style.display='';
   if(c.voice_enabled===false)['b-mic','b-wake','b-clap','b-speak'].forEach(id=>{const e=$('#'+id);if(e)e.style.display='none';});
-  ttsServer=!!c.tts_server;
+  ttsServer=!!c.tts_server; if(c.owner_name)SIR=c.owner_name;
 }
 function agentByKey(k){ return DATA?DATA.agents.find(a=>a.key===k):null; }
 function openAgent(k){ selected=k; renderDrawer(k); $('#drawer').classList.add('open'); const a=agentByKey(k); if(a)speak(a.name+'. '+a.role); }
@@ -188,7 +188,7 @@ function banner(c){ const b=$('#banner'); let m='';
 function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('show'); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),3800); }
 
 $('#b-refresh').onclick=load; $('#b-halt').onclick=doHalt; $('#b-demo').onclick=runDemo; $('#b-cal').onclick=openCalendar;
-async function doHalt(){ const halt=$('#b-halt').textContent.includes('HALT'); await fetch(halt?'/halt':'/resume',{method:'POST'}); toast(halt?'Sistema DETENIDO':'Sistema reanudado'); speak(halt?'Sistema detenido, señor.':'Sistema reanudado, señor.'); load(); }
+async function doHalt(){ const halt=$('#b-halt').textContent.includes('HALT'); await fetch(halt?'/halt':'/resume',{method:'POST'}); toast(halt?'Sistema DETENIDO':'Sistema reanudado'); speak(halt?'Sistema detenido, '+SIR+'.':'Sistema reanudado, '+SIR+'.'); load(); }
 async function openCalendar(){ selected=null;
   $('#d-e').textContent='📅'; $('#d-name').textContent='Calendario económico'; $('#d-role').textContent='Próximos 7 días'; $('#d-body').innerHTML='<div class="empty">Cargando eventos…</div>'; $('#drawer').classList.add('open');
   let d; try{ d=await (await fetch('/calendar')).json(); }catch(e){ $('#d-body').innerHTML='<div class="empty" style="color:#ff5d73">No se pudo cargar el calendario.</div>'; return; }
@@ -211,7 +211,7 @@ async function runDemo(){ toast('Corriendo demo…'); speak('Ejecutando análisi
   let r; try{ r=await fetch('/demo',{method:'POST'}); }catch(e){ toast('Error de red'); return; }
   if(!r.ok){ const t=await r.text(); openInfo('▶ Modo demo','<p style="color:#ff5d73">No se pudo correr el demo.</p><p>'+escapeHtml(t)+'</p><p>Configura la key: <code>fly secrets set ANTHROPIC_API_KEY=sk-ant-...</code></p>'); speak('No pude correr el demo. Falta la clave de Anthropic.'); return; }
   const data=await r.json(); renderDemo(data.results); load();
-  const props=data.results.filter(x=>x.proposal.action==='propose').length; speak('Análisis completo, señor. '+props+' de '+data.results.length+' símbolos con oportunidad.'); }
+  const props=data.results.filter(x=>x.proposal.action==='propose').length; speak('Análisis completo, '+SIR+'. '+props+' de '+data.results.length+' símbolos con oportunidad.'); }
 function openInfo(t,h){ selected=null; $('#d-e').textContent='ℹ️'; $('#d-name').textContent=t; $('#d-role').textContent=''; $('#d-body').innerHTML=h; $('#drawer').classList.add('open'); }
 function renderDemo(results){ let h='<p class="role">Datos sintéticos. Así lee el mercado el Analyst.</p>';
   results.forEach(r=>{ const p=r.proposal,m=r.market; const dir=p.action==='propose'?(p.direction==='buy'?'🟢 COMPRA':'🔴 VENTA'):'⚪ SIN OPERACIÓN';
@@ -222,7 +222,7 @@ function renderDemo(results){ let h='<p class="role">Datos sintéticos. Así lee
   openInfo('▶ Resultado del demo',h); }
 
 /* ===================== VOZ ===================== */
-let esVoices=[], esVoice=null, speakOn=true, ttsServer=false, ttsAudio=null;
+let esVoices=[], esVoice=null, speakOn=true, ttsServer=false, ttsAudio=null, SIR='Krauser';
 let speaking=false, listeningActive=false, wakeUntil=0;
 const MALE_PRIORITY=['jorge','juan','diego','carlos','enrique','miguel','pablo','alvaro','google español de estados unidos','google español'];
 function loadVoices(){ if(!('speechSynthesis'in window))return; esVoices=speechSynthesis.getVoices().filter(v=>/es(-|_)/i.test(v.lang));
@@ -257,8 +257,8 @@ else{ recog=new SR(); recog.lang='es-ES'; recog.interimResults=true; recog.conti
 function startRecog(){ if(!recog||running)return; try{ recog.start(); running=true; coreHear(true);}catch(_){}}
 function handlePhrase(t){ if(awaiting){ clearTimeout(awaitTimer); awaiting=false; wakeFlash(); runCmd(t); return; }
   const w=WAKE.find(w=>t.includes(w)); if(!w)return; wakeFlash(); const rest=t.slice(t.indexOf(w)+w.length).trim();
-  if(rest.length>2){ runCmd(rest); } else { speak('A la orden, señor.'); setV('<b>Le escucho…</b>'); awaiting=true; awaitTimer=setTimeout(()=>{awaiting=false;setV('Di <b>“Oye Hydra…”</b>');},9000); } }
-$('#b-mic').onclick=()=>{ if(!SR){toast('Usa Chrome para la voz');return;} awaiting=true; setV('<b>Le escucho…</b>'); speak('Dígame, señor.'); if(!running)startRecog(); };
+  if(rest.length>2){ runCmd(rest); } else { speak('A la orden, '+SIR+'.'); setV('<b>Le escucho…</b>'); awaiting=true; awaitTimer=setTimeout(()=>{awaiting=false;setV('Di <b>“Oye Hydra…”</b>');},9000); } }
+$('#b-mic').onclick=()=>{ if(!SR){toast('Usa Chrome para la voz');return;} awaiting=true; setV('<b>Le escucho…</b>'); speak('Dígame, '+SIR+'.'); if(!running)startRecog(); };
 $('#b-wake').onclick=()=>{ wakeMode=!wakeMode; $('#b-wake').classList.toggle('on',wakeMode); if(wakeMode){ toast('Palabra mágica activada'); startRecog(); } else { toast('Palabra mágica apagada'); if(recog&&running)recog.stop(); } };
 
 let clapOn=false,clapStream=null,clapRAF=null,clapTimes=[];
@@ -271,27 +271,27 @@ async function startClap(){ try{ clapStream=await navigator.mediaDevices.getUser
       clapRAF=requestAnimationFrame(loop); }; loop();
   }catch(e){ toast('No pude usar el micrófono para aplauso'); } }
 function stopClap(){ clapOn=false; $('#b-clap').classList.remove('on'); if(clapRAF)cancelAnimationFrame(clapRAF); if(clapStream)clapStream.getTracks().forEach(t=>t.stop()); }
-function onClap(){ wakeFlash(); speak('A la orden, señor.'); setV('<b>Le escucho…</b>'); awaiting=true; if(!running)startRecog(); clearTimeout(awaitTimer); awaitTimer=setTimeout(()=>{awaiting=false;},9000); }
+function onClap(){ wakeFlash(); speak('A la orden, '+SIR+'.'); setV('<b>Le escucho…</b>'); awaiting=true; if(!running)startRecog(); clearTimeout(awaitTimer); awaitTimer=setTimeout(()=>{awaiting=false;},9000); }
 
 const AGENT_WORDS=[{k:'analyst',w:['analista','analisis']},{k:'risk_manager',w:['riesgo','gestor']},{k:'executor',w:['ejecutor','ordenes']},{k:'overnight',w:['nocturno','noche']},{k:'reviewer',w:['revisor','revision']},{k:'architect',w:['arquitecto','playbook']},{k:'sentinel',w:['sentinel','noticias','calendario','centinela']},{k:'watchdog',w:['watchdog','vigilante','salud']},{k:'auditor',w:['auditor','auditoria']},{k:'validator',w:['validador','backtest']},{k:'portfolio',w:['portafolio','cartera','correlacion']}];
 function runCmd(t){
   if(/(demo|prueba|analiza|corre)/.test(t)){ runDemo(); return; }
-  if(/(deten|para|alto|halt|pausa)/.test(t)){ if($('#b-halt').textContent.includes('HALT'))doHalt(); else speak('Ya está detenido, señor.'); return; }
-  if(/(reanuda|continua|resume|activa el sistema)/.test(t)){ if($('#b-halt').textContent.includes('RESUME'))doHalt(); else speak('Ya está activo, señor.'); return; }
+  if(/(deten|para|alto|halt|pausa)/.test(t)){ if($('#b-halt').textContent.includes('HALT'))doHalt(); else speak('Ya está detenido, '+SIR+'.'); return; }
+  if(/(reanuda|continua|resume|activa el sistema)/.test(t)){ if($('#b-halt').textContent.includes('RESUME'))doHalt(); else speak('Ya está activo, '+SIR+'.'); return; }
   if(/(estado|reporte|situacion|resumen|status|como vas)/.test(t)){ speakStatus(); return; }
   if(/(calendario|noticias)/.test(t)){ openCalendar(); speak('Abriendo el calendario.'); return; }
-  if(/(actualiza|refresca|recarga)/.test(t)){ load(); speak('Datos actualizados, señor.'); return; }
+  if(/(actualiza|refresca|recarga)/.test(t)){ load(); speak('Datos actualizados, '+SIR+'.'); return; }
   if(/(cierra|cerrar|oculta)/.test(t)){ closeDrawer(); return; }
   if(/(hola|buenas|quien eres|presenta)/.test(t)){ speak('Soy Hydra, a su servicio. Puedo correr el demo, darle el estado, o mostrarle cualquier agente. Diga, oye Hydra.'); return; }
   for(const a of AGENT_WORDS){ if(a.w.some(w=>t.includes(w))){ openAgent(a.k); return; } }
-  speak('No le entendí, señor. Pruebe: corre el demo, dame el estado, o abre el analista.');
+  speak('No le entendí, '+SIR+'. Pruebe: corre el demo, dame el estado, o abre el analista.');
 }
 function speakStatus(){ if(!DATA){ speak('Aún cargando.'); return; } const c=DATA.core; const act=DATA.agents.filter(a=>a.state==='active').length;
   const conn=c.connected?'conectado a cTrader':(c.oauth_ok?'esperando conexión':'sin cuenta conectada');
-  speak('Modo '+(c.dry_run?'papel':'real')+', '+conn+'. Balance '+(c.balance!=null?c.balance:'desconocido')+'. '+act+' de '+DATA.agents.length+' agentes activos, señor.'); }
+  speak('Modo '+(c.dry_run?'papel':'real')+', '+conn+'. Balance '+(c.balance!=null?c.balance:'desconocido')+'. '+act+' de '+DATA.agents.length+' agentes activos, '+SIR+'.'); }
 
 $('#activate').onclick=()=>{ $('#boot').classList.add('hide'); setTimeout(()=>$('#boot').style.display='none',700);
-  loadVoices(); speak('Sistemas en línea, señor. Los once agentes están conectados. Diga, oye Hydra, cuando me necesite.');
+  loadVoices(); speak('Sistemas en línea, '+SIR+'. Los once agentes están conectados. Diga, oye Hydra, cuando me necesite.');
   if(SR){ wakeMode=true; $('#b-wake').classList.add('on'); startRecog(); setV('Escuchando… di <b>“Oye Hydra”</b>'); }
   if(!ttsServer) setTimeout(()=>toast('💡 Voz neural apagada (suena genérica). Actívala: fly secrets set TTS_PROVIDER=elevenlabs TTS_API_KEY=… ELEVENLABS_VOICE_ID=…'),2500); };
 
@@ -387,7 +387,7 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
   cv.addEventListener('mouseleave',()=>{ mx=my=-9999; });
   function openHydra(){ const names=(DATA?DATA.agents:[]).map(a=>a.emoji+' '+a.name).join(' · ');
     openInfo('🐉 HYDRA · orquestador','<p class="role">El núcleo que coordina a todos los agentes: recibe sus señales, decide y ejecuta como un solo cerebro.</p><div class="empty">Controla a: '+names+'</div>');
-    speak('Hydra en línea, señor. Coordino a los '+(DATA?DATA.agents.length:0)+' agentes.'); }
+    speak('Hydra en línea, '+SIR+'. Coordino a los '+(DATA?DATA.agents.length:0)+' agentes.'); }
   cv.addEventListener('click',()=>{ if(hoverKey==='__hydra') openHydra(); else if(hoverKey) openAgent(hoverKey); else { speakStatus(); toast('HYDRA · '+(DATA?DATA.agents.length:0)+' agentes'); } });
   function frame(now){
     if(!DATA){ requestAnimationFrame(frame); return; }

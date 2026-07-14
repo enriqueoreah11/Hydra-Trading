@@ -50,6 +50,7 @@ class Settings(BaseSettings):
 
     # --- Voz (JARVIS) ---
     voice_enabled: bool = True               # muestra el control de voz en el dashboard
+    owner_name: str = "Krauser"              # cómo te llama la app por voz (p.ej. Enrique, Krauser, jefe)
     # Voz NEURAL por servidor (suena natural, como la de Claude). Requiere una API key.
     tts_provider: str = ""                   # "" (usa la del navegador) | "openai" | "elevenlabs"
     tts_api_key: str = ""                    # key de OpenAI o de ElevenLabs
