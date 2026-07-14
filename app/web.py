@@ -5,9 +5,11 @@ import asyncio
 import datetime as dt
 import html
 import json
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from . import agent_params
 from . import secrets_store
@@ -20,6 +22,21 @@ from .store import Store
 
 def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> FastAPI:
     app = FastAPI(title="hydra-trading")
+    _static = Path(__file__).parent / "static"
+    if _static.is_dir():
+        app.mount("/static", StaticFiles(directory=str(_static)), name="static")
+
+    @app.get("/manifest.webmanifest")
+    async def manifest():
+        return JSONResponse({
+            "name": "HYDRA Trading", "short_name": "HYDRA", "start_url": "/",
+            "display": "standalone", "background_color": "#04070e", "theme_color": "#04070e",
+            "icons": [
+                {"src": "/static/icon-180.png", "sizes": "180x180", "type": "image/png"},
+                {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png",
+                 "purpose": "any maskable"},
+            ],
+        })
     # aplica los parámetros y claves que el usuario haya ajustado desde la UI (persisten en el volumen)
     agent_params.load_overrides(settings.data_path / "overrides.json")
     secrets_store.load()
