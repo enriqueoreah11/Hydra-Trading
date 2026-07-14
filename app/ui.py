@@ -88,6 +88,9 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 .ssec{display:flex;flex-wrap:wrap;gap:8px}
 .cfg{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:9px 2px;border-bottom:1px solid #10293650;font-size:12.5px;color:#a9bcd0}
 .cfg span{color:#5f7387}.cfg b{color:#dffaff}.cfg code{background:#03121b;padding:1px 6px;border-radius:5px;color:#7ff6ff}
+.prm{margin:11px 0}.prm label{display:block;font-size:12px;color:#cfe6f2;margin-bottom:4px}
+.prm input,.prm select{width:100%;background:#08131d;color:#dffaff;border:1px solid #17495d;border-radius:8px;padding:7px 9px;font-family:inherit;font-size:12.5px}
+.phelp{font-size:10.5px;color:#5f7387;margin-top:3px}
 .cal-day{color:#7ff6ff;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:16px 0 7px;border-bottom:1px solid #10293650;padding-bottom:4px}
 .cal-row{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:8px;font-size:12px}
 .cal-row.watched{background:#0a1f2c88;border-left:2px solid #38e6ff}
@@ -205,7 +208,17 @@ function renderDrawer(k){ const a=agentByKey(k); if(!a)return;
   let h='<span class="badge '+a.state+'">'+est[a.state]+'</span><span class="badge idle">última: '+fmtTime(a.last_ts)+'</span><ul class="feed">';
   if(!a.entries.length) h+='</ul><div class="empty">Sin actividad todavía. Escribirá aquí cuando el cerebro trabaje.</div>';
   else{ a.entries.forEach(e=>{ h+='<li><span class="t">'+fmtTime(e.ts)+'</span><span class="k">'+e.kind+(e.symbol?' · '+e.symbol:'')+'</span><div class="c">'+prettify(e.content)+'</div></li>'; }); h+='</ul>'; }
+  if(a.params&&a.params.length){ h+='<div class="slbl" style="margin-top:16px">PARÁMETROS</div>';
+    a.params.forEach(p=>{ h+='<div class="prm"><label>'+escapeHtml(p.label)+'</label>';
+      if(p.type==='bool'){ h+='<select data-p="'+p.name+'"><option value="true"'+(p.value?' selected':'')+'>Activado</option><option value="false"'+(!p.value?' selected':'')+'>Desactivado</option></select>'; }
+      else if(p.options){ h+='<select data-p="'+p.name+'">'+p.options.map(o=>'<option'+(o===p.value?' selected':'')+'>'+escapeHtml(o)+'</option>').join('')+'</select>'; }
+      else { h+='<input data-p="'+p.name+'" value="'+escapeHtml(String(p.value==null?'':p.value))+'">'; }
+      h+='<div class="phelp">'+escapeHtml(p.help||'')+'</div></div>'; });
+    h+='<button class="btn" style="margin-top:8px" onclick="saveParams(\''+a.key+'\')">💾 Guardar cambios</button>'; }
   $('#d-body').innerHTML=h; }
+async function saveParams(k){ const body={}; document.querySelectorAll('#d-body [data-p]').forEach(el=>{ body[el.getAttribute('data-p')]=el.value; });
+  let r; try{ r=await fetch('/agent/'+k+'/params',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); }catch(e){ toast('Error de red'); return; }
+  if(r.ok){ toast('Parámetros guardados ✓'); speak('Ajustes guardados.'); load(); } else { toast('No se pudo guardar'); } }
 function prettify(s){ try{ return escapeHtml(JSON.stringify(JSON.parse(s),null,1)); }catch(_){ return escapeHtml(s);} }
 function escapeHtml(s){ return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 function banner(c){ const b=$('#banner'); let m='';

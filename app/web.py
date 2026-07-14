@@ -8,6 +8,7 @@ import json
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
+from . import agent_params
 from . import tts as tts_mod
 from .broker import Broker
 from .config import settings
@@ -17,6 +18,8 @@ from .store import Store
 
 def create_app(store: Store, tokens: TokenStore, broker: Broker) -> FastAPI:
     app = FastAPI(title="hydra-trading")
+    # aplica los parámetros que el usuario haya ajustado desde la UI (persisten en el volumen)
+    agent_params.load_overrides(settings.data_path / "overrides.json")
 
     def _check_token(token: str | None) -> None:
         if settings.dashboard_token and token != settings.dashboard_token:
@@ -92,6 +95,16 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker) -> FastAPI:
             # devolvemos el motivo real para poder diagnosticar (la UI lo muestra)
             raise HTTPException(503, tts_mod.last_error() or "TTS neural no configurado")
         return Response(content=audio, media_type="audio/mpeg")
+
+    @app.post("/agent/{key}/params")
+    async def set_agent_params(key: str, request: Request):
+        """Guarda y aplica en caliente los parámetros de un agente (persisten en el volumen)."""
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            raise HTTPException(400, "JSON inválido")
+        applied = agent_params.apply_and_save(settings.data_path / "overrides.json", key, body)
+        return {"ok": True, "applied": applied}
 
     @app.get("/tts/health")
     async def tts_health():
@@ -237,6 +250,7 @@ Conecta tu cuenta en <a href="/oauth/login">/oauth/login</a> para operar de verd
                 state = "alert"
             out_agents.append({
                 **a, "enabled": enabled, "state": state, "last_ts": last_ts,
+                "params": agent_params.specs_for(a["key"]),
                 "entries": [{
                     "ts": e["ts"], "kind": e["kind"], "symbol": e["symbol"],
                     "content": (e["content"] or "")[:600],
