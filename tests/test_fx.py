@@ -12,9 +12,15 @@ def test_currencies_of_metal():
     assert currencies_of("XAGUSD") == ("XAG", "USD")
 
 
+def test_currencies_of_index():
+    assert currencies_of("US500") == ("US500", "USD")
+    assert currencies_of("US100") == ("US100", "USD")
+    assert currencies_of("XTIUSD") == ("XTI", "USD")
+
+
 def test_currencies_of_unknown():
-    base, quote = currencies_of("US500")
-    assert base is None and quote == "US500"
+    base, quote = currencies_of("FOO123X")
+    assert base is None and quote == "FOO123X"
 
 
 def test_currency_exposure_signs():

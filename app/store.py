@@ -6,23 +6,46 @@ import sqlite3
 import time
 from pathlib import Path
 
-DEFAULT_PLAYBOOK = """# Playbook v1 — estrategia base
+DEFAULT_PLAYBOOK = """# Playbook v2 — metales, petroleo e indices
 
 ## Contexto
-Opera tendencia en los timeframes configurados. Prioriza calidad sobre cantidad:
-pocas operaciones con tesis clara valen mas que muchas mediocres.
+Cazamos oportunidades en ORO, PLATA, PETROLEO e INDICES de EEUU (Nasdaq, Dow, S&P).
+Prioriza calidad sobre cantidad: pocas operaciones con tesis clara valen mas que muchas
+mediocres. Cada mercado tiene caracter propio — usa la seccion que corresponda.
 
-## Setup permitido
+## Reglas globales (todos los mercados)
 - Solo operar a favor de la tendencia dominante (precio vs EMA200 y pendiente de EMA50).
-- Entrada: pullback a EMA20/EMA50 o ruptura de nivel con re-test.
-- RSI: evitar compras con RSI14 > 72 y ventas con RSI14 < 28.
+- Entrada: pullback a EMA20/EMA50 con rechazo visible, o ruptura de nivel con re-test.
+- RSI14: evitar compras > 72 y ventas < 28 (no perseguir movimientos extendidos).
 - Stop loss: detras del ultimo swing relevante, minimo 1x ATR14 de distancia.
 - Take profit: siguiente nivel de estructura; ratio riesgo/beneficio >= 1.5.
+- Nunca promediar en contra; una posicion por simbolo.
 
-## Cuando NO operar
+## Metales (XAUUSD, XAGUSD)
+- Mejor ventana: solape Londres-NY (13:00-17:00 UTC); evitar madrugada iliquida.
+- Respetan niveles redondos (oro: multiplos de 25/50; plata: 0.50/1.00) — usalos para TP.
+- La plata sigue al oro con mas violencia: si el oro no confirma, no operes plata.
+- Antes de datos grandes de EEUU (CPI, NFP, FOMC) son comunes los barridos de liquidez:
+  no entrar en los 30 min previos (el Sentinel ademas bloquea por calendario).
+
+## Petroleo (XTIUSD / WTI)
+- Evento clave: inventarios EIA miercoles 14:30 UTC — nada de entradas nuevas cerca.
+- Tendencias fuertes con reversiones bruscas: exigir estructura clara y no operar rangos.
+- Sensible a titulares OPEP+ y geopolitica: si el Sentinel reporta evento, quieto.
+
+## Indices (US100, US30, US500)
+- Sesion util: 13:30-20:00 UTC (cash de NY); la primera media hora es trampa — esperar
+  a que la apertura defina direccion antes de entrar.
+- Gap de apertura: si abre con gap grande, esperar re-test del nivel pre-gap; no perseguir.
+- Los tres indices se mueven juntos: UNA posicion de indice a la vez (el Portfolio veta
+  duplicados, pero tampoco los propongas).
+- El US100 (Nasdaq) es el mas volatil: stops mas anchos (>= 1.2x ATR14).
+
+## Cuando NO operar (global)
 - Sin tendencia clara (precio enredado entre EMAs).
 - Velas de rango extremo recientes (noticias) — esperar estabilizacion.
 - Ya existe una posicion abierta en el mismo simbolo.
+- Viernes en la ultima hora de la sesion de NY (riesgo de gap de fin de semana).
 
 ## Notas del arquitecto
 (las ira agregando el agente Architect con lo aprendido cada dia)
@@ -59,6 +82,13 @@ class Store:
         if not self.db.execute("SELECT 1 FROM playbook LIMIT 1").fetchone():
             self.db.execute("INSERT INTO playbook(ts, content, changes) VALUES(?,?,?)",
                             (time.time(), DEFAULT_PLAYBOOK, "playbook inicial"))
+        else:
+            # Si solo existe el playbook inicial (el Architect nunca lo evoluciono) y el
+            # playbook base del codigo cambio, adopta la nueva base como version nueva.
+            rows = self.db.execute("SELECT content FROM playbook ORDER BY version").fetchall()
+            if len(rows) == 1 and rows[0][0] != DEFAULT_PLAYBOOK:
+                self.db.execute("INSERT INTO playbook(ts, content, changes) VALUES(?,?,?)",
+                                (time.time(), DEFAULT_PLAYBOOK, "actualizacion del playbook base"))
         self.db.commit()
 
     # -------------------------------------------------------------- journal

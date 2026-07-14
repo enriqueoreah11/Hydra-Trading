@@ -31,6 +31,9 @@ Reglas:
   eso vive fuera de tu alcance. Si crees que deben cambiar, anotalo en "Notas del arquitecto"
   como recomendacion para el humano.
 - Manten el playbook por debajo de ~600 lineas, claro y accionable.
+- Conserva la estructura POR MERCADO del playbook (metales / petroleo / indices): si la
+  evidencia muestra que un setup funciona en oro pero no en Nasdaq, ajusta esa seccion,
+  no la regla global.
 - Si no hay evidencia suficiente para cambiar nada, devuelve no_change=true y el playbook igual.
 """
 

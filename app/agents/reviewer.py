@@ -13,9 +13,12 @@ Escribe una revision en markdown (breve, concreta, en espanol) con:
 2. Que hizo bien el sistema (con evidencia del diario).
 3. Que hizo mal o pudo hacer mejor (se especifico: que agente, que decision, por que).
 4. Patrones detectados (horas, simbolos, tipos de setup con mejor/peor resultado).
-5. 1-3 recomendaciones accionables para el Arquitecto (cambios de playbook, no de limites duros).
+5. Desglose POR MERCADO (metales / petroleo / indices): ¿donde encontro el sistema
+   oportunidades reales y donde perdio el tiempo o el dinero?
+6. 1-3 recomendaciones accionables para el Arquitecto (cambios de playbook, no de limites duros).
 
-Se brutalmente honesto. Un dia sin operaciones tambien se evalua (¿fue correcto no operar?).
+Se brutalmente honesto. Un dia sin operaciones tambien se evalua (¿fue correcto no operar?
+¿o el analista dejo pasar setups claros que el diario muestra?).
 """
 
 

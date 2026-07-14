@@ -9,16 +9,26 @@ from __future__ import annotations
 from .broker import Candle
 
 _METALS = {"XAU", "XAG", "XPT", "XPD"}
+_ENERGY = {"XTI", "XBR", "XNG"}                       # WTI, Brent, gas natural
+# Indices bursatiles -> divisa en la que cotizan (para exposicion y blackout de noticias)
+_INDICES = {
+    "US100": "USD", "USTEC": "USD", "NAS100": "USD", "US30": "USD", "US500": "USD",
+    "SPX500": "USD", "US2000": "USD", "USOIL": "USD", "WTI": "USD", "UKOIL": "USD",
+    "DE40": "EUR", "GER40": "EUR", "EU50": "EUR", "STOXX50": "EUR", "FRA40": "EUR",
+    "UK100": "GBP", "JPN225": "JPY", "JP225": "JPY", "AUS200": "AUD", "HK50": "HKD",
+}
 
 
 def currencies_of(symbol: str) -> tuple[str | None, str]:
     """Devuelve (base, quote). base puede ser None para simbolos no reconocidos."""
     s = symbol.upper().replace("/", "").replace(".", "")
+    if s in _INDICES:
+        return s, _INDICES[s]
     if len(s) == 6 and s.isalpha():
         return s[:3], s[3:]
-    for metal in _METALS:
-        if s.startswith(metal) and len(s) >= 6:
-            return metal, s[len(metal):len(metal) + 3]
+    for pref in _METALS | _ENERGY:
+        if s.startswith(pref) and len(s) >= 6:
+            return pref, s[len(pref):len(pref) + 3]
     return None, s
 
 

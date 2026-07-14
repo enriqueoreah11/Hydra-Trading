@@ -38,6 +38,15 @@ Por cada posicion decide:
   moverse a favor de la posicion (subir en compras, bajar en ventas), nunca ampliar el riesgo.
 - close: la tesis esta invalidada segun la invalidacion registrada o el mercado cambio de caracter.
 
+Ten en cuenta el reloj y el instrumento (operamos oro, plata, petroleo e indices):
+- Viernes cerca del cierre semanal: no dejes correr riesgo abierto grande el fin de semana
+  (gaps de domingo en metales e indices) — aprieta el stop o cierra si el colchon es pobre.
+- Indices fuera de la sesion de EEUU y madrugada: liquidez pobre, movimientos falsos;
+  protege beneficio en vez de esperar extension.
+- Petroleo antes de inventarios EIA (miercoles 14:30 UTC) y oro/indices antes de datos
+  grandes de EEUU: si hay beneficio, asegura una parte apretando el stop.
+- Una posicion con beneficio >= 1R sin stop en breakeven es una alerta: propon subirlo.
+
 Nunca propongas ampliar un stop ni aumentar el riesgo.
 """
 

@@ -19,7 +19,10 @@ class Settings(BaseSettings):
     model: str = "claude-opus-4-8"
 
     # --- Trading universe & cadence ---
-    symbols: str = "EURUSD,XAUUSD"           # comma-separated cTrader symbol names
+    # Principales metales, energia e indices. OJO: el nombre exacto depende del broker
+    # (Nasdaq puede ser US100/USTEC/NAS100; el WTI puede ser XTIUSD/USOIL/WTI).
+    # Ajusta con el secreto SYMBOLS si tu broker usa otros nombres.
+    symbols: str = "XAUUSD,XAGUSD,XTIUSD,US100,US30,US500"
     timeframe: str = "M15"                   # M1,M5,M15,M30,H1,H4,D1
     analysis_interval_min: int = 15
     overnight_interval_min: int = 30

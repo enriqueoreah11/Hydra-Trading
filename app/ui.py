@@ -49,7 +49,8 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 #boot.hide{opacity:0;pointer-events:none}
 #boot .bt{font-weight:800;letter-spacing:10px;font-size:44px;color:#dffaff;text-shadow:0 0 30px #38e6ff}
 #boot .bs{color:#7fd9ee;letter-spacing:3px;font-size:12px}
-#boot .bcore{width:120px;height:120px;border-radius:50%;background:radial-gradient(circle at 50% 42%,#eaffff,#5ff0ff 45%,#0b7f99 78%,#053745);box-shadow:0 0 50px #38e6ff,0 0 110px #22d3ee88;animation:bp 1.6s ease-in-out infinite;position:relative}
+#boot .bcore{width:120px;height:120px;border-radius:50%;position:relative;display:flex;align-items:center;justify-content:center;animation:bp 1.6s ease-in-out infinite}
+#boot .bcore svg{filter:drop-shadow(0 0 10px #38e6ff) drop-shadow(0 0 26px #22d3ee66);animation:spin 26s linear infinite}
 #boot .bring{position:absolute;inset:-18px;border-radius:50%;border:2px solid #0e5a6e;border-top-color:#eaffff;animation:spin 3s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes bp{0%,100%{box-shadow:0 0 40px #38e6ff,0 0 90px #22d3ee66}50%{box-shadow:0 0 70px #7ff6ff,0 0 130px #22d3eeaa}}
@@ -96,14 +97,30 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 <canvas id="wave"></canvas>
 
 <div id="boot">
-  <div class="bcore"><div class="bring"></div></div>
+  <div class="bcore">
+    <svg viewBox="0 0 120 120" width="120" height="120">
+      <g stroke="#7ff6ff" stroke-width="1.4" opacity="0.9">
+        <path d="M60 16 L101.8 46.4 L85.9 95.6 L34.1 95.6 L18.2 46.4 Z" fill="none"/>
+        <path d="M60 16 L85.9 95.6 M60 16 L34.1 95.6 M101.8 46.4 L34.1 95.6 M101.8 46.4 L18.2 46.4 M85.9 95.6 L18.2 46.4" fill="none" opacity="0.7"/>
+        <path d="M60 60 L60 16 M60 60 L101.8 46.4 M60 60 L85.9 95.6 M60 60 L34.1 95.6 M60 60 L18.2 46.4" fill="none" opacity="0.45"/>
+      </g>
+      <g fill="#dffaff">
+        <circle cx="60" cy="16" r="4"/><circle cx="101.8" cy="46.4" r="4"/><circle cx="85.9" cy="95.6" r="4"/>
+        <circle cx="34.1" cy="95.6" r="4"/><circle cx="18.2" cy="46.4" r="4"/><circle cx="60" cy="60" r="5.5"/>
+      </g>
+    </svg>
+    <div class="bring"></div>
+  </div>
   <div class="bt">HYDRA</div><div class="bs">RED NEURONAL · 11 AGENTES</div>
   <button id="activate">⏻ ACTIVAR SISTEMA</button>
   <div class="bs" style="opacity:.6">pulsa para encender voz y micrófono</div>
 </div>
 
 <div id="top">
-  <span class="brand">◈ HYDRA</span>
+  <span class="brand"><svg viewBox="0 0 120 120" width="19" height="19" style="vertical-align:-3px;filter:drop-shadow(0 0 6px #38e6ff)">
+    <g stroke="#7ff6ff" stroke-width="6" fill="none"><path d="M60 16 L101.8 46.4 L85.9 95.6 L34.1 95.6 L18.2 46.4 Z"/><path d="M60 16 L85.9 95.6 M60 16 L34.1 95.6 M101.8 46.4 L34.1 95.6 M101.8 46.4 L18.2 46.4 M85.9 95.6 L18.2 46.4" opacity="0.6"/></g>
+    <g fill="#dffaff"><circle cx="60" cy="16" r="9"/><circle cx="101.8" cy="46.4" r="9"/><circle cx="85.9" cy="95.6" r="9"/><circle cx="34.1" cy="95.6" r="9"/><circle cx="18.2" cy="46.4" r="9"/></g>
+  </svg> HYDRA</span>
   <span class="chip" id="c-mode">modo —</span>
   <span class="chip" id="c-conn">conexión —</span>
   <span class="chip" id="c-bal">balance —</span>
@@ -272,7 +289,8 @@ function speakStatus(){ if(!DATA){ speak('Aún cargando.'); return; } const c=DA
 
 $('#activate').onclick=()=>{ $('#boot').classList.add('hide'); setTimeout(()=>$('#boot').style.display='none',700);
   loadVoices(); speak('Sistemas en línea, señor. Los once agentes están conectados. Diga, oye Hydra, cuando me necesite.');
-  if(SR){ wakeMode=true; $('#b-wake').classList.add('on'); startRecog(); setV('Escuchando… di <b>“Oye Hydra”</b>'); } };
+  if(SR){ wakeMode=true; $('#b-wake').classList.add('on'); startRecog(); setV('Escuchando… di <b>“Oye Hydra”</b>'); }
+  if(!ttsServer) setTimeout(()=>toast('💡 Voz neural apagada (suena genérica). Actívala: fly secrets set TTS_PROVIDER=elevenlabs TTS_API_KEY=… ELEVENLABS_VOICE_ID=…'),2500); };
 
 /* ===================== ONDA DE AUDIO ===================== */
 const wv=$('#wave'), wg=wv.getContext('2d'); let wt=0; const DPR=window.devicePixelRatio||1;
@@ -332,6 +350,14 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
   // orbe formado por muchos orbes pequeños (esfera fibonacci que gira)
   const ORB=[]; (function(){ const n=130, ga=Math.PI*(3-Math.sqrt(5)); for(let i=0;i<n;i++){ const yy=1-(i/(n-1))*2, r=Math.sqrt(Math.max(0,1-yy*yy)), th=ga*i;
     ORB.push({x:Math.cos(th)*r, y:yy, z:Math.sin(th)*r, ph:i*1.3, gold:(i*2654435761>>>0)%100<26}); } })();
+  // los MERCADOS vigilados son puntos que giran dentro del orbe
+  const MKT_NAMES={XAUUSD:'ORO',XAGUSD:'PLATA',XPTUSD:'PLATINO',XTIUSD:'PETRÓLEO',USOIL:'PETRÓLEO',WTI:'PETRÓLEO',
+    XBRUSD:'BRENT',UKOIL:'BRENT',US100:'NASDAQ',USTEC:'NASDAQ',NAS100:'NASDAQ',US30:'DOW JONES',
+    US500:'S&P 500',SPX500:'S&P 500',DE40:'DAX',GER40:'DAX',UK100:'FTSE',JPN225:'NIKKEI',JP225:'NIKKEI'};
+  function mktMeta(sym){ const s=(sym||'').toUpperCase(), name=MKT_NAMES[s]||(s.length===6?s.slice(0,3)+'/'+s.slice(3):s);
+    let col='150,240,255'; if(/^XAU|^XAG|^XPT|^XPD/.test(s)) col='255,214,120'; else if(/OIL|^XTI|^XBR|WTI|^XNG/.test(s)) col='255,150,90'; else if(MKT_NAMES[s]&&!/^X/.test(s)) col='130,205,255';
+    return {name,col}; }
+  let MK=[], hoverM=-1;
   let A=[], byKey={}, curOpen=null, openAt=0;
   function build(){
     const ags=DATA?DATA.agents:[], N=ags.length||1;
@@ -347,7 +373,11 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       const sparks=[], ns=Math.max(3,Math.round(sg.length*0.55));
       for(let s=0;s<ns;s++){ const seg=roots.length?roots[(Math.random()*roots.length)|0]:0; sparks.push({seg,t:Math.random(),sp:0.012+Math.random()*0.020}); }
       return {key:a.key,name:a.name,emoji:a.emoji,role:a.role,x,y,lx,ly,ang,rgb:hx2(PAL[i%PAL.length]),segs:sg,leaves:t.leaves,roots,next,sparks}; });
-    byKey={}; A.forEach(a=>byKey[a.key]=a); dirty=false;
+    byKey={}; A.forEach(a=>byKey[a.key]=a);
+    const syms=(DATA&&DATA.core&&DATA.core.symbols)||[];
+    MK=syms.map((sym,i)=>{ const n=Math.max(1,syms.length), yy=0.72*(1-2*(i+0.5)/n), r=Math.sqrt(Math.max(0,1-yy*yy)), th=i*2.39996+0.9;
+      const m=mktMeta(sym); return {sym,name:m.name,col:m.col,x3:Math.cos(th)*r,y3:yy,z3:Math.sin(th)*r,sx:0,sy:0,ph:i*2.1}; });
+    dirty=false;
   }
   function qpt(a,c,b,t){ const u=1-t; return [u*u*a[0]+2*u*t*c[0]+t*t*b[0], u*u*a[1]+2*u*t*c[1]+t*t*b[1]]; }
   cv.addEventListener('mousemove',e=>{ const r=cv.getBoundingClientRect(); mx=e.clientX-r.left; my=e.clientY-r.top; });
@@ -377,6 +407,16 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       const tw=0.7+0.3*Math.sin(now*0.003+p.ph), al=(0.12+depth*0.5)*tw, sz=1.1+depth*2.6, col=p.gold?'255,214,140':'150,225,255';
       g.fillStyle='rgba('+col+','+(al*0.35)+')'; g.beginPath(); g.arc(sx,sy,sz*2,0,7); g.fill();
       g.fillStyle='rgba('+col+','+al+')'; g.beginPath(); g.arc(sx,sy,sz,0,7); g.fill(); }
+    // MERCADOS girando dentro del orbe (oro, plata, petróleo, índices…)
+    hoverM=-1;
+    for(let i=0;i<MK.length;i++){ const m=MK[i]; const X=m.x3*ca-m.z3*sa, Z=m.x3*sa+m.z3*ca;
+      m.sx=CX+X*Rorb*0.8; m.sy=CY+m.y3*Rorb*0.8; const depth=(Z+1)/2, hm=hoverM===-1&&Math.abs(m.sx-mx)<26&&Math.abs(m.sy-my)<20;
+      if(hm)hoverM=i;
+      const pu=0.75+0.25*Math.sin(now*0.0035+m.ph), R=(2.6+depth*2.6)*(hm?1.5:1);
+      g.shadowColor='rgba('+m.col+',1)'; g.shadowBlur=(8+depth*10)*(hm?1.8:1);
+      g.fillStyle='rgba('+m.col+','+((0.45+depth*0.5)*pu)+')'; g.beginPath(); g.arc(m.sx,m.sy,R,0,7); g.fill(); g.shadowBlur=0;
+      g.font=(hm?'700 10px':'9px')+' system-ui,sans-serif'; g.textAlign='center'; g.textBaseline='top';
+      g.fillStyle='rgba('+m.col+','+(hm?1:(0.30+depth*0.55))+')'; g.fillText(m.name,m.sx,m.sy+R+3); }
     // conexiones de HYDRA (centro) → TODOS los agentes; se iluminan al señalar el núcleo
     const hyHover=hoverKey==='__hydra';
     g.lineWidth=hyHover?1.6:1; g.strokeStyle=hyHover?'rgba(127,246,255,0.7)':'rgba(90,150,180,0.12)'; g.beginPath();
@@ -414,9 +454,16 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     g.shadowColor='rgba('+hyc+',1)'; g.shadowBlur=hyHover?32:20+flash*18;
     g.fillStyle='#05090f'; g.beginPath(); g.arc(CX,CY,hyR,0,7); g.fill(); g.shadowBlur=0;
     g.strokeStyle='rgba('+hyc+','+(0.7+0.3*hp)+')'; g.lineWidth=hyHover?2.6:2; g.beginPath(); g.arc(CX,CY,hyR,0,7); g.stroke();
-    g.save(); g.translate(CX,CY); g.lineJoin='round'; g.strokeStyle='rgba('+em+',1)'; g.lineWidth=1.8;
-    g.beginPath(); g.moveTo(0,-10); g.lineTo(10,0); g.lineTo(0,10); g.lineTo(-10,0); g.closePath(); g.stroke();
-    g.fillStyle='rgba('+em+',1)'; g.beginPath(); g.moveTo(0,-4.5); g.lineTo(4.5,0); g.lineTo(0,4.5); g.lineTo(-4.5,0); g.closePath(); g.fill();
+    // pentagrama de conexiones: 5 nodos interconectados + centro (alusión a Hydra conectando todo)
+    g.save(); g.translate(CX,CY); g.rotate(now*0.00025); g.lineJoin='round';
+    const pr=hyR*0.62, PTS=[]; for(let i=0;i<5;i++){ const an=-Math.PI/2+i*Math.PI*2/5; PTS.push([Math.cos(an)*pr,Math.sin(an)*pr]); }
+    g.strokeStyle='rgba('+em+',0.95)'; g.lineWidth=1.2; g.beginPath();
+    for(let i=0;i<5;i++) for(let j=i+1;j<5;j++){ g.moveTo(PTS[i][0],PTS[i][1]); g.lineTo(PTS[j][0],PTS[j][1]); }
+    g.stroke();
+    g.strokeStyle='rgba('+em+',0.5)'; g.lineWidth=1; g.beginPath();
+    for(const p of PTS){ g.moveTo(0,0); g.lineTo(p[0],p[1]); } g.stroke();
+    g.fillStyle='rgba('+em+',1)'; for(const p of PTS){ g.beginPath(); g.arc(p[0],p[1],2.1,0,7); g.fill(); }
+    g.beginPath(); g.arc(0,0,2.8,0,7); g.fill();
     g.restore();
     g.font='700 10px system-ui,sans-serif'; g.textAlign='center'; g.textBaseline='middle'; g.fillStyle='rgba('+em+',0.95)'; g.fillText('HYDRA',CX,CY+hyR+11);
     // etiquetas (nombres) pegadas a su punto
@@ -431,6 +478,9 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       const nb=LINKS.filter(L=>L[0]===hoverKey||L[1]===hoverKey).map(L=>L[0]===hoverKey?L[1]:L[0]).map(k=>byKey[k]?byKey[k].name:k);
       tip.style.left=(a.x+24)+'px'; tip.style.top=a.y+'px';
       tip.innerHTML=a.emoji+' <b>'+a.name+'</b> · '+stateOf(a.key)+'<br><span>'+a.role+'</span>'+(nb.length?'<br><span>↔ '+nb.join(', ')+'</span>':'')+'<br><span style="opacity:.7">clic para ver sus tareas</span>';
+      tip.classList.add('show'); }
+    else if(hoverM>=0){ const m=MK[hoverM]; tip.style.left=(m.sx+20)+'px'; tip.style.top=m.sy+'px';
+      tip.innerHTML='📈 <b>'+m.name+'</b> · '+m.sym+'<br><span>mercado vigilado — los agentes buscan oportunidades aquí</span>';
       tip.classList.add('show'); } else tip.classList.remove('show');
     requestAnimationFrame(frame);
   }
