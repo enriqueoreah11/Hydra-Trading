@@ -200,7 +200,7 @@ function renderCore(c){
   $('#b-halt').textContent=c.halted?'▶ RESUME':'⏸ HALT';
   $('#b-cal').style.display='';
   if(c.voice_enabled===false)['b-mic','b-wake','b-clap','b-speak'].forEach(id=>{const e=$('#'+id);if(e)e.style.display='none';});
-  ttsServer=!!c.tts_server; if(c.owner_name)SIR=c.owner_name;
+  ttsServer=!!c.tts_server; if(c.owner_name)SIR=c.owner_name; if(c.owner_lang)LANG=c.owner_lang;
 }
 function agentByKey(k){ return DATA?DATA.agents.find(a=>a.key===k):null; }
 function openAgent(k){ selected=k; renderDrawer(k); $('#drawer').classList.add('open'); const a=agentByKey(k); if(a)speak(a.name+'. '+a.role); }
@@ -253,6 +253,10 @@ function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('sho
 $('#b-refresh').onclick=()=>{ toast('Datos actualizados'); load(); }; $('#b-halt').onclick=doHalt; $('#b-demo').onclick=runDemo; $('#b-cal').onclick=openCalendar;
 $('#b-sistema').onclick=()=>{ renderSysInfo(); renderSecrets(); $('#sistema').classList.add('open'); };
 function closeSistema(){ $('#sistema').classList.remove('open'); }
+async function setLang(lg){ try{ await fetch('/lang',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lang:lg})}); }catch(e){} LANG=lg;
+  if(recog){ try{ recog.lang=voiceLang(); if(running)recog.stop(); }catch(_){} }
+  toast(L('Idioma: '+({es:'Español',mix:'Español + inglés',en:'English'}[lg]), 'Language: '+({es:'Spanish',mix:'Spanish + English',en:'English'}[lg])));
+  speak(L('Listo, hablaré así.','Done, I will speak like this.')); renderSysInfo(); }
 async function renderSecrets(){ let d; try{ d=await (await fetch('/secrets')).json(); }catch(e){ $('#sys-keys').innerHTML='<div class="empty">No disponible.</div>'; return; }
   let h='';
   if(!d.master_key) h+='<div class="empty">Para guardar claves cifradas, pon una vez la llave maestra:<br><code>fly secrets set APP_SECRET_KEY=una-frase-larga-secreta</code><br>y redespliega. Sin ella solo se ve el estado.</div>';
@@ -278,6 +282,7 @@ function renderSysInfo(){ if(!DATA){ $('#sys-info').innerHTML='<div class="empty
   h+='<div class="cfg"><span>Modelo IA</span> <b>'+(c.model||'—')+'</b></div>';
   h+='<div class="cfg"><span>Voz neural</span> <b>'+(c.tts_server?'activa ✅':'navegador')+'</b> · <a href="/tts/health" target="_blank" style="color:#7ff6ff">diagnóstico</a></div>';
   h+='<div class="cfg"><span>Te llama</span> <b>'+(c.owner_name||'Krauser')+'</b></div>';
+  h+='<div class="cfg"><span>Idioma</span> <span>'+['es','mix','en'].map(lg=>'<button class="btn ghost'+((c.owner_lang||'mix')===lg?' on':'')+'" style="padding:5px 9px;margin-left:5px" onclick="setLang(\''+lg+'\')">'+({es:'ES',mix:'ES+EN',en:'EN'}[lg])+'</button>').join('')+'</span></div>';
   h+='<div class="cfg"><span>Anthropic key</span> <b>'+(c.has_anthropic?'puesta ✅':'falta ❌')+'</b></div>';
   h+='<div class="empty" style="margin-top:12px">Los ajustes se cambian con <code>fly secrets set …</code> y luego <code>fly deploy</code>.</div>';
   $('#sys-info').innerHTML=h;
@@ -315,7 +320,7 @@ async function openCalendar(){ selected=null;
       +'<span class="cal-cur">'+escapeHtml(e.currency)+'</span>'
       +'<span class="cal-title">'+escapeHtml(e.title)+(det?'<span class="cal-det"> '+escapeHtml(det)+'</span>':'')+'</span></div>'; });
   $('#d-body').innerHTML='<p class="role">🔴 alto · 🟡 medio · 🔵 bajo impacto. Resaltados = afectan tus símbolos.</p>'+h; }
-async function runDemo(){ toast('Corriendo demo…'); speak('Ejecutando análisis de demostración.');
+async function runDemo(){ toast('Corriendo demo…'); speak(L('Ejecutando análisis de demostración.','Running the demo analysis.'));
   let r; try{ r=await fetch('/demo',{method:'POST'}); }catch(e){ toast('Error de red'); return; }
   if(!r.ok){ const t=await r.text(); openInfo('▶ Modo demo','<p style="color:#ff5d73">No se pudo correr el demo.</p><p>'+escapeHtml(t)+'</p><p>Configura la key: <code>fly secrets set ANTHROPIC_API_KEY=sk-ant-...</code></p>'); speak('No pude correr el demo. Falta la clave de Anthropic.'); return; }
   const data=await r.json(); renderDemo(data.results); load();
@@ -330,7 +335,9 @@ function renderDemo(results){ let h='<p class="role">Datos sintéticos. Así lee
   openInfo('▶ Resultado del demo',h); }
 
 /* ===================== VOZ ===================== */
-let esVoices=[], esVoice=null, speakOn=true, ttsServer=false, ttsAudio=null, SIR='Krauser';
+let esVoices=[], esVoice=null, speakOn=true, ttsServer=false, ttsAudio=null, SIR='Krauser', LANG='mix';
+function L(es,en){ return LANG==='en'?en:es; }   // 'mix' usa base español
+function voiceLang(){ return LANG==='en'?'en-US':'es-ES'; }
 let speaking=false, listeningActive=false, wakeUntil=0;
 const MALE_PRIORITY=['jorge','juan','diego','carlos','enrique','miguel','pablo','alvaro','google español de estados unidos','google español'];
 function loadVoices(){ if(!('speechSynthesis'in window))return; esVoices=speechSynthesis.getVoices().filter(v=>/es(-|_)/i.test(v.lang));
@@ -347,7 +354,9 @@ async function serverSpeak(t){ try{ speaking=true; if(ttsAudio)ttsAudio.pause();
     ttsAudio.onended=()=>{speaking=false;URL.revokeObjectURL(url);}; ttsAudio.onerror=()=>{speaking=false;browserSpeak(t);}; await ttsAudio.play();
   }catch(_){ speaking=false; browserSpeak(t); } }
 function browserSpeak(t){ if(!('speechSynthesis'in window))return; try{ speechSynthesis.cancel();
-  const u=new SpeechSynthesisUtterance(t); u.lang=(esVoice&&esVoice.lang)||'es-ES'; u.rate=1.08; u.pitch=0.85; if(esVoice)u.voice=esVoice;
+  const u=new SpeechSynthesisUtterance(t); u.lang=voiceLang(); u.rate=1.08; u.pitch=0.85;
+  const vs=speechSynthesis.getVoices(), want=voiceLang().slice(0,2);
+  const v=(LANG!=='en'&&esVoice)?esVoice:vs.find(v=>v.lang&&v.lang.slice(0,2)===want); if(v)u.voice=v;
   u.onstart=()=>{speaking=true;}; u.onend=()=>{speaking=false;}; u.onerror=()=>{speaking=false;}; speechSynthesis.speak(u); }catch(_){}}
 
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -357,16 +366,16 @@ function setV(t){ const el=$('#vstatus'); if(!el)return; el.innerHTML=t||''; el.
 function coreHear(on){ listeningActive=on; $('#b-mic').classList.toggle('mic-on',on); }
 function wakeFlash(){ wakeUntil=performance.now()+700; }
 if(!SR){ setV('Voz no soportada — usa Chrome.'); }
-else{ recog=new SR(); recog.lang='es-ES'; recog.interimResults=true; recog.continuous=true;
+else{ recog=new SR(); recog.lang=voiceLang(); recog.interimResults=true; recog.continuous=true;
   recog.onresult=e=>{ let interim=''; for(let i=e.resultIndex;i<e.results.length;i++){ const r=e.results[i]; if(r.isFinal) handlePhrase(norm(r[0].transcript)); else interim+=r[0].transcript; } if(interim)setV('“'+interim+'”'); };
   recog.onerror=e=>{ if(e.error==='not-allowed'){ micDenied=true; wakeMode=false; $('#b-wake').classList.remove('on'); setV(''); toast('Micrófono bloqueado. Actívalo en Ajustes de Safari → Sitios web → Micrófono → Permitir.'); } };
   recog.onend=()=>{ running=false; coreHear(false); if((wakeMode||awaiting)&&!micDenied){ setTimeout(startRecog,300);} else setV(''); };
 }
-function startRecog(){ if(!recog||running||micDenied||micMuted)return; try{ recog.start(); running=true; coreHear(true);}catch(_){}}
+function startRecog(){ if(!recog||running||micDenied||micMuted)return; try{ recog.lang=voiceLang(); recog.start(); running=true; coreHear(true);}catch(_){}}
 function handlePhrase(t){ if(awaiting){ clearTimeout(awaitTimer); awaiting=false; wakeFlash(); runCmd(t); return; }
   const w=WAKE.find(w=>t.includes(w)); if(!w)return; wakeFlash(); const rest=t.slice(t.indexOf(w)+w.length).trim();
-  if(rest.length>2){ runCmd(rest); } else { speak('A la orden, '+SIR+'.'); setV('<b>Le escucho…</b>'); awaiting=true; awaitTimer=setTimeout(()=>{awaiting=false;setV('Di <b>“Oye Hydra…”</b>');},9000); } }
-$('#b-mic').onclick=()=>{ if(!SR){toast('Usa Chrome para la voz');return;} micDenied=false; micMuted=false; $('#b-mute').classList.remove('on'); awaiting=true; setV('<b>Le escucho…</b>'); speak('Dígame, '+SIR+'.'); if(!running)startRecog(); };
+  if(rest.length>2){ runCmd(rest); } else { speak(L('A la orden, '+SIR+'.','At your command, '+SIR+'.')); setV('<b>Le escucho…</b>'); awaiting=true; awaitTimer=setTimeout(()=>{awaiting=false;setV('Di <b>“Oye Hydra…”</b>');},9000); } }
+$('#b-mic').onclick=()=>{ if(!SR){toast('Usa Chrome para la voz');return;} micDenied=false; micMuted=false; $('#b-mute').classList.remove('on'); awaiting=true; setV('<b>Le escucho…</b>'); speak(L('Dígame, '+SIR+'.','Yes, '+SIR+'?')); if(!running)startRecog(); };
 $('#b-wake').onclick=()=>{ wakeMode=!wakeMode; $('#b-wake').classList.toggle('on',wakeMode); if(wakeMode){ micDenied=false; micMuted=false; $('#b-mute').classList.remove('on'); try{localStorage.setItem('hydraWake','1');}catch(_){} toast('Escuchando “Oye Hydra”'); startRecog(); } else { try{localStorage.removeItem('hydraWake');}catch(_){} toast('Palabra mágica apagada'); if(recog&&running)recog.stop(); } };
 $('#b-mute').onclick=()=>{ micMuted=!micMuted; $('#b-mute').classList.toggle('on',micMuted);
   if(micMuted){ wakeMode=false; awaiting=false; $('#b-wake').classList.remove('on'); try{localStorage.removeItem('hydraWake');}catch(_){} if(recog&&running)recog.stop(); if(typeof clapOn!=='undefined'&&clapOn)stopClap(); setV(''); toast('Micrófono silenciado 🔇'); speak('Dejo de escuchar, '+SIR+'.'); }
@@ -382,7 +391,7 @@ async function startClap(){ try{ clapStream=await navigator.mediaDevices.getUser
       clapRAF=requestAnimationFrame(loop); }; loop();
   }catch(e){ toast('No pude usar el micrófono para aplauso'); } }
 function stopClap(){ clapOn=false; $('#b-clap').classList.remove('on'); if(clapRAF)cancelAnimationFrame(clapRAF); if(clapStream)clapStream.getTracks().forEach(t=>t.stop()); }
-function onClap(){ wakeFlash(); speak('A la orden, '+SIR+'.'); setV('<b>Le escucho…</b>'); awaiting=true; if(!running)startRecog(); clearTimeout(awaitTimer); awaitTimer=setTimeout(()=>{awaiting=false;},9000); }
+function onClap(){ wakeFlash(); speak(L('A la orden, '+SIR+'.','At your command, '+SIR+'.')); setV('<b>Le escucho…</b>'); awaiting=true; if(!running)startRecog(); clearTimeout(awaitTimer); awaitTimer=setTimeout(()=>{awaiting=false;},9000); }
 
 const AGENT_WORDS=[{k:'analyst',w:['analista','analisis']},{k:'risk_manager',w:['riesgo','gestor']},{k:'executor',w:['ejecutor','ordenes']},{k:'overnight',w:['nocturno','noche']},{k:'reviewer',w:['revisor','revision']},{k:'architect',w:['arquitecto','playbook']},{k:'sentinel',w:['sentinel','noticias','calendario','centinela']},{k:'watchdog',w:['watchdog','vigilante','salud']},{k:'auditor',w:['auditor','auditoria']},{k:'validator',w:['validador','backtest']},{k:'portfolio',w:['portafolio','cartera','correlacion']}];
 function runCmd(t){
@@ -393,16 +402,16 @@ function runCmd(t){
   if(/(calendario|noticias)/.test(t)){ openCalendar(); speak('Abriendo el calendario.'); return; }
   if(/(actualiza|refresca|recarga)/.test(t)){ load(); speak('Datos actualizados, '+SIR+'.'); return; }
   if(/(cierra|cerrar|oculta)/.test(t)){ closeDrawer(); return; }
-  if(/(hola|buenas|quien eres|presenta)/.test(t)){ speak('Soy Hydra, a su servicio. Puedo correr el demo, darle el estado, o mostrarle cualquier agente. Diga, oye Hydra.'); return; }
+  if(/(hola|buenas|quien eres|presenta)/.test(t)){ speak(L('Soy Hydra, a su servicio. Puedo correr el demo, darle el estado, o mostrarle cualquier agente.','I am Hydra, at your service. I can run the demo, give you the status, or show you any agent.')); return; }
   for(const a of AGENT_WORDS){ if(a.w.some(w=>t.includes(w))){ openAgent(a.k); return; } }
-  speak('No le entendí, '+SIR+'. Pruebe: corre el demo, dame el estado, o abre el analista.');
+  speak(L('No le entendí, '+SIR+'. Pruebe: corre el demo, dame el estado, o abre el analista.','I did not catch that, '+SIR+'. Try: run the demo, give me the status, or open the analyst.'));
 }
 function speakStatus(){ if(!DATA){ speak('Aún cargando.'); return; } const c=DATA.core; const act=DATA.agents.filter(a=>a.state==='active').length;
   const conn=c.connected?'conectado a cTrader':(c.oauth_ok?'esperando conexión':'sin cuenta conectada');
   speak('Modo '+(c.dry_run?'papel':'real')+', '+conn+'. Balance '+(c.balance!=null?c.balance:'desconocido')+'. '+act+' de '+DATA.agents.length+' agentes activos, '+SIR+'.'); }
 
 $('#activate').onclick=()=>{ $('#boot').classList.add('hide'); setTimeout(()=>$('#boot').style.display='none',700);
-  loadVoices(); speak('Sistemas en línea, '+SIR+'. Los once agentes están conectados. Toca oye Hydra cuando quieras activar el micrófono.');
+  loadVoices(); speak(L('Sistemas en línea, '+SIR+'. Toca Oye Hydra cuando quieras activar el micrófono.','Systems online, '+SIR+'. Tap Oye Hydra to enable the mic.'));
   if(SR) setV('Toca 👂 Oye Hydra para activar la voz');
   if(!ttsServer) setTimeout(()=>toast('💡 Voz neural apagada (suena genérica). Actívala: fly secrets set TTS_PROVIDER=elevenlabs TTS_API_KEY=… ELEVENLABS_VOICE_ID=…'),2500); };
 
@@ -476,6 +485,8 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
   function mktMeta(sym){ const s=(sym||'').toUpperCase(), name=MKT_NAMES[s]||(s.length===6?s.slice(0,3)+'/'+s.slice(3):s);
     let col='150,240,255'; if(/^XAU|^XAG|^XPT|^XPD/.test(s)) col='255,214,120'; else if(/OIL|^XTI|^XBR|WTI|^XNG/.test(s)) col='255,150,90'; else if(MKT_NAMES[s]&&!/^X/.test(s)) col='130,205,255';
     return {name,col}; }
+  // fondo de universo: campo de estrellas (posiciones normalizadas 0..1)
+  const STARS=[]; for(let i=0;i<170;i++) STARS.push({x:Math.random(),y:Math.random(),r:0.3+Math.random()*1.5,ph:Math.random()*6.28,br:0.18+Math.random()*0.55,gold:Math.random()<0.1});
   let MK=[], hoverM=-1;
   let A=[], byKey={}, curOpen=null, openAt=0;
   function build(){
@@ -518,8 +529,15 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     if(sel!==curOpen){ curOpen=sel; openAt=now; }
     const grow=sel?Math.min(1,(now-openAt)/450):0;
     const flash=now<wakeUntil?1:0, Rorb=Rh;
-    g.globalCompositeOperation='source-over'; g.fillStyle='#04070e'; g.fillRect(0,0,W,H);
+    g.globalCompositeOperation='source-over'; g.fillStyle='#03050b'; g.fillRect(0,0,W,H);
     g.globalCompositeOperation='lighter'; g.shadowBlur=0;
+    // FONDO UNIVERSO: nebulosas tenues + campo de estrellas
+    const nb1=g.createRadialGradient(W*0.24,H*0.30,0,W*0.24,H*0.30,W*0.55); nb1.addColorStop(0,'rgba(70,45,120,0.08)'); nb1.addColorStop(1,'rgba(0,0,0,0)');
+    g.fillStyle=nb1; g.fillRect(0,0,W,H);
+    const nb2=g.createRadialGradient(W*0.80,H*0.72,0,W*0.80,H*0.72,W*0.5); nb2.addColorStop(0,'rgba(20,70,110,0.07)'); nb2.addColorStop(1,'rgba(0,0,0,0)');
+    g.fillStyle=nb2; g.fillRect(0,0,W,H);
+    for(const st of STARS){ const tw=0.6+0.4*Math.sin(now*0.001+st.ph), al=st.br*tw;
+      g.fillStyle='rgba('+(st.gold?'255,224,170':'185,212,255')+','+al+')'; g.beginPath(); g.arc(st.x*W,st.y*H,st.r,0,7); g.fill(); }
     // volumen del orbe (glow interno)
     const vg=g.createRadialGradient(CX,CY,Rorb*0.08,CX,CY,Rorb); vg.addColorStop(0,halted?'rgba(255,110,130,0.12)':'rgba(90,185,225,0.13)'); vg.addColorStop(0.7,'rgba(40,95,125,0.05)'); vg.addColorStop(1,'rgba(0,0,0,0)');
     g.fillStyle=vg; g.beginPath(); g.arc(CX,CY,Rorb,0,7); g.fill();
@@ -593,9 +611,9 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     g.beginPath(); g.arc(0,0,2.8,0,7); g.fill();
     g.restore();
     g.font='700 10px system-ui,sans-serif'; g.textAlign='center'; g.textBaseline='middle'; g.fillStyle='rgba('+em+',0.95)'; g.fillText('HYDRA',CX,CY+hyR+11);
-    // etiquetas (nombres) pegadas a su punto
-    g.font='10.5px system-ui,sans-serif'; g.textBaseline='middle';
-    for(const a of A){ const dim=hoverKey&&a.key!==hoverKey&&a.key!==sel; g.textAlign=a.lalign; g.fillStyle='rgba(216,238,248,'+(dim?0.25:0.9)+')'; g.fillText(a.name.toUpperCase(),a.lx,a.ly); }
+    // etiquetas (nombres): SOLO del agente señalado o abierto (pantalla más limpia)
+    g.font='11px system-ui,sans-serif'; g.textBaseline='middle';
+    for(const a of A){ if(a.key!==hoverKey&&a.key!==sel) continue; g.textAlign=a.lalign; g.fillStyle='rgba(220,240,250,0.96)'; g.fillText(a.name.toUpperCase(),a.lx,a.ly); }
     // tooltip al pasar el cursor: rol + con quién colabora + pista de click
     const tip=$('#tip');
     if(hoverKey==='__hydra'){ tip.style.left=(CX+30)+'px'; tip.style.top=CY+'px';

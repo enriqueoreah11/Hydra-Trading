@@ -20,13 +20,22 @@ def client() -> AsyncAnthropic:
     return _client
 
 
+_LANG = {
+    "es": "Escribe TODO el texto libre (tesis, razones, resúmenes) en español.",
+    "en": "Write ALL free text (thesis, reasons, summaries) in English.",
+    "mix": "Escribe el texto libre en español, pero mantén los términos técnicos de "
+           "trading en inglés (buy, sell, breakout, pullback, stop loss, take profit, etc.).",
+}
+
+
 async def ask(system: str, user: str, schema: dict | None = None,
               max_tokens: int = 8000) -> dict | str:
     """One-shot call. With `schema`, the response is schema-validated JSON."""
+    lang = _LANG.get(settings.owner_lang, _LANG["mix"])
     kwargs: dict = {
         "model": settings.model,
         "max_tokens": max_tokens,
-        "system": system,
+        "system": lang + "\n\n" + system,
         "thinking": {"type": "adaptive"},
         "messages": [{"role": "user", "content": user}],
     }

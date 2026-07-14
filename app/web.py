@@ -40,6 +40,13 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             _apply_account(int(_acc["account_id"]), _acc.get("env", "demo"))
     except Exception:  # noqa: BLE001
         pass
+    # idioma elegido desde la UI
+    try:
+        _lg = (settings.data_path / "lang.txt").read_text().strip()
+        if _lg in ("es", "en", "mix"):
+            settings.owner_lang = _lg
+    except Exception:  # noqa: BLE001
+        pass
 
     @app.on_event("startup")
     async def _start_brain():
@@ -91,6 +98,18 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             "<p>Pon el <code>ctidTraderAccountId</code> elegido en la variable "
             "<code>CTRADER_ACCOUNT_ID</code> y reinicia el servicio.</p>"
             "<a href='/'>← dashboard</a>")
+
+    @app.post("/lang")
+    async def set_lang(request: Request):
+        try:
+            lg = (await request.json()).get("lang", "mix")
+        except Exception:  # noqa: BLE001
+            lg = "mix"
+        if lg not in ("es", "en", "mix"):
+            lg = "mix"
+        settings.owner_lang = lg
+        (settings.data_path / "lang.txt").write_text(lg)
+        return {"ok": True, "lang": lg}
 
     @app.post("/account/select")
     async def account_select(request: Request):
@@ -513,6 +532,7 @@ Conecta tu cuenta en <a href="/oauth/login">/oauth/login</a> para operar de verd
                 "has_anthropic": bool(settings.anthropic_api_key),
                 "voice_enabled": settings.voice_enabled,
                 "owner_name": settings.owner_name,
+                "owner_lang": settings.owner_lang,
                 "tts_server": tts_mod.available(),
                 "calendar_embed_url": settings.calendar_embed_url,
                 "server_time": now,
