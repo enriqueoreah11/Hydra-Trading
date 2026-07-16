@@ -575,15 +575,16 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     return {name,col}; }
   // fondo de universo: campo de estrellas (posiciones normalizadas 0..1)
   const STARS=[]; for(let i=0;i<170;i++) STARS.push({x:Math.random(),y:Math.random(),r:0.3+Math.random()*1.5,ph:Math.random()*6.28,br:0.18+Math.random()*0.55,gold:Math.random()<0.1});
-  // estrellas fugaces: aparecen de repente y cruzan el cielo dejando estela
+  // estrellas fugaces: aparecen de repente dentro del cielo, con estela afilada
   let SHOOT=[], shootNext=1800, shootLast=0;
   function spawnShoot(){ const fromLeft=Math.random()<0.5;
-    const sp=0.0011+Math.random()*0.0008;                              // normalizado por ms
-    const ang=(0.18+Math.random()*0.22)*Math.PI;                       // 32°..72° hacia abajo
-    SHOOT.push({x:(fromLeft?-0.04:1.04), y:Math.random()*0.4,          // entra por un borde superior
+    const sp=0.00058+Math.random()*0.0004;                             // normalizado por ms (más suave)
+    const ang=(0.14+Math.random()*0.20)*Math.PI;                       // 25°..61° hacia abajo
+    SHOOT.push({x:(fromLeft?0.05:0.95)+ (fromLeft?1:-1)*Math.random()*0.35,  // aparece dentro del cielo
+      y:0.06+Math.random()*0.34,
       vx:(fromLeft?1:-1)*Math.cos(ang)*sp, vy:Math.sin(ang)*sp,
-      life:0, max:650+Math.random()*450, len:0.10+Math.random()*0.16,
-      gold:Math.random()<0.28}); }
+      life:0, max:900+Math.random()*700, tailms:140+Math.random()*120,
+      gold:Math.random()<0.25}); }
   let MK=[], hoverM=-1;
   let A=[], byKey={}, curOpen=null, openAt=0;
   function build(){
@@ -636,21 +637,30 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     g.fillStyle=nb2; g.fillRect(0,0,W,H);
     for(const st of STARS){ const tw=0.6+0.4*Math.sin(now*0.001+st.ph), al=st.br*tw;
       g.fillStyle='rgba('+(st.gold?'255,224,170':'185,212,255')+','+al+')'; g.beginPath(); g.arc(st.x*W,st.y*H,st.r,0,7); g.fill(); }
-    // ESTRELLAS FUGACES: aparecen de repente y cruzan dejando estela
+    // ESTRELLAS FUGACES: encienden rápido, se apagan lento, con estela afilada
     const sdt=Math.min(60,now-(shootLast||now)); shootLast=now;
-    if(now>shootNext){ spawnShoot(); if(Math.random()<0.22) spawnShoot();   // a veces salen en par
-      shootNext=now+2600+Math.random()*6000; }
+    if(now>shootNext){ spawnShoot(); if(Math.random()<0.15) spawnShoot();
+      shootNext=now+3200+Math.random()*7000; }
     for(let i=SHOOT.length-1;i>=0;i--){ const m=SHOOT[i]; m.life+=sdt; m.x+=m.vx*sdt; m.y+=m.vy*sdt;
-      if(m.life>m.max||m.x<-0.15||m.x>1.15||m.y>1.15){ SHOOT.splice(i,1); continue; }
-      const p=m.life/m.max, fade=Math.sin(Math.min(1,p)*Math.PI);        // aparece y se apaga suave
-      const hx=m.x*W, hy=m.y*H, dir=Math.atan2(m.vy*H,m.vx*W);
-      const tx=hx-Math.cos(dir)*m.len*W, ty=hy-Math.sin(dir)*m.len*H;    // cola hacia atrás
-      const col=m.gold?'255,220,150':'190,225,255';
+      if(m.life>m.max||m.x<-0.2||m.x>1.2||m.y>1.2){ SHOOT.splice(i,1); continue; }
+      const p=m.life/m.max;
+      const ignite=Math.min(1,p/0.08);                                  // encendido casi instantáneo
+      const burn=1-Math.max(0,(p-0.30)/0.70);                           // apagado largo
+      const fade=ignite*burn*burn; if(fade<=0.01) continue;
+      const hx=m.x*W, hy=m.y*H;
+      const vpx=m.vx*W, vpy=m.vy*H, vmag=Math.hypot(vpx,vpy)||1;
+      const ux=vpx/vmag, uy=vpy/vmag;                                   // dirección de avance
+      const tl=vmag*m.tailms;                                           // largo de la estela (px)
+      const tx=hx-ux*tl, ty=hy-uy*tl;                                   // punta de la cola
+      const px=-uy, py=ux, hw=1.5*fade;                                 // perpendicular (ancho en la cabeza)
+      const col=m.gold?'255,214,140':'198,226,255';
       const gr=g.createLinearGradient(hx,hy,tx,ty);
-      gr.addColorStop(0,'rgba('+col+','+(0.9*fade)+')'); gr.addColorStop(1,'rgba('+col+',0)');
-      g.strokeStyle=gr; g.lineWidth=1.7; g.lineCap='round';
-      g.beginPath(); g.moveTo(hx,hy); g.lineTo(tx,ty); g.stroke();
-      g.fillStyle='rgba('+col+','+fade+')'; g.beginPath(); g.arc(hx,hy,1.7,0,7); g.fill(); }
+      gr.addColorStop(0,'rgba('+col+','+(0.85*fade)+')'); gr.addColorStop(0.4,'rgba('+col+','+(0.25*fade)+')'); gr.addColorStop(1,'rgba('+col+',0)');
+      g.fillStyle=gr; g.beginPath();                                    // estela afilada (aguja): ancha en cabeza, punta en cola
+      g.moveTo(hx+px*hw,hy+py*hw); g.lineTo(hx-px*hw,hy-py*hw); g.lineTo(tx,ty); g.closePath(); g.fill();
+      const hg=g.createRadialGradient(hx,hy,0,hx,hy,3.4*fade+1);        // cabeza brillante
+      hg.addColorStop(0,'rgba(255,255,255,'+fade+')'); hg.addColorStop(0.5,'rgba('+col+','+(0.7*fade)+')'); hg.addColorStop(1,'rgba('+col+',0)');
+      g.fillStyle=hg; g.beginPath(); g.arc(hx,hy,3.4*fade+1,0,7); g.fill(); }
     // volumen del orbe (glow interno)
     const vg=g.createRadialGradient(CX,CY,Rorb*0.08,CX,CY,Rorb); vg.addColorStop(0,halted?'rgba(255,110,130,0.12)':'rgba(90,185,225,0.13)'); vg.addColorStop(0.7,'rgba(40,95,125,0.05)'); vg.addColorStop(1,'rgba(0,0,0,0)');
     g.fillStyle=vg; g.beginPath(); g.arc(CX,CY,Rorb,0,7); g.fill();
