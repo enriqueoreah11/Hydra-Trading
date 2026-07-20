@@ -20,6 +20,7 @@ from .config import settings
 # name en Settings -> etiqueta visible
 SECRETS: list[tuple[str, str]] = [
     ("anthropic_api_key", "Anthropic (cerebro IA)"),
+    ("perplexity_api_key", "Perplexity (investigación web)"),
     ("tts_api_key", "Voz neural (ElevenLabs / OpenAI)"),
     ("ctrader_client_id", "cTrader · Client ID"),
     ("ctrader_client_secret", "cTrader · Client Secret"),

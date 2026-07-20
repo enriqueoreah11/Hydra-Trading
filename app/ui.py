@@ -175,6 +175,8 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     <div id="sys-info"></div>
     <div class="slbl">🔑 CLAVES (API KEYS)</div>
     <div id="sys-keys"></div>
+    <div class="slbl">📓 MEMORIA (OBSIDIAN)</div>
+    <div id="sys-vault"></div>
   </div>
 </div>
 
@@ -259,7 +261,22 @@ function banner(c){ const b=$('#banner'); let m='';
 function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('show'); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),3800); }
 
 $('#b-refresh').onclick=()=>{ toast('Datos actualizados'); load(); }; $('#b-halt').onclick=doHalt; $('#b-demo').onclick=runDemo; $('#b-cal').onclick=openCalendar;
-$('#b-sistema').onclick=()=>{ renderSysInfo(); renderSecrets(); $('#sistema').classList.add('open'); };
+$('#b-sistema').onclick=()=>{ renderSysInfo(); renderSecrets(); renderVault(); $('#sistema').classList.add('open'); };
+async function renderVault(){ let d; try{ d=await (await fetch('/vault')).json(); }catch(e){ $('#sys-vault').innerHTML='<div class="empty">Falta redesplegar para activar la memoria.</div>'; return; }
+  const n=(d.stats&&d.stats.notes)||0;
+  let h='<div class="cfg"><span>Notas guardadas</span> <b>'+n+'</b> · <a href="/vault/export" style="color:#7ff6ff">⬇ descargar vault (.zip)</a></div>';
+  h+='<div class="phelp">Hydra guarda aquí todo lo que aprende (revisiones, playbook, investigación) en Markdown con tags y [[enlaces]]. Descarga el zip y ábrelo como vault en <b>Obsidian</b> (o suéltalo dentro de tu vault).</div>';
+  h+='<div class="prm"><label>🔎 Preguntar al investigador (Perplexity)</label><input id="rsq" placeholder="ej. ¿qué mueve al oro hoy?" onkeydown="if(event.key===\'Enter\')doResearch()"></div>';
+  h+='<button class="btn ghost" onclick="doResearch()">Investigar</button><div id="rsout"></div>';
+  const recent=(d.notes||[]).slice(0,6);
+  if(recent.length){ h+='<div class="phelp" style="margin-top:8px">Recientes:</div>'+recent.map(x=>'<div class="cfg"><span>'+escapeHtml(x.folder||'nota')+'</span> <b>'+escapeHtml(x.name)+'</b></div>').join(''); }
+  $('#sys-vault').innerHTML=h; }
+async function doResearch(){ const el=$('#rsq'); const q=(el&&el.value||'').trim(); if(!q){ toast('Escribe una pregunta'); return; }
+  $('#rsout').innerHTML='<div class="empty">Investigando…</div>';
+  let r,j; try{ r=await fetch('/research',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:q})}); j=await r.json(); }catch(e){ $('#rsout').innerHTML='<div class="empty" style="color:#ff5d73">Error de red.</div>'; return; }
+  if(!j.ok){ $('#rsout').innerHTML='<div class="empty" style="color:#fbbf24">'+escapeHtml(j.error||'No disponible')+'</div>'; return; }
+  $('#rsout').innerHTML='<div class="empty" style="white-space:pre-wrap;color:#cfe8ff">'+escapeHtml(j.text)+'</div><div class="phelp">Guardado en tu memoria 📓</div>';
+  speak(L('Listo, '+SIR+'. Guardé la investigación en tu memoria.','Done, '+SIR+'. Saved the research to your memory.')); }
 function closeSistema(){ $('#sistema').classList.remove('open'); }
 async function setLang(lg){ try{ await fetch('/lang',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lang:lg})}); }catch(e){} LANG=lg;
   if(recog){ try{ recog.lang=voiceLang(); if(running)recog.stop(); }catch(_){} }

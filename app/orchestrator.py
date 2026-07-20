@@ -15,7 +15,7 @@ import json
 import logging
 import time
 
-from . import constants, indicators
+from . import constants, indicators, research, vault
 from .agents import (analyst, architect, auditor, executor, overnight, portfolio,
                      reviewer, risk_manager, validator)
 from .agents.sentinel import Sentinel
@@ -277,8 +277,27 @@ class Brain:
         positions = await self._positions_with_names()
         version, playbook = self.store.playbook()
 
+        # brief de mercado (Perplexity) — se guarda en la memoria y alimenta la revisión
+        brief_text = ""
+        if research.available() and settings.research_daily_brief:
+            try:
+                brief = await research.market_brief(settings.symbol_list)
+                brief_text = brief["text"]
+                cites = "".join(f"\n- {c}" for c in brief.get("citations", [])[:8])
+                vault.note("Investigacion", "Brief de mercado",
+                           brief_text + ("\n\n## Fuentes" + cites if cites else ""),
+                           tags=["investigacion", "mercado"])
+                self.store.log("sentinel", "market_brief", brief_text[:1200])
+            except Exception:  # noqa: BLE001 - la investigación nunca debe tumbar el ciclo
+                log.warning("perplexity brief failed", exc_info=True)
+
         review = await reviewer.daily_review(entries, daily_pnl, positions, playbook)
         self.store.log("reviewer", "daily_review", review)
+        try:
+            vault.note("Revisiones", f"Revision diaria (PnL {daily_pnl:+.2f})", review,
+                       tags=["revision", "aprendizaje"])
+        except Exception:  # noqa: BLE001
+            log.warning("vault note failed", exc_info=True)
         await notifier.send(f"📋 *Hydra revision diaria* (PnL {daily_pnl:+.2f})\n\n{review[:1500]}")
 
         stats = {
@@ -310,6 +329,13 @@ class Brain:
         self.store.log("architect", "playbook_updated",
                        {"version": new_version, "changes": result["changes_summary"],
                         "validator": vres.detail})
+        try:
+            vault.note("Playbook", f"Playbook v{new_version}",
+                       f"**Cambios:** {result['changes_summary']}\n\n"
+                       f"**Validador:** {vres.detail}\n\n---\n\n{candidate}",
+                       tags=["playbook", "aprendizaje"])
+        except Exception:  # noqa: BLE001
+            log.warning("vault note failed", exc_info=True)
         log.info("playbook evolved to v%s: %s", new_version, result["changes_summary"])
         await notifier.send(f"🏗️ *Playbook v{new_version}* activado.\n{result['changes_summary']}\n"
                             f"({vres.detail})")

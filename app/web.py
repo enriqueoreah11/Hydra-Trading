@@ -12,8 +12,10 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import agent_params
+from . import research
 from . import secrets_store
 from . import tts as tts_mod
+from . import vault
 from .broker import Broker
 from .config import settings
 from .oauth import TokenStore, build_auth_url
@@ -479,6 +481,54 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             raise HTTPException(400, "JSON inválido")
         applied = agent_params.apply_and_save(settings.data_path / "overrides.json", key, body)
         return {"ok": True, "applied": applied}
+
+    # -------------------------------------------- memoria (vault Obsidian)
+
+    @app.get("/vault")
+    async def vault_list():
+        return {"stats": vault.stats(), "notes": vault.list_notes()[:200]}
+
+    @app.get("/vault/note")
+    async def vault_note(p: str = Query(...)):
+        try:
+            return {"path": p, "markdown": vault.read_note(p)}
+        except Exception:  # noqa: BLE001
+            raise HTTPException(404, "nota no encontrada")
+
+    @app.get("/vault/export")
+    async def vault_export():
+        data = vault.export_zip()
+        return Response(content=data, media_type="application/zip",
+                        headers={"Content-Disposition":
+                                 'attachment; filename="HydraVault.zip"'})
+
+    @app.post("/research")
+    async def research_ask(request: Request):
+        """Pregunta al investigador (Perplexity) y guarda el hallazgo en la memoria."""
+        if not research.available():
+            return JSONResponse({"ok": False, "error": "Falta la clave de Perplexity: "
+                                 "ponla en Sistema → claves API."}, status_code=400)
+        try:
+            q = str((await request.json()).get("q", "")).strip()[:600]
+        except Exception:  # noqa: BLE001
+            q = ""
+        if not q:
+            return JSONResponse({"ok": False, "error": "pregunta vacía"}, status_code=400)
+        try:
+            res = await research.ask(q)
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": f"Perplexity: {exc}"[:200]},
+                                status_code=502)
+        cites = "".join(f"\n- {c}" for c in res.get("citations", [])[:8])
+        try:
+            vault.note("Investigacion", q[:60],
+                       f"**Pregunta:** {q}\n\n{res['text']}"
+                       + ("\n\n## Fuentes" + cites if cites else ""),
+                       tags=["investigacion"])
+        except Exception:  # noqa: BLE001
+            pass
+        store.log("sentinel", "research", {"q": q, "a": res["text"][:800]})
+        return {"ok": True, "text": res["text"], "citations": res.get("citations", [])}
 
     @app.get("/secrets")
     async def secrets_status():
