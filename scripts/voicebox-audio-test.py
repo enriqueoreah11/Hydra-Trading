@@ -83,6 +83,48 @@ def get(url: str) -> tuple[int, bytes, str]:
         return 0, str(exc.reason).encode(), ""
 
 
+TERMINAL = {"done", "complete", "completed", "finished", "ready", "success",
+            "error", "failed", "cancelled", "canceled"}
+
+
+def sse_wait(url: str, timeout: float = 180) -> dict:
+    """Consume el stream SSE de estado hasta que termine.
+
+    /generate/{id}/status NO es un JSON de una sola lectura: es un flujo de
+    eventos `data: {...}` que sigue abierto mientras genera. Hay que leerlo
+    línea por línea y cortar al llegar a un estado terminal.
+    """
+    req = urllib.request.Request(url, headers={"Accept": "text/event-stream"})
+    last: dict = {}
+    seen = ""
+    t0 = time.time()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            for raw in r:
+                line = raw.decode("utf-8", "replace").strip()
+                if not line.startswith("data:"):
+                    continue
+                try:
+                    ev = json.loads(line[5:].strip())
+                except json.JSONDecodeError:
+                    continue
+                last = ev
+                st = str(ev.get("status") or "").lower()
+                if st != seen:                    # solo avisa cuando cambia
+                    print(f"   … {st} ({time.time() - t0:.0f}s)")
+                    seen = st
+                if st in TERMINAL:
+                    break
+                if time.time() - t0 > timeout:
+                    break
+    except Exception as exc:  # noqa: BLE001 - el stream puede cortarse al final
+        if last:
+            print(f"   (stream cerrado: {type(exc).__name__})")
+        else:
+            print(f"   ❌ {type(exc).__name__}: {exc}")
+    return last
+
+
 def main() -> int:
     print(f"→ {MCP}")
     rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
@@ -120,30 +162,9 @@ def main() -> int:
     # Voicebox nos da la ruta de consulta; úsala en vez de inventarla
     poll = payload.get("poll_url") or f"/generate/{gen}/status"
     poll_url = urllib.parse.urljoin(BASE, poll)
-    print(f"⏳ Consultando {poll_url}")
+    print(f"⏳ Escuchando {poll_url}")
     print("   (la PRIMERA vez tarda: carga el modelo de voz. No escribas nada.)")
-
-    status: dict = {}
-    for i in range(60):          # hasta 60 s: la primera carga puede ser lenta
-        code, body, _ = get(poll_url)
-        if code != 200:
-            print(f"\n❌ status → HTTP {code}: {body[:200]!r}")
-            break
-        try:
-            status = json.loads(body)
-        except json.JSONDecodeError:
-            print(f"\n(status no es JSON) {body[:300]!r}")
-            break
-        st = str(status.get("status") or status.get("state") or "").lower()
-        if st in ("done", "complete", "completed", "finished", "ready", "success"):
-            print(f"   ✅ listo en ~{i + 1}s")
-            break
-        if st in ("error", "failed", "cancelled"):
-            print(f"   ❌ terminó en estado {st}")
-            break
-        if i % 5 == 0:
-            print(f"   … {st or 'en curso'} ({i + 1}s)")
-        time.sleep(1)
+    status = sse_wait(poll_url)
 
     if status:
         print("\n--- status completo ---")
@@ -163,12 +184,34 @@ def main() -> int:
         code, body, ctype = get(u)
         print(f"  url {u}  →  HTTP {code}, {len(body)} bytes, {ctype}")
     for guess in (f"{BASE}/generate/{gen}/audio", f"{BASE}/generate/{gen}/download",
-                  f"{BASE}/generate/{gen}/file", f"{BASE}/generate/{gen}"):
+                  f"{BASE}/generate/{gen}/file", f"{BASE}/generate/{gen}",
+                  f"{BASE}/captures/{gen}/audio", f"{BASE}/audio/{gen}"):
         code, body, ctype = get(guess)
         flag = "✅" if code == 200 and (ctype.startswith("audio") or len(body) > 5000) else "  "
         print(f"{flag} {guess}  →  HTTP {code}, {len(body)} bytes, {ctype or '—'}")
     if not paths and not urls:
         print("  (el status no traía ninguna ruta ni URL)")
+
+    # Voicebox dice que guarda cada generación en la pestaña Captures/History:
+    # ahí suele venir la ruta real del archivo.
+    print("\n--- capturas recientes (aquí suele estar la ruta del audio) ---")
+    try:
+        res2 = rpc("tools/call", {"name": "voicebox.list_captures",
+                                  "arguments": {"limit": 3}})
+        r2 = (res2 or {}).get("result") or res2
+        shown = False
+        for block in (r2.get("content") or []) if isinstance(r2, dict) else []:
+            if block.get("type") == "text":
+                txt = block.get("text", "")
+                try:
+                    print(json.dumps(json.loads(txt), indent=2, ensure_ascii=False)[:2500])
+                except json.JSONDecodeError:
+                    print(txt[:2500])
+                shown = True
+        if not shown:
+            print(json.dumps(r2, indent=2, ensure_ascii=False)[:2500])
+    except Exception as exc:  # noqa: BLE001
+        print(f"(no pude listar capturas: {exc})")
 
     print("\nCopia TODO esto y pégamelo.")
     return 0
