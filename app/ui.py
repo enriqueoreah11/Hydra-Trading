@@ -523,7 +523,13 @@ if('speechSynthesis'in window){ loadVoices(); speechSynthesis.onvoiceschanged=lo
 $('#b-speak').onclick=()=>{ speakOn=!speakOn; $('#b-speak').classList.toggle('on',speakOn); toast(speakOn?'Voz activada':'Voz silenciada'); if(speakOn)speak('Voz activada.'); };
 function speak(t){ if(!speakOn)return; if(ttsServer){ serverSpeak(t); return; } browserSpeak(t); }
 let ttsWarned=false;
-async function serverSpeak(t){ try{ speaking=true; if(ttsAudio)ttsAudio.pause();
+let ttsBusy=false;
+async function serverSpeak(t){
+  // Voicebox reproduce por su cuenta y no se puede interrumpir: si dejamos que
+  // se encimen varias frases, se oyen voces superpuestas. Descarta mientras habla.
+  if(ttsBusy) return;
+  ttsBusy=true;
+  try{ speaking=true; if(ttsAudio)ttsAudio.pause();
     const r=await fetch('/tts',{method:'POST',headers:{'Content-Type':'text/plain'},body:t});
     if(!r.ok){ const why=await r.text().catch(()=>''); if(!ttsWarned){ ttsWarned=true; toast('Voz neural falló → uso la del navegador. '+(why||'').slice(0,90)); } throw 0; }
     ttsWarned=false;
@@ -531,7 +537,8 @@ async function serverSpeak(t){ try{ speaking=true; if(ttsAudio)ttsAudio.pause();
     if(r.status===204){ speaking=false; return; }
     const url=URL.createObjectURL(await r.blob()); ttsAudio=new Audio(url);
     ttsAudio.onended=()=>{speaking=false;URL.revokeObjectURL(url);}; ttsAudio.onerror=()=>{speaking=false;browserSpeak(t);}; await ttsAudio.play();
-  }catch(_){ speaking=false; browserSpeak(t); } }
+  }catch(_){ speaking=false; browserSpeak(t); }
+  finally{ ttsBusy=false; } }
 function browserSpeak(t){ if(!('speechSynthesis'in window))return; try{ speechSynthesis.cancel();
   const u=new SpeechSynthesisUtterance(t); u.lang=voiceLang(); u.rate=1.08; u.pitch=0.85;
   const vs=speechSynthesis.getVoices(), want=voiceLang().slice(0,2);

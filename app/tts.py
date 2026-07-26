@@ -7,8 +7,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
-from pathlib import Path
 from urllib.parse import urljoin
 
 import httpx
@@ -37,10 +35,13 @@ def last_error() -> str:
 async def _voicebox(text: str) -> bytes | None:
     """Voz local de Voicebox (Kokoro/Qwen3-TTS, sin API key ni internet).
 
-    Voicebox reproduce el audio en las bocinas del Mac Y lo guarda. Si logramos
-    recuperar el archivo, lo devolvemos para que lo toque el navegador (así el
-    botón de silenciar sigue mandando). Si no, marcamos `played_locally` para
-    que la UI NO caiga a la voz del navegador — si no, se oiría dos veces.
+    OJO: `voicebox.speak` SIEMPRE reproduce en las bocinas del Mac — no hay forma
+    de pedirle que solo genere. Por eso esta función nunca devuelve audio: si lo
+    devolviéramos, el navegador lo tocaría OTRA VEZ encima del que ya está
+    sonando, y se escucharían dos voces superpuestas.
+
+    Devuelve None con `played_locally=True`, que hace que /tts responda 204 y la
+    UI no intente ni reproducir ni caer a la voz del navegador.
     """
     global _last_error
     state["played_locally"] = False
@@ -121,13 +122,7 @@ async def _voicebox(text: str) -> bytes | None:
         except Exception:  # noqa: BLE001 - el stream puede cortarse al terminar
             pass
 
-        # ¿Podemos recuperar el archivo? (así lo toca el navegador y se puede silenciar)
-        audio = await _voicebox_audio(http, base, gen)
-        if audio:
-            _last_error = ""
-            return audio
-
-    # No hubo forma de leerlo, pero YA SONÓ en las bocinas: no caigas al navegador.
+    # Ya sonó en las bocinas. NO devolvemos el audio a propósito (ver docstring).
     state["played_locally"] = True
     _last_error = ""
     return None
@@ -166,33 +161,6 @@ async def voicebox_profiles() -> list[dict] | None:
                         return json.loads(block["text"]).get("profiles") or []
     except Exception:  # noqa: BLE001 - app cerrada o versión distinta
         return None
-    return None
-
-
-async def _voicebox_audio(http: httpx.AsyncClient, base: str, gen: str) -> bytes | None:
-    """Intenta leer el audio ya generado: primero por HTTP, luego desde Captures."""
-    for path in (f"/generate/{gen}/audio", f"/captures/{gen}/audio", f"/audio/{gen}"):
-        try:
-            r = await http.get(base + path, follow_redirects=True)
-            if r.status_code == 200 and (
-                    r.headers.get("Content-Type", "").startswith("audio")
-                    or len(r.content) > 4000):
-                return r.content
-        except Exception:  # noqa: BLE001
-            continue
-    # La app guarda cada generación en Captures; de ahí sacamos la ruta real.
-    try:
-        body = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                "params": {"name": "voicebox.list_captures", "arguments": {"limit": 5}}}
-        r = await http.post(base + "/mcp", json=body, follow_redirects=True,
-                            headers={"Content-Type": "application/json",
-                                     "Accept": "application/json, text/event-stream"})
-        for m in re.finditer(r'([/\\][^"\\]*?\.(?:wav|mp3|m4a|ogg|flac))', r.text, re.I):
-            p = Path(m.group(1).replace("\\/", "/"))
-            if p.is_file() and p.stat().st_size > 1000:
-                return p.read_bytes()
-    except Exception:  # noqa: BLE001
-        pass
     return None
 
 
@@ -272,11 +240,10 @@ async def diagnose() -> dict:
             info["error"] = (f"el perfil '{settings.voicebox_profile}' no existe. "
                              f"Disponibles: {', '.join(map(str, names)) or '(ninguno)'}")
             return info
-        audio = await synth("prueba de voz")
-        info["ok"] = True
-        info["bytes"] = len(audio) if audio else 0
-        info["modo"] = ("audio al navegador (silenciar funciona)" if audio
-                        else "suena en las bocinas del Mac (fuera del navegador)")
+        await synth("prueba de voz")
+        info["ok"] = not _last_error
+        info["modo"] = ("Voicebox reproduce en las bocinas del Mac; el navegador no "
+                        "vuelve a tocarlo (si lo hiciera, se oiria doble)")
         info["error"] = _last_error
         return info
     if not available():
