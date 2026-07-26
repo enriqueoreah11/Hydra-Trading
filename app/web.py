@@ -538,6 +538,63 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         applied = agent_params.apply_and_save(settings.data_path / "overrides.json", key, body)
         return {"ok": True, "applied": applied}
 
+    # --------------------------------------------------------------- flota
+
+    _fleet_state = {"running": False}
+
+    def _fleet():
+        from .fleet import Fleet
+        return Fleet(store, broker)
+
+    @app.get("/fleet")
+    async def fleet_board():
+        f = _fleet()
+        return {"leaderboard": f.leaderboard(), "reviews": store.arm_reviews(20),
+                "running": _fleet_state["running"]}
+
+    @app.post("/fleet/seed")
+    async def fleet_seed(request: Request):
+        """Crea la flota: variantes por estrategia + un champion congelado."""
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        symbol = str(body.get("symbol") or (settings.symbol_list or ["XAUUSD"])[0]).upper()
+        tf = str(body.get("timeframe") or settings.timeframe).upper()
+        per = max(2, min(8, int(body.get("per_strategy", 5))))
+        if body.get("reset"):
+            store.clear_fleet()
+        n = _fleet().seed(symbol, tf, per)
+        store.log("system", "fleet_seed", f"{n} arms en {symbol} {tf}")
+        return {"ok": True, "created": n, "symbol": symbol, "timeframe": tf}
+
+    @app.post("/fleet/cycle")
+    async def fleet_cycle(request: Request):
+        """Alimenta los arms con velas nuevas y revisa los que juntaron un lote."""
+        if _fleet_state["running"]:
+            return JSONResponse({"ok": False, "error": "ya hay un ciclo corriendo"},
+                                status_code=409)
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        batch = max(10, min(200, int(body.get("batch", 40))))
+        cost = float(body.get("cost_r", 0.05))
+        _fleet_state["running"] = True
+        try:
+            res = await _fleet().cycle(batch=batch, cost_r=cost)
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": f"{exc}"[:220]}, status_code=500)
+        finally:
+            _fleet_state["running"] = False
+        store.log("system", "fleet_cycle", res)
+        return res
+
+    @app.post("/fleet/clear")
+    async def fleet_clear():
+        store.clear_fleet()
+        return {"ok": True}
+
     # ------------------------------------- aprendizaje: propuestas vía MCP
 
     @app.get("/proposals")

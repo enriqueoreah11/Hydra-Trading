@@ -179,6 +179,8 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     <div id="sys-vault"></div>
     <div class="slbl">🧪 PROPUESTAS (CLAUDE DESKTOP · MCP)</div>
     <div id="sys-props"></div>
+    <div class="slbl">🏁 FLOTA DE ESTRATEGIAS</div>
+    <div id="sys-fleet"></div>
   </div>
 </div>
 
@@ -263,7 +265,41 @@ function banner(c){ const b=$('#banner'); let m='';
 function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('show'); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),3800); }
 
 $('#b-refresh').onclick=()=>{ toast('Datos actualizados'); load(); }; $('#b-halt').onclick=doHalt; $('#b-demo').onclick=runDemo; $('#b-cal').onclick=openCalendar;
-$('#b-sistema').onclick=()=>{ renderSysInfo(); renderSecrets(); renderVault(); renderProps(); $('#sistema').classList.add('open'); };
+$('#b-sistema').onclick=()=>{ renderSysInfo(); renderSecrets(); renderVault(); renderProps(); renderFleet(); $('#sistema').classList.add('open'); };
+async function renderFleet(){ let d; try{ d=await (await fetch('/fleet')).json(); }catch(e){ $('#sys-fleet').innerHTML='<div class="empty">Falta redesplegar.</div>'; return; }
+  const lb=d.leaderboard||[];
+  let h='<div class="phelp">N estrategias corriendo en paralelo en <b>papel</b>. El 👑 <b>champion</b> nunca se ajusta: es el control. Si las variantes no le ganan, la «mejora» era ruido. Todo el R es <b>neto de costos</b>.</div>';
+  h+='<button class="btn" onclick="fleetSeed()">➕ Crear flota</button> '
+    +'<button class="btn ghost" onclick="fleetCycle()">▶ Correr ciclo</button>'
+    +(lb.length?' <button class="btn ghost" onclick="fleetClear()">🗑 Borrar</button>':'')+'<div id="fl-out"></div>';
+  if(!lb.length){ h+='<div class="empty">Flota vacía. Dale a «Crear flota».</div>'; $('#sys-fleet').innerHTML=h; return; }
+  h+='<div style="overflow-x:auto;margin-top:8px"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+    +'<tr style="opacity:.6;text-align:right"><th style="text-align:left">Arm</th><th>Ops</th><th>R neto</th><th>Edge</th><th>Costo</th><th>Win%</th><th>vs 👑</th></tr>';
+  lb.forEach(r=>{ const vs=(r.vs_champion==null)?'—':(r.vs_champion>=0?'+':'')+r.vs_champion.toFixed(1);
+    const col=r.sum_net>=0?'#34d399':'#ff5d73';
+    h+='<tr style="text-align:right;border-top:1px solid #ffffff12">'
+      +'<td style="text-align:left">'+(r.is_champion?'👑 ':'')+escapeHtml(r.name)+'</td>'
+      +'<td>'+r.trades+'</td><td style="color:'+col+'"><b>'+r.sum_net.toFixed(1)+'</b></td>'
+      +'<td>'+r.edge_net.toFixed(3)+'</td><td style="opacity:.6">'+r.cost_drag.toFixed(3)+'</td>'
+      +'<td>'+r.win_rate.toFixed(0)+'</td><td style="color:'+(r.vs_champion>0?'#34d399':'#8aa')+'">'+vs+'</td></tr>'; });
+  h+='</table></div>';
+  const rv=d.reviews||[];
+  if(rv.length){ h+='<div class="phelp" style="margin-top:8px">Últimas revisiones:</div>';
+    rv.slice(0,6).forEach(r=>{ const ok=r.verdict==='no_change';
+      h+='<div class="cfg" style="align-items:flex-start"><span>'+escapeHtml(r.arm)+'</span> <b style="color:'+(ok?'#8aa':'#fbbf24')+'">'+escapeHtml(r.verdict)+' '+(r.confidence||0)+'%</b></div>'
+        +'<div class="phelp" style="margin:-6px 0 6px">'+escapeHtml((r.reasoning||'').slice(0,180))+'</div>'; }); }
+  $('#sys-fleet').innerHTML=h; }
+async function fleetSeed(){ if(!confirm('Crear la flota? Si ya existe una, se reemplaza.')) return;
+  $('#fl-out').innerHTML='<div class="empty">Creando…</div>';
+  const r=await fetch('/fleet/seed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reset:true,per_strategy:5})});
+  const j=await r.json().catch(()=>({})); toast(j.ok?('Flota creada: '+j.created+' arms'):'No se pudo'); renderFleet(); }
+async function fleetCycle(){ $('#fl-out').innerHTML='<div class="empty">Corriendo ciclo… (lee velas, simula y revisa)</div>';
+  let j; try{ j=await (await fetch('/fleet/cycle',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({batch:40})})).json(); }catch(e){ $('#fl-out').innerHTML='<div class="empty" style="color:#ff5d73">Error de red.</div>'; return; }
+  if(!j.ok){ $('#fl-out').innerHTML='<div class="empty" style="color:#fbbf24">'+escapeHtml(j.error||'falló')+'</div>'; return; }
+  $('#fl-out').innerHTML='<div class="phelp">+'+j.new_trades+' operaciones · '+(j.reviews||[]).length+' revisiones</div>';
+  speak(L('Ciclo de flota terminado, '+SIR+'.','Fleet cycle done, '+SIR+'.')); renderFleet(); }
+async function fleetClear(){ if(!confirm('Borrar la flota y todo su historial?')) return;
+  await fetch('/fleet/clear',{method:'POST'}); toast('Flota borrada'); renderFleet(); }
 async function renderProps(){ let d; try{ d=await (await fetch('/proposals')).json(); }catch(e){ $('#sys-props').innerHTML='<div class="empty">Falta redesplegar.</div>'; return; }
   const m=d.metrics||{}, counts=m.counts||[];
   let h='<div class="phelp">Claude Desktop analiza Hydra por MCP y propone ajustes aquí. <b>Nada se aplica solo</b>: tú apruebas o rechazas.</div>';

@@ -99,6 +99,41 @@ class Store:
             occurrences INTEGER DEFAULT 0,
             status TEXT DEFAULT 'open'   -- open | promoted | rejected
         );
+        -- Flota: N estrategias corriendo en paralelo en papel. 'frozen' marca el
+        -- champion de control, que nunca se ajusta.
+        CREATE TABLE IF NOT EXISTS arms(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts REAL NOT NULL,
+            name TEXT NOT NULL,
+            strategy TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            timeframe TEXT NOT NULL,
+            params TEXT NOT NULL,
+            frozen INTEGER DEFAULT 0,
+            is_champion INTEGER DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS arm_trades(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            arm_id INTEGER NOT NULL,
+            bar_idx INTEGER NOT NULL,
+            ts REAL NOT NULL,
+            direction TEXT NOT NULL,
+            entry REAL, sl REAL, tp REAL,
+            r_gross REAL NOT NULL,
+            r_net REAL NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_arm_trades ON arm_trades(arm_id, id);
+        CREATE TABLE IF NOT EXISTS arm_reviews(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            arm_id INTEGER NOT NULL,
+            ts REAL NOT NULL,
+            batch INTEGER,
+            verdict TEXT,
+            confidence INTEGER,
+            reasoning TEXT,
+            applied TEXT,
+            last_trade_id INTEGER
+        );
         CREATE TABLE IF NOT EXISTS proposals(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ts REAL NOT NULL,
@@ -174,6 +209,98 @@ class Store:
         self.db.execute("INSERT INTO kv(key,value) VALUES(?,?) "
                         "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
         self.db.commit()
+
+    # ------------------------------------------------------------------ flota
+
+    def add_arm(self, name: str, strategy: str, symbol: str, timeframe: str,
+                params: dict, frozen: bool = False, is_champion: bool = False) -> int:
+        cur = self.db.execute(
+            "INSERT INTO arms(ts,name,strategy,symbol,timeframe,params,frozen,is_champion) "
+            "VALUES(?,?,?,?,?,?,?,?)",
+            (time.time(), name, strategy, symbol.upper(), timeframe.upper(),
+             json.dumps(params), int(frozen), int(is_champion)))
+        self.db.commit()
+        return int(cur.lastrowid)
+
+    def arms(self) -> list[dict]:
+        rows = self.db.execute(
+            "SELECT id,name,strategy,symbol,timeframe,params,frozen,is_champion "
+            "FROM arms ORDER BY id").fetchall()
+        return [{"id": r[0], "name": r[1], "strategy": r[2], "symbol": r[3],
+                 "timeframe": r[4], "params": r[5], "frozen": bool(r[6]),
+                 "is_champion": bool(r[7])} for r in rows]
+
+    def update_arm_params(self, arm_id: int, params: dict) -> None:
+        self.db.execute("UPDATE arms SET params=? WHERE id=? AND frozen=0",
+                        (json.dumps(params), arm_id))
+        self.db.commit()
+
+    def clear_fleet(self) -> None:
+        self.db.executescript(
+            "DELETE FROM arm_trades; DELETE FROM arm_reviews; DELETE FROM arms;")
+        self.db.commit()
+
+    def add_arm_trade(self, arm_id: int, bar_idx: int, ts: float, direction: str,
+                      entry: float, sl: float, tp: float,
+                      r_gross: float, r_net: float) -> None:
+        self.db.execute(
+            "INSERT INTO arm_trades(arm_id,bar_idx,ts,direction,entry,sl,tp,r_gross,r_net) "
+            "VALUES(?,?,?,?,?,?,?,?,?)",
+            (arm_id, bar_idx, ts, direction, entry, sl, tp, r_gross, r_net))
+        self.db.commit()
+
+    def arm_last_index(self, arm_id: int) -> int:
+        row = self.db.execute("SELECT MAX(bar_idx) FROM arm_trades WHERE arm_id=?",
+                              (arm_id,)).fetchone()
+        return int(row[0]) if row and row[0] is not None else -1
+
+    def arm_trades(self, arm_id: int, limit: int = 40) -> list[dict]:
+        rows = self.db.execute(
+            "SELECT id,ts,direction,entry,sl,tp,r_gross,r_net FROM arm_trades "
+            "WHERE arm_id=? ORDER BY id DESC LIMIT ?", (arm_id, limit)).fetchall()
+        return [{"id": r[0], "ts": r[1], "direction": r[2], "entry": r[3], "sl": r[4],
+                 "tp": r[5], "r_gross": r[6], "r_net": r[7]} for r in rows]
+
+    def arm_trades_since_review(self, arm_id: int) -> int:
+        row = self.db.execute(
+            "SELECT MAX(last_trade_id) FROM arm_reviews WHERE arm_id=?", (arm_id,)).fetchone()
+        last = int(row[0]) if row and row[0] is not None else 0
+        row = self.db.execute(
+            "SELECT COUNT(*) FROM arm_trades WHERE arm_id=? AND id>?", (arm_id, last)).fetchone()
+        return int(row[0]) if row else 0
+
+    def add_arm_review(self, arm_id: int, batch: int, verdict: str, confidence: int,
+                       reasoning: str, applied: dict) -> None:
+        row = self.db.execute("SELECT MAX(id) FROM arm_trades WHERE arm_id=?",
+                              (arm_id,)).fetchone()
+        last = int(row[0]) if row and row[0] is not None else 0
+        self.db.execute(
+            "INSERT INTO arm_reviews(arm_id,ts,batch,verdict,confidence,reasoning,applied,"
+            "last_trade_id) VALUES(?,?,?,?,?,?,?,?)",
+            (arm_id, time.time(), batch, verdict, confidence, reasoning,
+             json.dumps(applied, ensure_ascii=False), last))
+        self.db.commit()
+
+    def arm_reviews(self, limit: int = 30) -> list[dict]:
+        rows = self.db.execute(
+            "SELECT r.ts,a.name,r.verdict,r.confidence,r.reasoning,r.applied,r.batch "
+            "FROM arm_reviews r JOIN arms a ON a.id=r.arm_id "
+            "ORDER BY r.id DESC LIMIT ?", (limit,)).fetchall()
+        return [{"ts": r[0], "arm": r[1], "verdict": r[2], "confidence": r[3],
+                 "reasoning": r[4], "applied": r[5], "batch": r[6]} for r in rows]
+
+    def arm_stats(self) -> list[dict]:
+        rows = self.db.execute(
+            "SELECT a.id,a.name,a.strategy,a.symbol,a.params,a.frozen,a.is_champion,"
+            "       COUNT(t.id), COALESCE(SUM(t.r_gross),0), COALESCE(SUM(t.r_net),0),"
+            "       COALESCE(SUM(CASE WHEN t.r_net>0 THEN 1 ELSE 0 END),0) "
+            "FROM arms a LEFT JOIN arm_trades t ON t.arm_id=a.id "
+            "GROUP BY a.id ORDER BY a.id").fetchall()
+        return [{"id": r[0], "name": r[1], "strategy": r[2], "symbol": r[3],
+                 "params": r[4], "frozen": bool(r[5]), "is_champion": bool(r[6]),
+                 "trades": int(r[7]), "sum_gross": r[8], "sum_net": r[9],
+                 "wins": int(r[10]),
+                 "win_rate": (100.0 * r[10] / r[7]) if r[7] else 0.0} for r in rows]
 
     # ------------------------------------------------------- aprendizaje (MCP)
 
