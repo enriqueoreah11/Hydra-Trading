@@ -353,7 +353,14 @@ async function setModel(id){ const m=MODELS.find(x=>x.id===id)||{label:id};
   else { toast('No se pudo cambiar el modelo'); } }
 async function renderSecrets(){ let d; try{ d=await (await fetch('/secrets')).json(); }catch(e){ $('#sys-keys').innerHTML='<div class="empty">No disponible.</div>'; return; }
   let h='';
-  if(!d.master_key) h+='<div class="empty">Para guardar claves cifradas, pon una vez la llave maestra:<br><code>fly secrets set APP_SECRET_KEY=una-frase-larga-secreta</code><br>y redespliega. Sin ella solo se ve el estado.</div>';
+  if(!d.master_key){ const local=/^(localhost|127\.0\.0\.1)/.test(location.host);
+    h+='<div class="empty" style="text-align:left">🔒 Los campos están bloqueados porque falta la <b>llave maestra</b> que cifra tus claves.'
+      +(local
+        ?'<br><br>Estás en <b>local</b>. Genera una y guárdala en tu <code>.env</code>:<br>'
+         +'<code style="display:block;margin:6px 0;white-space:pre-wrap">cd ~/Hydra-Trading\necho "APP_SECRET_KEY=$(python3 -c \'import secrets;print(secrets.token_urlsafe(48))\')" >> .env\nlaunchctl kickstart -k gui/$(id -u)/com.hydra.trading</code>'
+         +'Recarga esta página y ya podrás escribir.<br><br><span style="opacity:.7">Alternativa: si prefieres, pon las claves directo en el <code>.env</code> (una por línea, p.ej. <code>ANTHROPIC_API_KEY=…</code>) y sáltate este panel.</span>'
+        :'<br><br>En Fly:<br><code style="display:block;margin:6px 0">fly secrets set APP_SECRET_KEY=una-frase-larga-secreta</code>y redespliega.')
+      +'</div>'; }
   (d.items||[]).forEach(it=>{ h+='<div class="prm"><label>'+escapeHtml(it.label)+' '+(it.set?'<span style="color:#34d399">'+escapeHtml(it.hint)+'</span>':'<span style="color:#ff5d73">falta</span>')+'</label>';
     h+='<input type="password" autocomplete="new-password" data-s="'+it.name+'" placeholder="'+(it.set?'nueva clave (vacío = sin cambio)':'pega la clave')+'"'+(d.master_key?'':' disabled')+'></div>'; });
   if(d.master_key) h+='<button class="btn" style="margin-top:6px" onclick="saveSecrets()">🔒 Guardar claves</button>';
@@ -386,7 +393,8 @@ function renderSysInfo(){ if(!DATA){ $('#sys-info').innerHTML='<div class="empty
   renderLocal(); renderVoice();
   if(c.oauth_ok) loadAccounts(); }
 async function renderVoice(){ const el=$('#sys-voice'); if(!el) return;
-  let d; try{ d=await (await fetch('/voice/local')).json(); }catch(e){ el.innerHTML=''; return; }
+  let d; try{ const r=await fetch('/voice/local'); if(!r.ok) throw 0; d=await r.json(); }
+  catch(e){ el.innerHTML='<div class="phelp" style="color:#fbbf24">Selector de voz no disponible — la app corre código viejo. Reinicia:<br><code>launchctl kickstart -k gui/$(id -u)/com.hydra.trading</code></div>'; return; }
   const P=d.provider||'';
   const opt=(id,txt,tip)=>'<button class="btn ghost'+(P===id?' on':'')+'" style="padding:5px 9px;margin-right:5px" title="'+tip+'" onclick="setVoice(\''+id+'\')">'+txt+'</button>';
   let h='<div style="margin:2px 0 6px">'

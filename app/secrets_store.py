@@ -75,7 +75,9 @@ def save(name: str, value: str) -> None:
         raise RuntimeError("clave no permitida")
     f = _fernet()
     if f is None:
-        raise RuntimeError("falta la llave maestra APP_SECRET_KEY (ponla en Fly y redeploy)")
+        raise RuntimeError(
+            "falta la llave maestra APP_SECRET_KEY — en local añádela a tu .env "
+            "y reinicia; en Fly usa 'fly secrets set APP_SECRET_KEY=…' y redespliega")
     value = str(value)
     data = _read()
     data[name] = f.encrypt(value.encode()).decode()
