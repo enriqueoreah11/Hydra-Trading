@@ -339,13 +339,29 @@ function renderSysInfo(){ if(!DATA){ $('#sys-info').innerHTML='<div class="empty
   h+='<div class="cfg"><span>Símbolos</span> <b>'+((c.symbols||[]).join(', ')||'—')+'</b></div>';
   h+='<div class="cfg"><span>Modelo IA</span> <span>'+MODELS.map(m=>'<button class="btn ghost'+((c.model||'')===m.id?' on':'')+'" style="padding:5px 9px;margin-left:5px" title="'+m.hint+'" onclick="setModel(\''+m.id+'\')">'+m.label+'</button>').join('')+'</span></div>';
   h+='<div class="phelp" style="margin:-4px 0 8px">'+((MODELS.find(m=>m.id===(c.model||''))||{}).hint||'')+'. Menos capaz = más barato. El costo se reduce también subiendo <b>«analiza cada (min)»</b> del agente Analista.</div>';
+  h+='<div id="sys-local"></div>';
   h+='<div class="cfg"><span>Voz neural</span> <b>'+(c.tts_server?'activa ✅':'navegador')+'</b> · <a href="/tts/health" target="_blank" style="color:#7ff6ff">diagnóstico</a></div>';
   h+='<div class="cfg"><span>Te llama</span> <b>'+(c.owner_name||'Krauser')+'</b></div>';
   h+='<div class="cfg"><span>Idioma</span> <span>'+['es','mix','en'].map(lg=>'<button class="btn ghost'+((c.owner_lang||'mix')===lg?' on':'')+'" style="padding:5px 9px;margin-left:5px" onclick="setLang(\''+lg+'\')">'+({es:'ES',mix:'ES+EN',en:'EN'}[lg])+'</button>').join('')+'</span></div>';
   h+='<div class="cfg"><span>Anthropic key</span> <b>'+(c.has_anthropic?'puesta ✅':'falta ❌')+'</b></div>';
   h+='<div class="empty" style="margin-top:12px">Los ajustes se cambian con <code>fly secrets set …</code> y luego <code>fly deploy</code>.</div>';
   $('#sys-info').innerHTML=h;
+  renderLocal();
   if(c.oauth_ok) loadAccounts(); }
+async function renderLocal(){ const el=$('#sys-local'); if(!el) return;
+  let d; try{ d=await (await fetch('/llm/local')).json(); }catch(e){ el.innerHTML=''; return; }
+  const on=d.provider==='ollama';
+  let h='<div class="cfg"><span>Cerebro</span> <span>'
+    +'<button class="btn ghost'+(!on?' on':'')+'" style="padding:5px 9px" onclick="setProvider(\'anthropic\')">☁️ Nube</button>'
+    +'<button class="btn ghost'+(on?' on':'')+'" style="padding:5px 9px;margin-left:5px" onclick="setProvider(\'ollama\')">💻 Local (gratis)</button></span></div>';
+  if(!d.running) h+='<div class="phelp" style="color:#fbbf24">Ollama no responde en '+escapeHtml(d.url||'')+'. Instálalo en ollama.com y corre <code>ollama pull qwen3</code>. Con el cerebro local el análisis es <b>gratis e ilimitado</b>.</div>';
+  else { h+='<div class="phelp" style="color:#34d399">Ollama activo ✅ — análisis gratis, sin límite de tokens.</div>';
+    if((d.models||[]).length) h+='<div class="prm"><label>Modelo local</label><select id="olm" onchange="setProvider(\'ollama\',this.value)">'
+      +d.models.map(m=>'<option'+(m===d.selected?' selected':'')+'>'+escapeHtml(m)+'</option>').join('')+'</select></div>'; }
+  el.innerHTML=h; }
+async function setProvider(p,m){ let r; try{ r=await fetch('/llm/local',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:p,ollama_model:m||undefined})}); }catch(e){ toast('Error de red'); return; }
+  if(r.ok){ toast(p==='ollama'?'Cerebro local ✓ (gratis)':'Cerebro en la nube ✓'); speak(L(p==='ollama'?'Cambié al cerebro local, '+SIR+'. Ya no gasta créditos.':'Cerebro en la nube, '+SIR+'.','Switched brain, '+SIR+'.')); renderLocal(); load(); }
+  else toast('Falta redesplegar'); }
 async function loadAccounts(){ let d; try{ d=await (await fetch('/accounts')).json(); }catch(e){ return; }
   const el=$('#sys-accounts'); if(!el) return;
   if(!d.ok||!(d.accounts||[]).length){ el.innerHTML='No pude listar tus cuentas'+(d&&d.reason?': '+escapeHtml(d.reason):'.'); return; }

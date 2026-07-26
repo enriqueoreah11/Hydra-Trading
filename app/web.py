@@ -84,6 +84,15 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             settings.model = _md
     except Exception:  # noqa: BLE001
         pass
+    # cerebro local (Ollama) elegido desde la UI
+    try:
+        _llm = json.loads((settings.data_path / "llm.json").read_text())
+        if _llm.get("provider") in ("anthropic", "ollama"):
+            settings.llm_provider = _llm["provider"]
+        if _llm.get("ollama_model"):
+            settings.ollama_model = str(_llm["ollama_model"])
+    except Exception:  # noqa: BLE001
+        pass
 
     @app.on_event("startup")
     async def _start_brain():
@@ -150,7 +159,8 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
 
     @app.get("/model")
     async def get_model():
-        return {"model": settings.model,
+        return {"model": settings.model, "provider": settings.llm_provider,
+                "ollama_model": settings.ollama_model,
                 "options": [{"id": k, **v} for k, v in MODELS.items()]}
 
     @app.post("/model")
@@ -165,6 +175,39 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         (settings.data_path / "model.txt").write_text(md)
         store.log("system", "model", f"modelo cambiado a {md}")
         return {"ok": True, "model": md}
+
+    @app.get("/llm/local")
+    async def llm_local_status():
+        """¿Hay un Ollama corriendo en local? Lista sus modelos descargados."""
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=4) as cli:
+                r = await cli.get(settings.ollama_url.rstrip("/") + "/api/tags")
+                r.raise_for_status()
+                models = [m.get("name", "") for m in r.json().get("models", [])]
+            return {"ok": True, "running": True, "provider": settings.llm_provider,
+                    "models": models, "selected": settings.ollama_model}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": True, "running": False, "provider": settings.llm_provider,
+                    "error": f"{exc}"[:160], "url": settings.ollama_url}
+
+    @app.post("/llm/local")
+    async def llm_local_set(request: Request):
+        """Cambia entre el cerebro en la nube (Anthropic) y el local (Ollama)."""
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        prov = body.get("provider", "")
+        if prov not in ("anthropic", "ollama"):
+            return JSONResponse({"ok": False, "error": "proveedor inválido"}, status_code=400)
+        settings.llm_provider = prov
+        if body.get("ollama_model"):
+            settings.ollama_model = str(body["ollama_model"])[:80]
+        (settings.data_path / "llm.json").write_text(json.dumps(
+            {"provider": prov, "ollama_model": settings.ollama_model}))
+        store.log("system", "llm_provider", f"cerebro: {prov} ({settings.ollama_model})")
+        return {"ok": True, "provider": prov, "ollama_model": settings.ollama_model}
 
     @app.post("/account/select")
     async def account_select(request: Request):

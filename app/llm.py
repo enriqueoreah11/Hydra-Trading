@@ -28,10 +28,41 @@ _LANG = {
 }
 
 
+async def _ask_ollama(system: str, user: str, schema: dict | None,
+                      max_tokens: int) -> dict | str:
+    """Modelo LOCAL vía Ollama: inferencia gratis e ilimitada, sin API key.
+
+    Esto es lo que permite revisar cada lote de operaciones sin que cueste nada,
+    que es la única forma de que un ciclo de auto-corrección sea sostenible.
+    """
+    import httpx
+
+    payload: dict = {
+        "model": settings.ollama_model,
+        "messages": [{"role": "system", "content": system},
+                     {"role": "user", "content": user}],
+        "stream": False,
+        "options": {"num_predict": max_tokens},
+    }
+    if schema is not None:
+        payload["format"] = schema        # Ollama valida contra el JSON Schema
+    url = settings.ollama_url.rstrip("/") + "/api/chat"
+    async with httpx.AsyncClient(timeout=settings.ollama_timeout_s) as cli:
+        r = await cli.post(url, json=payload)
+        r.raise_for_status()
+        data = r.json()
+    text = (data.get("message") or {}).get("content", "")
+    if schema is not None:
+        return json.loads(text)
+    return text
+
+
 async def ask(system: str, user: str, schema: dict | None = None,
               max_tokens: int = 8000) -> dict | str:
     """One-shot call. With `schema`, the response is schema-validated JSON."""
     lang = _LANG.get(settings.owner_lang, _LANG["mix"])
+    if settings.llm_provider == "ollama":
+        return await _ask_ollama(lang + "\n\n" + system, user, schema, max_tokens)
     kwargs: dict = {
         "model": settings.model,
         "max_tokens": max_tokens,

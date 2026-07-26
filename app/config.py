@@ -23,6 +23,15 @@ class Settings(BaseSettings):
     # Opus 4.8 es ~5-10x más caro; Haiku 4.5 es ~20-30x más barato. Cambia desde la UI (Sistema).
     model: str = "claude-sonnet-5"
 
+    # --- Cerebro local (Ollama) ---
+    # Con "ollama" el análisis corre en TU máquina: gratis, ilimitado y sin API key.
+    # Es lo que hace sostenible revisar cada lote de operaciones. Requiere Ollama
+    # corriendo en local (ollama.com) y el modelo descargado (ollama pull qwen3).
+    llm_provider: str = "anthropic"          # "anthropic" | "ollama"
+    ollama_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "qwen3"
+    ollama_timeout_s: float = 180.0
+
     # --- Perplexity (investigación web) ---
     perplexity_api_key: str = ""             # activa el agente investigador (noticias/contexto)
     perplexity_model: str = "sonar"          # "sonar" es el económico; "sonar-pro" el potente
