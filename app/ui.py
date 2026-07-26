@@ -377,13 +377,33 @@ function renderSysInfo(){ if(!DATA){ $('#sys-info').innerHTML='<div class="empty
   h+='<div class="phelp" style="margin:-4px 0 8px">'+((MODELS.find(m=>m.id===(c.model||''))||{}).hint||'')+'. Menos capaz = más barato. El costo se reduce también subiendo <b>«analiza cada (min)»</b> del agente Analista.</div>';
   h+='<div id="sys-local"></div>';
   h+='<div class="cfg"><span>Voz neural</span> <b>'+(c.tts_server?'activa ✅':'navegador')+'</b> · <a href="/tts/health" target="_blank" style="color:#7ff6ff">diagnóstico</a></div>';
+  h+='<div id="sys-voice"></div>';
   h+='<div class="cfg"><span>Te llama</span> <b>'+(c.owner_name||'Krauser')+'</b></div>';
   h+='<div class="cfg"><span>Idioma</span> <span>'+['es','mix','en'].map(lg=>'<button class="btn ghost'+((c.owner_lang||'mix')===lg?' on':'')+'" style="padding:5px 9px;margin-left:5px" onclick="setLang(\''+lg+'\')">'+({es:'ES',mix:'ES+EN',en:'EN'}[lg])+'</button>').join('')+'</span></div>';
   h+='<div class="cfg"><span>Anthropic key</span> <b>'+(c.has_anthropic?'puesta ✅':'falta ❌')+'</b></div>';
   h+='<div class="empty" style="margin-top:12px">Los ajustes se cambian con <code>fly secrets set …</code> y luego <code>fly deploy</code>.</div>';
   $('#sys-info').innerHTML=h;
-  renderLocal();
+  renderLocal(); renderVoice();
   if(c.oauth_ok) loadAccounts(); }
+async function renderVoice(){ const el=$('#sys-voice'); if(!el) return;
+  let d; try{ d=await (await fetch('/voice/local')).json(); }catch(e){ el.innerHTML=''; return; }
+  const P=d.provider||'';
+  const opt=(id,txt,tip)=>'<button class="btn ghost'+(P===id?' on':'')+'" style="padding:5px 9px;margin-right:5px" title="'+tip+'" onclick="setVoice(\''+id+'\')">'+txt+'</button>';
+  let h='<div style="margin:2px 0 6px">'
+    +opt('','🌐 Navegador','La voz del sistema. Gratis.')
+    +opt('voicebox','🎙️ Voicebox','Voz local clonada. Gratis, sin API key.')
+    +opt('elevenlabs','☁️ ElevenLabs','De pago, requiere API key.')+'</div>';
+  if(!d.running) h+='<div class="phelp" style="color:#fbbf24">Voicebox no responde en '+escapeHtml(d.url||'')+'. <b>La app debe estar abierta</b> — el servidor corre dentro de ella.</div>';
+  else { h+='<div class="phelp" style="color:#34d399">Voicebox activo ✅ — voz local, gratis e ilimitada.</div>';
+    const pr=d.profiles||[];
+    if(pr.length) h+='<div class="prm"><label>Voz</label><select onchange="setVoice(\''+P+'\',this.value)">'
+      +pr.map(p=>'<option'+(p.name===d.selected?' selected':'')+'>'+escapeHtml(p.name)+'</option>').join('')+'</select>'
+      +'<div class="phelp">'+pr.map(p=>escapeHtml(p.name)+' ('+escapeHtml(p.language||'?')+')').join(' · ')+'</div></div>'; }
+  el.innerHTML=h; }
+async function setVoice(p,prof){ let r; try{ r=await fetch('/voice/local',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:p,profile:prof||undefined})}); }catch(e){ toast('Error de red'); return; }
+  if(r.ok){ ttsServer=(p!==''); toast(p==='voicebox'?'Voz local ✓ (gratis)':(p?'Voz: '+p:'Voz del navegador'));
+    renderVoice(); setTimeout(()=>speak(L('Listo '+SIR+', esta es mi voz.','Ready '+SIR+', this is my voice.')),400); }
+  else toast('Falta redesplegar'); }
 async function renderLocal(){ const el=$('#sys-local'); if(!el) return;
   let d; try{ d=await (await fetch('/llm/local')).json(); }catch(e){ el.innerHTML=''; return; }
   const P=d.provider||'anthropic';
@@ -499,6 +519,8 @@ async function serverSpeak(t){ try{ speaking=true; if(ttsAudio)ttsAudio.pause();
     const r=await fetch('/tts',{method:'POST',headers:{'Content-Type':'text/plain'},body:t});
     if(!r.ok){ const why=await r.text().catch(()=>''); if(!ttsWarned){ ttsWarned=true; toast('Voz neural falló → uso la del navegador. '+(why||'').slice(0,90)); } throw 0; }
     ttsWarned=false;
+    // 204 = Voicebox ya lo dijo por las bocinas del Mac; no repetir con el navegador
+    if(r.status===204){ speaking=false; return; }
     const url=URL.createObjectURL(await r.blob()); ttsAudio=new Audio(url);
     ttsAudio.onended=()=>{speaking=false;URL.revokeObjectURL(url);}; ttsAudio.onerror=()=>{speaking=false;browserSpeak(t);}; await ttsAudio.play();
   }catch(_){ speaking=false; browserSpeak(t); } }

@@ -87,10 +87,19 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
     # cerebro local (Ollama) elegido desde la UI
     try:
         _llm = json.loads((settings.data_path / "llm.json").read_text())
-        if _llm.get("provider") in ("anthropic", "ollama"):
+        if _llm.get("provider") in ("anthropic", "ollama", "hybrid"):
             settings.llm_provider = _llm["provider"]
         if _llm.get("ollama_model"):
             settings.ollama_model = str(_llm["ollama_model"])
+    except Exception:  # noqa: BLE001
+        pass
+    # voz elegida desde la UI
+    try:
+        _v = json.loads((settings.data_path / "voice.json").read_text())
+        if _v.get("provider") in ("", "voicebox", "openai", "elevenlabs"):
+            settings.tts_provider = _v["provider"]
+        if _v.get("profile"):
+            settings.voicebox_profile = str(_v["profile"])
     except Exception:  # noqa: BLE001
         pass
 
@@ -203,6 +212,34 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                  ("architect", "Architect", "1 vez al día · evoluciona la estrategia")]
         return [{"role": r, "label": lbl, "why": why, "brain": settings.brain_for(r)}
                 for r, lbl, why in roles]
+
+    @app.get("/voice/local")
+    async def voice_local_status():
+        """¿Está Voicebox corriendo? Devuelve sus perfiles de voz."""
+        from . import tts as tts_mod
+        profiles = await tts_mod.voicebox_profiles()
+        return {"ok": True, "running": profiles is not None,
+                "provider": settings.tts_provider,
+                "profiles": profiles or [], "selected": settings.voicebox_profile,
+                "url": settings.voicebox_url}
+
+    @app.post("/voice/local")
+    async def voice_local_set(request: Request):
+        """Cambia el proveedor de voz y/o el perfil de Voicebox."""
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        prov = body.get("provider", "")
+        if prov not in ("", "voicebox", "openai", "elevenlabs"):
+            return JSONResponse({"ok": False, "error": "proveedor inválido"}, status_code=400)
+        settings.tts_provider = prov
+        if body.get("profile"):
+            settings.voicebox_profile = str(body["profile"])[:80]
+        (settings.data_path / "voice.json").write_text(json.dumps(
+            {"provider": prov, "profile": settings.voicebox_profile}))
+        store.log("system", "tts_provider", f"voz: {prov or 'navegador'} ({settings.voicebox_profile})")
+        return {"ok": True, "provider": prov, "profile": settings.voicebox_profile}
 
     @app.post("/llm/test")
     async def llm_test():
@@ -566,6 +603,10 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         text = (await request.body()).decode("utf-8", "ignore")
         audio = await tts_mod.synth(text)
         if not audio:
+            if tts_mod.state.get("played_locally"):
+                # Voicebox ya lo reprodujo en las bocinas del Mac; si la UI cayera
+                # a la voz del navegador se oiría dos veces.
+                return Response(status_code=204)
             # devolvemos el motivo real para poder diagnosticar (la UI lo muestra)
             raise HTTPException(503, tts_mod.last_error() or "TTS neural no configurado")
         return Response(content=audio, media_type="audio/mpeg")

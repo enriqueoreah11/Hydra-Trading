@@ -5,7 +5,11 @@ Si no hay proveedor/clave configurados, devuelve None y la UI usa la voz del nav
 """
 from __future__ import annotations
 
+import json
 import logging
+import re
+from pathlib import Path
+from urllib.parse import urljoin
 
 import httpx
 
@@ -18,12 +22,184 @@ _last_error: str = ""
 
 
 def available() -> bool:
+    if settings.tts_provider == "voicebox":
+        return True                      # local: no necesita clave de nada
     return bool(settings.tts_provider and settings.tts_api_key
                 and (settings.tts_provider != "elevenlabs" or settings.elevenlabs_voice_id))
 
 
 def last_error() -> str:
     return _last_error
+
+
+# ------------------------------------------------------- Voicebox (local)
+
+async def _voicebox(text: str) -> bytes | None:
+    """Voz local de Voicebox (Kokoro/Qwen3-TTS, sin API key ni internet).
+
+    Voicebox reproduce el audio en las bocinas del Mac Y lo guarda. Si logramos
+    recuperar el archivo, lo devolvemos para que lo toque el navegador (así el
+    botón de silenciar sigue mandando). Si no, marcamos `played_locally` para
+    que la UI NO caiga a la voz del navegador — si no, se oiría dos veces.
+    """
+    global _last_error
+    state["played_locally"] = False
+    base = settings.voicebox_url.rstrip("/")
+    mcp = base + "/mcp"
+    session: dict = {"id": None, "url": mcp}
+
+    async def rpc(http: httpx.AsyncClient, method: str, params: dict | None = None):
+        body: dict = {"jsonrpc": "2.0", "id": 1, "method": method}
+        if params is not None:
+            body["params"] = params
+        headers = {"Content-Type": "application/json",
+                   "Accept": "application/json, text/event-stream"}
+        if session["id"]:
+            headers["Mcp-Session-Id"] = session["id"]
+        # follow_redirects: los servidores MCP redirigen /mcp -> /mcp/
+        r = await http.post(session["url"], json=body, headers=headers,
+                            follow_redirects=True)
+        session["url"] = str(r.url)
+        if not session["id"]:
+            session["id"] = r.headers.get("Mcp-Session-Id")
+        r.raise_for_status()
+        for line in r.text.splitlines():
+            line = line.strip()
+            if line.startswith("data:"):
+                line = line[5:].strip()
+            if line.startswith("{"):
+                try:
+                    return json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+        return {}
+
+    def unwrap(res: dict) -> dict:
+        out = (res or {}).get("result") or {}
+        for block in out.get("content") or []:
+            if block.get("type") == "text":
+                try:
+                    return json.loads(block.get("text") or "{}")
+                except json.JSONDecodeError:
+                    return {}
+        return {}
+
+    async with httpx.AsyncClient(timeout=settings.voicebox_timeout_s) as http:
+        await rpc(http, "initialize", {
+            "protocolVersion": "2025-06-18", "capabilities": {},
+            "clientInfo": {"name": "hydra", "version": "1.0"}})
+        args: dict = {"text": text}
+        if settings.voicebox_profile:
+            args["profile"] = settings.voicebox_profile
+        spoken = unwrap(await rpc(http, "tools/call",
+                                  {"name": "voicebox.speak", "arguments": args}))
+        gen = spoken.get("generation_id") or spoken.get("id")
+        if not gen:
+            _last_error = f"Voicebox no devolvió id: {str(spoken)[:160]}"
+            return None
+
+        # El estado es un stream SSE; esperamos a que termine de generar.
+        poll = urljoin(base + "/", (spoken.get("poll_url") or
+                                    f"/generate/{gen}/status").lstrip("/"))
+        try:
+            async with http.stream("GET", poll,
+                                   headers={"Accept": "text/event-stream"}) as r:
+                async for line in r.aiter_lines():
+                    line = line.strip()
+                    if not line.startswith("data:"):
+                        continue
+                    try:
+                        ev = json.loads(line[5:].strip())
+                    except json.JSONDecodeError:
+                        continue
+                    st = str(ev.get("status") or "").lower()
+                    if st in _TERMINAL:
+                        if ev.get("error"):
+                            _last_error = f"Voicebox: {str(ev['error'])[:160]}"
+                            return None
+                        break
+        except Exception:  # noqa: BLE001 - el stream puede cortarse al terminar
+            pass
+
+        # ¿Podemos recuperar el archivo? (así lo toca el navegador y se puede silenciar)
+        audio = await _voicebox_audio(http, base, gen)
+        if audio:
+            _last_error = ""
+            return audio
+
+    # No hubo forma de leerlo, pero YA SONÓ en las bocinas: no caigas al navegador.
+    state["played_locally"] = True
+    _last_error = ""
+    return None
+
+
+async def voicebox_profiles() -> list[dict] | None:
+    """Perfiles de voz de Voicebox. None si la app no está abierta."""
+    base = settings.voicebox_url.rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=6) as http:
+            headers = {"Content-Type": "application/json",
+                       "Accept": "application/json, text/event-stream"}
+            r = await http.post(base + "/mcp", follow_redirects=True, headers=headers,
+                                json={"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                                      "params": {"protocolVersion": "2025-06-18",
+                                                 "capabilities": {},
+                                                 "clientInfo": {"name": "hydra",
+                                                                "version": "1.0"}}})
+            r.raise_for_status()
+            if r.headers.get("Mcp-Session-Id"):
+                headers["Mcp-Session-Id"] = r.headers["Mcp-Session-Id"]
+            r = await http.post(str(r.url), follow_redirects=True, headers=headers,
+                                json={"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                                      "params": {"name": "voicebox.list_profiles",
+                                                 "arguments": {}}})
+            r.raise_for_status()
+            for line in r.text.splitlines():
+                line = line.strip()
+                if line.startswith("data:"):
+                    line = line[5:].strip()
+                if not line.startswith("{"):
+                    continue
+                res = json.loads(line).get("result") or {}
+                for block in res.get("content") or []:
+                    if block.get("type") == "text":
+                        return json.loads(block["text"]).get("profiles") or []
+    except Exception:  # noqa: BLE001 - app cerrada o versión distinta
+        return None
+    return None
+
+
+async def _voicebox_audio(http: httpx.AsyncClient, base: str, gen: str) -> bytes | None:
+    """Intenta leer el audio ya generado: primero por HTTP, luego desde Captures."""
+    for path in (f"/generate/{gen}/audio", f"/captures/{gen}/audio", f"/audio/{gen}"):
+        try:
+            r = await http.get(base + path, follow_redirects=True)
+            if r.status_code == 200 and (
+                    r.headers.get("Content-Type", "").startswith("audio")
+                    or len(r.content) > 4000):
+                return r.content
+        except Exception:  # noqa: BLE001
+            continue
+    # La app guarda cada generación en Captures; de ahí sacamos la ruta real.
+    try:
+        body = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": "voicebox.list_captures", "arguments": {"limit": 5}}}
+        r = await http.post(base + "/mcp", json=body, follow_redirects=True,
+                            headers={"Content-Type": "application/json",
+                                     "Accept": "application/json, text/event-stream"})
+        for m in re.finditer(r'([/\\][^"\\]*?\.(?:wav|mp3|m4a|ogg|flac))', r.text, re.I):
+            p = Path(m.group(1).replace("\\/", "/"))
+            if p.is_file() and p.stat().st_size > 1000:
+                return p.read_bytes()
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+_TERMINAL = {"done", "complete", "completed", "finished", "ready", "success",
+             "error", "failed", "cancelled", "canceled"}
+# played_locally: True cuando Voicebox ya lo reprodujo y no hay que repetirlo
+state: dict = {"played_locally": False}
 
 
 async def synth(text: str) -> bytes | None:
@@ -36,6 +212,8 @@ async def synth(text: str) -> bytes | None:
         return None
     provider = settings.tts_provider.lower()
     try:
+        if provider == "voicebox":
+            return await _voicebox(text)
         if provider == "openai":
             async with httpx.AsyncClient(timeout=40) as http:
                 r = await http.post(

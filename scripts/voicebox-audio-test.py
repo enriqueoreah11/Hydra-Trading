@@ -127,8 +127,14 @@ def sse_wait(url: str, timeout: float = 180) -> dict:
 
 def main() -> int:
     print(f"→ {MCP}")
-    rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
-                       "clientInfo": {"name": "hydra", "version": "1.0"}})
+    try:
+        rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
+                           "clientInfo": {"name": "hydra", "version": "1.0"}})
+    except urllib.error.URLError as exc:
+        print(f"\n❌ No responde: {getattr(exc, 'reason', exc)}\n")
+        print("   La app Voicebox debe estar ABIERTA — el servidor corre dentro de ella.")
+        print("   Ábrela desde /Applications y vuelve a correr esto.")
+        return 1
     try:
         rpc("notifications/initialized", {}, notify=True)
     except Exception:  # noqa: BLE001

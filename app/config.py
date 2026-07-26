@@ -95,7 +95,12 @@ class Settings(BaseSettings):
     owner_name: str = "Krauser"              # cómo te llama la app por voz (p.ej. Enrique, Krauser, jefe)
     owner_lang: str = "mix"                  # idioma: "es" | "en" | "mix" (español con términos de trading en inglés)
     # Voz NEURAL por servidor (suena natural, como la de Claude). Requiere una API key.
-    tts_provider: str = ""                   # "" (usa la del navegador) | "openai" | "elevenlabs"
+    tts_provider: str = ""                   # "" (navegador) | "voicebox" | "openai" | "elevenlabs"
+    # Voicebox: estudio de voz LOCAL (Kokoro/Qwen3-TTS). Gratis, sin API key y sin
+    # internet. Requiere la app abierta: el servidor corre dentro de ella.
+    voicebox_url: str = "http://127.0.0.1:17493"
+    voicebox_profile: str = "Jarvis"         # nombre del perfil de voz en Voicebox
+    voicebox_timeout_s: float = 120.0
     tts_api_key: str = ""                    # key de OpenAI o de ElevenLabs
     tts_speed: float = 1.06
     openai_tts_model: str = "tts-1"          # tts-1 (rápido) | tts-1-hd (más calidad)
