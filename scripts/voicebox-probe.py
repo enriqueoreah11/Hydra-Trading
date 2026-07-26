@@ -17,7 +17,17 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-URL = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:17493/mcp"
+_ARGS = [a for a in sys.argv[1:]]
+_CALL: str | None = None
+_CALL_ARGS: dict = {}
+if "--call" in _ARGS:
+    i = _ARGS.index("--call")
+    _CALL = _ARGS[i + 1] if len(_ARGS) > i + 1 else None
+    if len(_ARGS) > i + 2:
+        _CALL_ARGS = json.loads(_ARGS[i + 2])
+    _ARGS = _ARGS[:i]
+
+URL = _ARGS[0] if _ARGS else "http://127.0.0.1:17493/mcp"
 SESSION: dict = {"id": None, "url": URL}
 
 
@@ -117,19 +127,65 @@ def main() -> int:
         req = set((t.get("inputSchema") or {}).get("required") or [])
         for pname, pinfo in props.items():
             star = "*" if pname in req else " "
-            ptype = pinfo.get("type", "?")
-            pdesc = (pinfo.get("description") or "")[:90]
-            enum = pinfo.get("enum")
-            line = f"   {star} {pname} ({ptype})"
-            if enum:
-                shown = ", ".join(map(str, enum[:12]))
-                line += f" = [{shown}{'…' if len(enum) > 12 else ''}]"
-            print(line + (f" — {pdesc}" if pdesc else ""))
+            print(f"   {star} {pname} ({_type_of(pinfo)})"
+                  + (f" — {(pinfo.get('description') or '')[:90]}"
+                     if pinfo.get("description") else ""))
 
     print("\n" + "=" * 60)
-    print("Copia TODO esto y pégamelo para conectar Hydra a la voz local.")
+    print("Para llamar una herramienta:")
+    print(f"  python3 {sys.argv[0]} --call voicebox.list_profiles")
+    return 0
+
+
+def _type_of(p: dict) -> str:
+    """Describe el tipo de un parámetro, incluso si viene envuelto en anyOf/$ref.
+
+    Los esquemas generados por Pydantic suelen poner los opcionales como
+    anyOf:[{...},{type:null}] — sin esto se veían todos como '?'.
+    """
+    if "enum" in p:
+        e = p["enum"]
+        return "[" + ", ".join(map(str, e[:14])) + ("…" if len(e) > 14 else "") + "]"
+    if p.get("type"):
+        return str(p["type"])
+    for key in ("anyOf", "oneOf", "allOf"):
+        if key in p:
+            parts = [_type_of(s) for s in p[key] if s.get("type") != "null"]
+            parts = [x for x in parts if x != "?"]
+            if parts:
+                return " | ".join(dict.fromkeys(parts)) + (
+                    " (opcional)" if any(s.get("type") == "null" for s in p[key]) else "")
+    if "$ref" in p:
+        return p["$ref"].rsplit("/", 1)[-1]
+    return "?"
+
+
+def call(name: str, args: dict) -> int:
+    """Llama una herramienta y muestra la respuesta."""
+    try:
+        rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
+                           "clientInfo": {"name": "hydra-probe", "version": "1.0"}})
+        try:
+            rpc("notifications/initialized", {}, notify=True)
+        except Exception:  # noqa: BLE001
+            pass
+        res = rpc("tools/call", {"name": name, "arguments": args})
+    except urllib.error.URLError as exc:
+        print(f"❌ {getattr(exc, 'reason', exc)}")
+        return 1
+    result = (res or {}).get("result") or res
+    # el contenido suele venir como bloques de texto con JSON dentro
+    for block in (result.get("content") or []) if isinstance(result, dict) else []:
+        if block.get("type") == "text":
+            txt = block.get("text", "")
+            try:
+                print(json.dumps(json.loads(txt), indent=2, ensure_ascii=False)[:6000])
+            except json.JSONDecodeError:
+                print(txt[:6000])
+            return 0
+    print(json.dumps(result, indent=2, ensure_ascii=False)[:6000])
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(call(_CALL, _CALL_ARGS) if _CALL else main())
