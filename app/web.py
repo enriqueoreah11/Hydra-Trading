@@ -204,6 +204,35 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         return [{"role": r, "label": lbl, "why": why, "brain": settings.brain_for(r)}
                 for r, lbl, why in roles]
 
+    @app.post("/llm/test")
+    async def llm_test():
+        """Prueba de verdad el cerebro local: pide JSON con schema y lo valida.
+        Sirve para confirmar que el modelo responde bien ANTES de confiarle la flota."""
+        import time as _t
+        from . import llm as _llm
+        schema = {"type": "object",
+                  "properties": {"verdict": {"type": "string"},
+                                 "confidence": {"type": "integer"}},
+                  "required": ["verdict", "confidence"],
+                  "additionalProperties": False}
+        prev = settings.llm_provider
+        settings.llm_provider = "ollama"        # forzar la ruta local en la prueba
+        t0 = _t.time()
+        try:
+            out = await _llm.ask(
+                "Eres un revisor de trading. Responde solo el JSON pedido.",
+                "Un lote de 40 operaciones: 67% salió por stop loss, los perdedores "
+                "promediaron -2.01R y el edge bruto fue -0.267R. ¿Ajustar el stop o no? "
+                "Responde verdict ('no_change' o 'adjust') y confidence 0-100.",
+                schema=schema, max_tokens=800)
+            return {"ok": True, "model": settings.ollama_model,
+                    "seconds": round(_t.time() - t0, 1), "reply": out}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "model": settings.ollama_model,
+                    "seconds": round(_t.time() - t0, 1), "error": f"{exc}"[:300]}
+        finally:
+            settings.llm_provider = prev
+
     @app.post("/llm/local")
     async def llm_local_set(request: Request):
         """Cambia entre el cerebro en la nube (Anthropic) y el local (Ollama)."""

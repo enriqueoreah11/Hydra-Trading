@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     ollama_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen3:8b"           # el de la talacha
     ollama_timeout_s: float = 180.0
+    # Ventana de contexto. Ollama por defecto usa una MUY corta y recorta el
+    # prompt en silencio; el playbook + el snapshot de mercado no caben ahí.
+    # 16k va sobrado y en 96 GB de RAM unificada ni se siente.
+    ollama_num_ctx: int = 16384
 
     @property
     def local_roles(self) -> set[str]:
