@@ -403,7 +403,12 @@ async function renderLocal(){ const el=$('#sys-local'); if(!el) return;
   el.innerHTML=h; }
 async function testLocal(){ const o=$('#lm-test'); if(o) o.innerHTML='<div class="empty">Probando… (la primera vez tarda: carga el modelo en memoria)</div>';
   let j; try{ j=await (await fetch('/llm/test',{method:'POST'})).json(); }catch(e){ o.innerHTML='<div class="empty" style="color:#ff5d73">Error de red.</div>'; return; }
-  if(j.ok) o.innerHTML='<div class="phelp" style="color:#34d399">✅ '+escapeHtml(j.model)+' respondió en '+j.seconds+'s con JSON válido:<br><code>'+escapeHtml(JSON.stringify(j.reply))+'</code></div>';
+  if(j.ok){ const g=j.good_judgement;
+    o.innerHTML='<div class="phelp" style="color:#34d399">✅ '+escapeHtml(j.model)+' respondió en <b>'+j.seconds+'s</b> con JSON válido.</div>'
+      +'<div class="phelp" style="color:'+(g?'#34d399':'#fbbf24')+'">'+(g?'🎯 Buen criterio':'⚠️ Criterio flojo')
+      +' — dijo <b>'+escapeHtml(j.reply.verdict||'')+'</b> ('+(j.reply.confidence||0)+'%), lo correcto era <b>'+escapeHtml(j.expected)+'</b>.'
+      +(g?' Vio que el edge bruto ya era negativo.':' Se dejó llevar por el 67% de salidas por SL sin mirar que el edge bruto ya era negativo — mover el stop no crea una ventaja que no existe.')+'</div>'
+      +'<div class="phelp" style="opacity:.7;white-space:pre-wrap">'+escapeHtml((j.reply.reasoning||'').slice(0,260))+'</div>'; }
   else o.innerHTML='<div class="phelp" style="color:#ff5d73">❌ '+escapeHtml(j.error||'falló')+'</div>'; }
 async function setProvider(p,m){ let r; try{ r=await fetch('/llm/local',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:p,ollama_model:m||undefined})}); }catch(e){ toast('Error de red'); return; }
   if(r.ok){ toast(p==='ollama'?'Cerebro local ✓ (gratis)':'Cerebro en la nube ✓'); speak(L(p==='ollama'?'Cambié al cerebro local, '+SIR+'. Ya no gasta créditos.':'Cerebro en la nube, '+SIR+'.','Switched brain, '+SIR+'.')); renderLocal(); load(); }

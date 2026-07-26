@@ -206,27 +206,40 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
 
     @app.post("/llm/test")
     async def llm_test():
-        """Prueba de verdad el cerebro local: pide JSON con schema y lo valida.
-        Sirve para confirmar que el modelo responde bien ANTES de confiarle la flota."""
+        """Prueba el cerebro local con EL MISMO prompt que usa el revisor de la flota.
+
+        Así no solo comprueba que la conexión funciona: mide si el modelo juzga
+        bien. El caso está armado como trampa — el edge BRUTO ya es negativo, así
+        que la estrategia no tiene ventaja y mover el stop no se la va a crear.
+        Un buen revisor responde 'no_change'; el que responde 'adjust' se dejó
+        llevar por el 67% de salidas por SL sin mirar el edge.
+        """
         import time as _t
+
         from . import llm as _llm
-        schema = {"type": "object",
-                  "properties": {"verdict": {"type": "string"},
-                                 "confidence": {"type": "integer"}},
-                  "required": ["verdict", "confidence"],
-                  "additionalProperties": False}
+        from .fleet import REVIEW_SCHEMA, SYSTEM
+        user = (
+            "Estrategia: donchian  ·  XAUUSD M15\n"
+            'Parámetros actuales: {"lookback": 20, "atr_mult": 1.5, "rr": 2.0}\n'
+            'Rangos permitidos: {"lookback": [5, 60], "atr_mult": [0.5, 4.0], "rr": [0.5, 5.0]}\n\n'
+            "Lote de 40 operaciones:\n"
+            "- Edge BRUTO medio: -0.267R\n"
+            "- Edge NETO medio (tras costos): -0.317R\n"
+            "- Costo implícito: +0.050R por operación\n"
+            "- Win rate: 32.5%\n"
+            "- Salidas por stop loss: 67.0%\n"
+            "- Perdedor medio: -1.02R\n"
+            "- Ganador medio: +1.98R\n")
         prev = settings.llm_provider
         settings.llm_provider = "ollama"        # forzar la ruta local en la prueba
         t0 = _t.time()
         try:
-            out = await _llm.ask(
-                "Eres un revisor de trading. Responde solo el JSON pedido.",
-                "Un lote de 40 operaciones: 67% salió por stop loss, los perdedores "
-                "promediaron -2.01R y el edge bruto fue -0.267R. ¿Ajustar el stop o no? "
-                "Responde verdict ('no_change' o 'adjust') y confidence 0-100.",
-                schema=schema, max_tokens=800)
+            out = await _llm.ask(SYSTEM, user, schema=REVIEW_SCHEMA,
+                                 max_tokens=1200)
+            good = out.get("verdict") == "no_change"
             return {"ok": True, "model": settings.ollama_model,
-                    "seconds": round(_t.time() - t0, 1), "reply": out}
+                    "seconds": round(_t.time() - t0, 1), "reply": out,
+                    "expected": "no_change", "good_judgement": good}
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "model": settings.ollama_model,
                     "seconds": round(_t.time() - t0, 1), "error": f"{exc}"[:300]}
