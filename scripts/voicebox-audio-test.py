@@ -117,21 +117,32 @@ def main() -> int:
         return 1
     print(f"\n🆔 id de generación: {gen}")
 
+    # Voicebox nos da la ruta de consulta; úsala en vez de inventarla
+    poll = payload.get("poll_url") or f"/generate/{gen}/status"
+    poll_url = urllib.parse.urljoin(BASE, poll)
+    print(f"⏳ Consultando {poll_url}")
+    print("   (la PRIMERA vez tarda: carga el modelo de voz. No escribas nada.)")
+
     status: dict = {}
-    for i in range(20):
-        code, body, _ = get(f"{BASE}/generate/{gen}/status")
+    for i in range(60):          # hasta 60 s: la primera carga puede ser lenta
+        code, body, _ = get(poll_url)
         if code != 200:
-            print(f"\n❌ /generate/{gen}/status → HTTP {code}: {body[:200]!r}")
+            print(f"\n❌ status → HTTP {code}: {body[:200]!r}")
             break
         try:
             status = json.loads(body)
         except json.JSONDecodeError:
             print(f"\n(status no es JSON) {body[:300]!r}")
             break
-        st = str(status.get("status") or status.get("state") or "")
-        if st.lower() in ("done", "complete", "completed", "finished", "ready", "success"):
+        st = str(status.get("status") or status.get("state") or "").lower()
+        if st in ("done", "complete", "completed", "finished", "ready", "success"):
+            print(f"   ✅ listo en ~{i + 1}s")
             break
-        print(f"   … {st or 'en curso'} ({i + 1})")
+        if st in ("error", "failed", "cancelled"):
+            print(f"   ❌ terminó en estado {st}")
+            break
+        if i % 5 == 0:
+            print(f"   … {st or 'en curso'} ({i + 1}s)")
         time.sleep(1)
 
     if status:
