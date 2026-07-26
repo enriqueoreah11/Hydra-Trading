@@ -482,6 +482,61 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         applied = agent_params.apply_and_save(settings.data_path / "overrides.json", key, body)
         return {"ok": True, "applied": applied}
 
+    # ------------------------------------- aprendizaje: propuestas vía MCP
+
+    @app.get("/proposals")
+    async def proposals_list():
+        """Cambios que Claude Desktop propuso por MCP y esperan tu aprobación."""
+        from . import mcp_gate
+        return {"pending": store.proposals("awaiting_approval"),
+                "recent": store.proposals(None, limit=10),
+                "hypotheses": store.hypotheses("open"),
+                "metrics": {"counts": store.postmortem_counts(),
+                            "threshold": mcp_gate.HYPOTHESIS_MIN_OCCURRENCES}}
+
+    @app.post("/proposals/{pid}/decide")
+    async def proposal_decide(pid: int, request: Request):
+        """Aprueba o rechaza una propuesta. Solo al aprobar se aplican los cambios."""
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        approve = bool(body.get("approve"))
+        note = str(body.get("note", ""))[:400]
+        p = store.proposal(pid)
+        if not p:
+            return JSONResponse({"ok": False, "error": "propuesta no encontrada"},
+                                status_code=404)
+        if p["status"] != "awaiting_approval":
+            return JSONResponse({"ok": False, "error": f"ya estaba {p['status']}"},
+                                status_code=409)
+        if not approve:
+            store.decide_proposal(pid, False, note)
+            store.log("system", "proposal_rejected", {"id": pid, "note": note})
+            return {"ok": True, "status": "rejected"}
+        try:
+            changes = json.loads(p["changes"])
+        except Exception:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": "cambios ilegibles"}, status_code=400)
+        applied: dict = {}
+        try:
+            for name, value in changes.items():
+                agent_params.apply_and_save(settings.data_path / "overrides.json",
+                                            _agent_owning(name), {name: value})
+                applied[name] = getattr(settings, name, None)
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": f"al aplicar: {exc}"[:200]},
+                                status_code=500)
+        store.decide_proposal(pid, True, note)
+        store.log("system", "proposal_approved", {"id": pid, "applied": applied, "note": note})
+        return {"ok": True, "status": "approved", "applied": applied}
+
+    def _agent_owning(param: str) -> str:
+        for key, names in agent_params.PARAMS.items():
+            if param in names:
+                return key
+        return "analyst"
+
     # -------------------------------------------- memoria (vault Obsidian)
 
     @app.get("/vault")

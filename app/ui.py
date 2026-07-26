@@ -177,6 +177,8 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     <div id="sys-keys"></div>
     <div class="slbl">📓 MEMORIA (OBSIDIAN)</div>
     <div id="sys-vault"></div>
+    <div class="slbl">🧪 PROPUESTAS (CLAUDE DESKTOP · MCP)</div>
+    <div id="sys-props"></div>
   </div>
 </div>
 
@@ -261,7 +263,29 @@ function banner(c){ const b=$('#banner'); let m='';
 function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('show'); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),3800); }
 
 $('#b-refresh').onclick=()=>{ toast('Datos actualizados'); load(); }; $('#b-halt').onclick=doHalt; $('#b-demo').onclick=runDemo; $('#b-cal').onclick=openCalendar;
-$('#b-sistema').onclick=()=>{ renderSysInfo(); renderSecrets(); renderVault(); $('#sistema').classList.add('open'); };
+$('#b-sistema').onclick=()=>{ renderSysInfo(); renderSecrets(); renderVault(); renderProps(); $('#sistema').classList.add('open'); };
+async function renderProps(){ let d; try{ d=await (await fetch('/proposals')).json(); }catch(e){ $('#sys-props').innerHTML='<div class="empty">Falta redesplegar.</div>'; return; }
+  const m=d.metrics||{}, counts=m.counts||[];
+  let h='<div class="phelp">Claude Desktop analiza Hydra por MCP y propone ajustes aquí. <b>Nada se aplica solo</b>: tú apruebas o rechazas.</div>';
+  const tot=counts.reduce((a,c)=>a+c.count,0);
+  h+='<div class="cfg"><span>Post-mortems</span> <b>'+tot+'</b> · umbral para hipótesis: '+(m.threshold||30)+'</div>';
+  if(counts.length) h+=counts.map(c=>'<div class="cfg"><span>'+escapeHtml(c.category)+'</span> <b>'+c.count+(c.count>=(m.threshold||30)?' ✅':'')+'</b></div>').join('');
+  const pend=d.pending||[];
+  if(!pend.length) h+='<div class="empty">Sin propuestas pendientes.</div>';
+  pend.forEach(p=>{ h+='<div class="prm"><label>Propuesta #'+p.id+'</label>'
+    +'<div class="empty" style="color:#cfe8ff;white-space:pre-wrap">'+escapeHtml(p.changes)+'</div>'
+    +'<div class="phelp">'+escapeHtml(p.rationale||'')+'</div>'
+    +'<button class="btn" onclick="decideProp('+p.id+',true)">✓ Aprobar</button> '
+    +'<button class="btn ghost" onclick="decideProp('+p.id+',false)">✕ Rechazar</button></div>'; });
+  const hyp=d.hypotheses||[];
+  if(hyp.length){ h+='<div class="phelp" style="margin-top:8px">Hipótesis abiertas:</div>'
+    +hyp.map(x=>'<div class="cfg"><span>'+escapeHtml(x.param||x.category||'—')+'</span> <b>'+escapeHtml((x.description||'').slice(0,80))+'</b></div>').join(''); }
+  $('#sys-props').innerHTML=h; }
+async function decideProp(id,ok){ if(ok&&!confirm('Aplicar este cambio de parámetros a Hydra?')) return;
+  let r; try{ r=await fetch('/proposals/'+id+'/decide',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({approve:ok})}); }catch(e){ toast('Error de red'); return; }
+  const j=await r.json().catch(()=>({}));
+  if(j.ok){ toast(ok?'Aplicado ✓':'Rechazado'); speak(L(ok?'Cambio aplicado, '+SIR+'.':'Propuesta rechazada, '+SIR+'.',ok?'Change applied, '+SIR+'.':'Proposal rejected, '+SIR+'.')); renderProps(); load(); }
+  else toast(j.error||'No se pudo'); }
 async function renderVault(){ let d; try{ d=await (await fetch('/vault')).json(); }catch(e){ $('#sys-vault').innerHTML='<div class="empty">Falta redesplegar para activar la memoria.</div>'; return; }
   const n=(d.stats&&d.stats.notes)||0;
   let h='<div class="cfg"><span>Notas guardadas</span> <b>'+n+'</b> · <a href="/vault/export" style="color:#7ff6ff">⬇ descargar vault (.zip)</a></div>';

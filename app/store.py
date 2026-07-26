@@ -78,6 +78,37 @@ class Store:
             key TEXT PRIMARY KEY,
             value TEXT
         );
+        -- Aprendizaje: post-mortems clasificados, hipótesis y cambios propuestos.
+        -- Los escribe Claude Desktop vía MCP; los cambios NO se aplican solos:
+        -- quedan en 'proposals' esperando tu aprobación desde la UI.
+        CREATE TABLE IF NOT EXISTS postmortems(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts REAL NOT NULL,
+            ref TEXT,                -- referencia libre (símbolo, id de operación, fecha)
+            symbol TEXT,
+            category TEXT NOT NULL,  -- taxonomía cerrada (ver mcp_server.CATEGORIES)
+            notes TEXT
+        );
+        CREATE TABLE IF NOT EXISTS hypotheses(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts REAL NOT NULL,
+            category TEXT,           -- categoría de post-mortem que la motiva
+            param TEXT,              -- parámetro que se sospecha
+            description TEXT NOT NULL,
+            evidence TEXT,
+            occurrences INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'open'   -- open | promoted | rejected
+        );
+        CREATE TABLE IF NOT EXISTS proposals(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts REAL NOT NULL,
+            hypothesis_id INTEGER,
+            changes TEXT NOT NULL,   -- JSON {param: valor_nuevo}
+            rationale TEXT,
+            status TEXT DEFAULT 'awaiting_approval',  -- awaiting_approval | approved | rejected
+            decided_ts REAL,
+            decided_note TEXT
+        );
         """)
         if not self.db.execute("SELECT 1 FROM playbook LIMIT 1").fetchone():
             self.db.execute("INSERT INTO playbook(ts, content, changes) VALUES(?,?,?)",
@@ -142,6 +173,92 @@ class Store:
     def set(self, key: str, value: str) -> None:
         self.db.execute("INSERT INTO kv(key,value) VALUES(?,?) "
                         "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
+        self.db.commit()
+
+    # ------------------------------------------------------- aprendizaje (MCP)
+
+    def add_postmortem(self, category: str, notes: str = "", ref: str = "",
+                       symbol: str | None = None) -> int:
+        cur = self.db.execute(
+            "INSERT INTO postmortems(ts, ref, symbol, category, notes) VALUES(?,?,?,?,?)",
+            (time.time(), ref, symbol, category, notes))
+        self.db.commit()
+        return int(cur.lastrowid)
+
+    def postmortem_counts(self) -> list[dict]:
+        rows = self.db.execute(
+            "SELECT category, COUNT(*) FROM postmortems GROUP BY category "
+            "ORDER BY COUNT(*) DESC").fetchall()
+        return [{"category": r[0], "count": int(r[1])} for r in rows]
+
+    def postmortems(self, category: str | None = None, limit: int = 100) -> list[dict]:
+        if category:
+            rows = self.db.execute(
+                "SELECT id, ts, ref, symbol, category, notes FROM postmortems "
+                "WHERE category=? ORDER BY ts DESC LIMIT ?", (category, limit)).fetchall()
+        else:
+            rows = self.db.execute(
+                "SELECT id, ts, ref, symbol, category, notes FROM postmortems "
+                "ORDER BY ts DESC LIMIT ?", (limit,)).fetchall()
+        return [{"id": r[0], "ts": r[1], "ref": r[2], "symbol": r[3],
+                 "category": r[4], "notes": r[5]} for r in rows]
+
+    def add_hypothesis(self, description: str, category: str = "", param: str = "",
+                       evidence: str = "", occurrences: int = 0) -> int:
+        cur = self.db.execute(
+            "INSERT INTO hypotheses(ts, category, param, description, evidence, occurrences) "
+            "VALUES(?,?,?,?,?,?)",
+            (time.time(), category, param, description, evidence, occurrences))
+        self.db.commit()
+        return int(cur.lastrowid)
+
+    def hypotheses(self, status: str | None = None, limit: int = 50) -> list[dict]:
+        q = ("SELECT id, ts, category, param, description, evidence, occurrences, status "
+             "FROM hypotheses")
+        args: tuple = ()
+        if status:
+            q += " WHERE status=?"
+            args = (status,)
+        q += " ORDER BY ts DESC LIMIT ?"
+        rows = self.db.execute(q, (*args, limit)).fetchall()
+        return [{"id": r[0], "ts": r[1], "category": r[2], "param": r[3],
+                 "description": r[4], "evidence": r[5], "occurrences": r[6],
+                 "status": r[7]} for r in rows]
+
+    def add_proposal(self, changes: str, rationale: str = "",
+                     hypothesis_id: int | None = None) -> int:
+        cur = self.db.execute(
+            "INSERT INTO proposals(ts, hypothesis_id, changes, rationale) VALUES(?,?,?,?)",
+            (time.time(), hypothesis_id, changes, rationale))
+        self.db.commit()
+        return int(cur.lastrowid)
+
+    def proposals(self, status: str | None = "awaiting_approval", limit: int = 50) -> list[dict]:
+        q = ("SELECT id, ts, hypothesis_id, changes, rationale, status, decided_ts, decided_note "
+             "FROM proposals")
+        args: tuple = ()
+        if status:
+            q += " WHERE status=?"
+            args = (status,)
+        q += " ORDER BY ts DESC LIMIT ?"
+        rows = self.db.execute(q, (*args, limit)).fetchall()
+        return [{"id": r[0], "ts": r[1], "hypothesis_id": r[2], "changes": r[3],
+                 "rationale": r[4], "status": r[5], "decided_ts": r[6],
+                 "decided_note": r[7]} for r in rows]
+
+    def proposal(self, pid: int) -> dict | None:
+        row = self.db.execute(
+            "SELECT id, ts, hypothesis_id, changes, rationale, status FROM proposals WHERE id=?",
+            (pid,)).fetchone()
+        if not row:
+            return None
+        return {"id": row[0], "ts": row[1], "hypothesis_id": row[2], "changes": row[3],
+                "rationale": row[4], "status": row[5]}
+
+    def decide_proposal(self, pid: int, approved: bool, note: str = "") -> None:
+        self.db.execute(
+            "UPDATE proposals SET status=?, decided_ts=?, decided_note=? WHERE id=?",
+            ("approved" if approved else "rejected", time.time(), note, pid))
         self.db.commit()
 
     @property
