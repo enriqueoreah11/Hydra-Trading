@@ -250,15 +250,39 @@ async def diagnose() -> dict:
     """Estado del TTS neural: configuracion + una prueba real (sin exponer la clave)."""
     info = {
         "configured": available(),
-        "provider": settings.tts_provider or "(vacio)",
+        "provider": settings.tts_provider or "(vacio: usa la voz del navegador)",
         "api_key_set": bool(settings.tts_api_key),
         "voice_id_set": bool(settings.elevenlabs_voice_id),
         "voice_id": settings.elevenlabs_voice_id or settings.openai_tts_voice,
     }
+    if settings.tts_provider == "voicebox":
+        # Local: no hay claves que revisar, solo si la app esta abierta.
+        profiles = await voicebox_profiles()
+        info.update({"url": settings.voicebox_url, "profile": settings.voicebox_profile,
+                     "app_running": profiles is not None,
+                     "profiles": [p.get("name") for p in (profiles or [])]})
+        if profiles is None:
+            info["ok"] = False
+            info["error"] = ("la app Voicebox no responde — abrela desde /Applications "
+                             "(el servidor corre dentro de ella).")
+            return info
+        names = [p.get("name") for p in profiles]
+        if settings.voicebox_profile not in names:
+            info["ok"] = False
+            info["error"] = (f"el perfil '{settings.voicebox_profile}' no existe. "
+                             f"Disponibles: {', '.join(map(str, names)) or '(ninguno)'}")
+            return info
+        audio = await synth("prueba de voz")
+        info["ok"] = True
+        info["bytes"] = len(audio) if audio else 0
+        info["modo"] = ("audio al navegador (silenciar funciona)" if audio
+                        else "suena en las bocinas del Mac (fuera del navegador)")
+        info["error"] = _last_error
+        return info
     if not available():
         info["ok"] = False
-        info["error"] = ("no configurado — pon los secrets TTS_PROVIDER, TTS_API_KEY"
-                         " y (para ElevenLabs) ELEVENLABS_VOICE_ID, luego redespliega.")
+        info["error"] = ("sin proveedor de voz neural. En Sistema elige 'Voicebox' "
+                         "(local y gratis) o configura TTS_PROVIDER / TTS_API_KEY.")
         return info
     audio = await synth("prueba de voz")
     info["ok"] = bool(audio)
