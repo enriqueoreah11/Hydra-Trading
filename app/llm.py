@@ -58,10 +58,15 @@ async def _ask_ollama(system: str, user: str, schema: dict | None,
 
 
 async def ask(system: str, user: str, schema: dict | None = None,
-              max_tokens: int = 8000) -> dict | str:
-    """One-shot call. With `schema`, the response is schema-validated JSON."""
+              max_tokens: int = 8000, role: str = "") -> dict | str:
+    """One-shot call. With `schema`, the response is schema-validated JSON.
+
+    `role` es la clave del agente que llama (analyst, reviewer, architect…). En
+    modo híbrido decide qué cerebro le toca: local para el volumen, Claude para
+    el juicio. Ver Settings.brain_for().
+    """
     lang = _LANG.get(settings.owner_lang, _LANG["mix"])
-    if settings.llm_provider == "ollama":
+    if settings.brain_for(role) == "ollama":
         return await _ask_ollama(lang + "\n\n" + system, user, schema, max_tokens)
     kwargs: dict = {
         "model": settings.model,

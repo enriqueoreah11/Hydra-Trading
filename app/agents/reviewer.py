@@ -32,6 +32,6 @@ async def daily_review(journal_entries: list[dict], daily_pnl: float,
         f"## Posiciones aun abiertas\n{json.dumps(positions, ensure_ascii=False)}\n\n"
         "Escribe la revision diaria."
     )
-    result = await llm.ask(SYSTEM, user, max_tokens=4000)
+    result = await llm.ask(SYSTEM, user, max_tokens=4000, role="reviewer")
     assert isinstance(result, str)
     return result

@@ -114,7 +114,7 @@ async def review(proposal: dict, balance: float, initial_balance: float,
         f"## Tamano ya calculado\n{units} unidades (riesgo {settings.risk_per_trade_pct}% del balance)\n\n"
         "Aprueba o veta."
     )
-    result = await llm.ask(SYSTEM, user, schema=VETO_SCHEMA)
+    result = await llm.ask(SYSTEM, user, schema=VETO_SCHEMA, role="risk_manager")
     assert isinstance(result, dict)
     if result["verdict"] != "approve":
         return RiskDecision(False, f"veto LLM: {result['reasons']}")

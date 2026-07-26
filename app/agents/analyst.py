@@ -65,7 +65,7 @@ async def analyze(symbol: str, timeframe: str, market: dict, playbook: str,
         f"## Posiciones abiertas actuales\n{json.dumps(open_positions, ensure_ascii=False)}\n\n"
         "Evalua si hay un setup valido AHORA y responde con el JSON del esquema."
     )
-    result = await llm.ask(SYSTEM, user, schema=PROPOSAL_SCHEMA)
+    result = await llm.ask(SYSTEM, user, schema=PROPOSAL_SCHEMA, role="analyst")
     assert isinstance(result, dict)
     result["symbol"] = symbol
     result["last_close"] = market.get("last_close")

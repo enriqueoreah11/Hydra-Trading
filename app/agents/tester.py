@@ -38,7 +38,7 @@ async def decide(strategy: str, symbol: str, timeframe: str, market: dict) -> di
         f"## Snapshot de mercado\n{_json(market)}\n\n"
         "¿La estrategia entraría AHORA según sus reglas? Responde con el JSON."
     )
-    result = await llm.ask(SYSTEM, user, schema=DECISION_SCHEMA)
+    result = await llm.ask(SYSTEM, user, schema=DECISION_SCHEMA, role="tester")
     assert isinstance(result, dict)
     return result
 

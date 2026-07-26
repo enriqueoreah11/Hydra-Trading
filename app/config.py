@@ -27,10 +27,29 @@ class Settings(BaseSettings):
     # Con "ollama" el análisis corre en TU máquina: gratis, ilimitado y sin API key.
     # Es lo que hace sostenible revisar cada lote de operaciones. Requiere Ollama
     # corriendo en local (ollama.com) y el modelo descargado (ollama pull qwen3).
-    llm_provider: str = "anthropic"          # "anthropic" | "ollama"
+    #   "anthropic" = todo en la nube · "ollama" = todo local
+    #   "hybrid"    = el volumen en local, el juicio con Claude (recomendado)
+    llm_provider: str = "anthropic"          # "anthropic" | "ollama" | "hybrid"
+    # En modo híbrido, estos roles corren en local (son los de alta frecuencia:
+    # el analista solo ya hace ~576 llamadas al día). El resto —reviewer y
+    # architect, que deciden cómo evoluciona la estrategia— van con Claude,
+    # porque corren pocas veces al día y ahí el criterio sí vale lo que cuesta.
+    llm_local_roles: str = "analyst,risk_manager,overnight,tester"
     ollama_url: str = "http://127.0.0.1:11434"
-    ollama_model: str = "qwen3"
+    ollama_model: str = "qwen3:8b"           # el de la talacha
     ollama_timeout_s: float = 180.0
+
+    @property
+    def local_roles(self) -> set[str]:
+        return {r.strip() for r in self.llm_local_roles.split(",") if r.strip()}
+
+    def brain_for(self, role: str) -> str:
+        """Qué cerebro le toca a este rol: 'ollama' o 'anthropic'."""
+        if self.llm_provider == "ollama":
+            return "ollama"
+        if self.llm_provider == "hybrid" and role in self.local_roles:
+            return "ollama"
+        return "anthropic"
 
     # --- Perplexity (investigación web) ---
     perplexity_api_key: str = ""             # activa el agente investigador (noticias/contexto)

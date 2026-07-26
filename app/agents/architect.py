@@ -46,6 +46,7 @@ async def evolve(playbook: str, recent_reviews: list[dict], stats: dict) -> dict
         f"## Estadisticas\n{json.dumps(stats, ensure_ascii=False)}\n\n"
         "Propon la nueva version del playbook (o no_change=true)."
     )
-    result = await llm.ask(SYSTEM, user, schema=PLAYBOOK_SCHEMA, max_tokens=16000)
+    result = await llm.ask(SYSTEM, user, schema=PLAYBOOK_SCHEMA, max_tokens=16000,
+                           role="architect")
     assert isinstance(result, dict)
     return result

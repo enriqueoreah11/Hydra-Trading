@@ -186,10 +186,23 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                 r.raise_for_status()
                 models = [m.get("name", "") for m in r.json().get("models", [])]
             return {"ok": True, "running": True, "provider": settings.llm_provider,
-                    "models": models, "selected": settings.ollama_model}
+                    "models": models, "selected": settings.ollama_model,
+                    "routing": _routing()}
         except Exception as exc:  # noqa: BLE001
             return {"ok": True, "running": False, "provider": settings.llm_provider,
-                    "error": f"{exc}"[:160], "url": settings.ollama_url}
+                    "error": f"{exc}"[:160], "url": settings.ollama_url,
+                    "routing": _routing()}
+
+    def _routing() -> list[dict]:
+        """Qué cerebro le toca a cada agente con la configuración actual."""
+        roles = [("analyst", "Analista", "cada 15 min · el que más gasta"),
+                 ("risk_manager", "Risk Manager", "por cada propuesta"),
+                 ("overnight", "Overnight", "cada 30 min"),
+                 ("tester", "Tester", "muchas muestras por backtest"),
+                 ("reviewer", "Reviewer", "1 vez al día · juicio"),
+                 ("architect", "Architect", "1 vez al día · evoluciona la estrategia")]
+        return [{"role": r, "label": lbl, "why": why, "brain": settings.brain_for(r)}
+                for r, lbl, why in roles]
 
     @app.post("/llm/local")
     async def llm_local_set(request: Request):
@@ -199,7 +212,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         except Exception:  # noqa: BLE001
             body = {}
         prov = body.get("provider", "")
-        if prov not in ("anthropic", "ollama"):
+        if prov not in ("anthropic", "ollama", "hybrid"):
             return JSONResponse({"ok": False, "error": "proveedor inválido"}, status_code=400)
         settings.llm_provider = prov
         if body.get("ollama_model"):

@@ -58,6 +58,6 @@ async def watch(positions: list[dict], markets: dict[str, dict], journal_context
         f"## Tesis originales registradas en el diario\n{journal_context}\n\n"
         "Decide accion para cada posicion (usa new_stop_loss=0 cuando no aplique)."
     )
-    result = await llm.ask(SYSTEM, user, schema=ACTIONS_SCHEMA)
+    result = await llm.ask(SYSTEM, user, schema=ACTIONS_SCHEMA, role="overnight")
     assert isinstance(result, dict)
     return result
