@@ -291,7 +291,14 @@ class Brain:
             except Exception:  # noqa: BLE001 - la investigación nunca debe tumbar el ciclo
                 log.warning("perplexity brief failed", exc_info=True)
 
-        review = await reviewer.daily_review(entries, daily_pnl, positions, playbook)
+        # El contexto de decisión del bot entra en la revisión: sin esto, el
+        # Reviewer solo ve lo que se OPERÓ y nunca aprende de lo que se rechazó.
+        try:
+            digest = self.store.trade_context_digest(hours=24)
+        except Exception:  # noqa: BLE001 - la revisión no depende de esto
+            digest = None
+        review = await reviewer.daily_review(entries, daily_pnl, positions, playbook,
+                                             context_digest=digest)
         self.store.log("reviewer", "daily_review", review)
         try:
             vault.note("Revisiones", f"Revision diaria (PnL {daily_pnl:+.2f})", review,

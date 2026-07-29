@@ -87,6 +87,33 @@ def query_journal(agent: str = "", kind: str = "", limit: int = 50) -> list[dict
 
 
 @mcp.tool()
+def query_trade_context(symbol: str = "", outcome: str = "", limit: int = 40) -> list[dict]:
+    """Cómo se veía el mercado en el instante en que el bot decidió cada señal.
+
+    Incluye las RECHAZADAS (outcome empieza por 'blocked' o 'low_score'), que es
+    donde está el aprendizaje: el bot vio la oportunidad y algo la filtró.
+    Filtra por símbolo y/o por outcome (prefijo).
+    """
+    return store().trade_contexts(min(int(limit), 200), symbol, outcome)
+
+
+@mcp.tool()
+def get_trade_context(ctx_id: int) -> dict:
+    """El JSON íntegro de una captura: todo lo que mandó el bot, sin recortar."""
+    row = store().trade_context_one(int(ctx_id))
+    return row or {"error": "no existe"}
+
+
+@mcp.tool()
+def trade_context_digest(hours: float = 24, symbol: str = "") -> dict:
+    """El PATRÓN, no las filas: cuántas señales, cuántas se bloquearon y por qué,
+    score medio de las que pasaron frente a las que no, las que se quedaron cerca
+    y qué familias de confluencia aparecen. Empieza por aquí antes de pedir filas.
+    """
+    return store().trade_context_digest(float(hours), symbol)
+
+
+@mcp.tool()
 def get_metrics() -> dict:
     """Métricas de aprendizaje: cuántos post-mortems hay por categoría y cuáles
     ya superan el umbral para abrir una hipótesis."""

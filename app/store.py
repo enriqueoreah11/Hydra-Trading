@@ -293,6 +293,83 @@ class Store:
         return {"id": r[0], "ts": r[1], "symbol": r[2], "timeframe": r[3],
                 "outcome": r[4], "score": r[5], "raw": raw}
 
+    def trade_context_digest(self, hours: float = 24, symbol: str = "") -> dict:
+        """Resumen digerible de lo que vio el bot, para meterlo en un prompt.
+
+        No devuelve filas: devuelve el PATRÓN — cuántas señales, cuántas se
+        bloquearon y por qué, el score medio de las que pasaron frente a las que
+        no, y qué familias de confluencia aparecen. Así el Reviewer puede juzgar
+        las señales RECHAZADAS, que es donde está el aprendizaje que se perdía.
+        """
+        since = time.time() - hours * 3600
+        args: list = [since]
+        where = "ts >= ?"
+        if symbol:
+            where += " AND symbol = ?"
+            args.append(symbol.upper())
+
+        total = self.db.execute(
+            f"SELECT COUNT(*) FROM trade_context WHERE {where}", args).fetchone()[0]
+        if not total:
+            return {"total": 0, "hours": hours}
+
+        by_outcome = [
+            {"outcome": r[0], "n": r[1],
+             "avg_score": round(r[2], 2) if r[2] is not None else None,
+             "avg_confluences": round(r[3], 1) if r[3] is not None else None}
+            for r in self.db.execute(
+                f"SELECT outcome, COUNT(*), AVG(score), AVG(n_confluences) "
+                f"FROM trade_context WHERE {where} GROUP BY outcome "
+                f"ORDER BY COUNT(*) DESC", args).fetchall()]
+
+        by_symbol = [{"symbol": r[0], "n": r[1],
+                      "avg_score": round(r[2], 2) if r[2] is not None else None}
+                     for r in self.db.execute(
+                         f"SELECT symbol, COUNT(*), AVG(score) FROM trade_context "
+                         f"WHERE {where} GROUP BY symbol ORDER BY COUNT(*) DESC LIMIT 12",
+                         args).fetchall()]
+
+        # Las que se quedaron cerca: score alto pero no se alertó. Aquí es donde
+        # se ve si el filtro está demasiado apretado.
+        near_miss = [
+            {"symbol": r[0], "timeframe": r[1], "bias": r[2], "outcome": r[3],
+             "score": r[4], "n_confluences": r[5], "spread_pips": r[6]}
+            for r in self.db.execute(
+                f"SELECT symbol,timeframe,bias,outcome,score,n_confluences,spread_pips "
+                f"FROM trade_context WHERE {where} AND outcome NOT LIKE 'alerted%' "
+                f"AND score IS NOT NULL ORDER BY score DESC LIMIT 8", args).fetchall()]
+
+        fam: dict[str, int] = {}
+        rows = self.db.execute(
+            f"SELECT signals_json FROM trade_context WHERE {where} "
+            f"AND signals_json IS NOT NULL ORDER BY ts DESC LIMIT 400", args).fetchall()
+        for (js,) in rows:
+            try:
+                sigs = json.loads(js) or []
+            except json.JSONDecodeError:
+                continue
+            seen = set()
+            for sig in sigs if isinstance(sigs, list) else []:
+                lbl = ""
+                if isinstance(sig, dict):
+                    for k in ("Label", "label", "Name", "name"):
+                        if sig.get(k):
+                            lbl = str(sig[k])
+                            break
+                else:
+                    lbl = str(sig)
+                # una familia cuenta una vez por señal, no una por confluencia
+                key = lbl.split()[0][:14] if lbl else "?"
+                if key not in seen:
+                    seen.add(key)
+                    fam[key] = fam.get(key, 0) + 1
+        top_families = sorted(fam.items(), key=lambda kv: -kv[1])[:10]
+
+        return {"total": int(total), "hours": hours,
+                "by_outcome": by_outcome, "by_symbol": by_symbol,
+                "near_miss": near_miss,
+                "top_families": [{"label": k, "n": v} for k, v in top_families]}
+
     def trade_context_stats(self) -> dict:
         total = self.db.execute("SELECT COUNT(*) FROM trade_context").fetchone()[0]
         by_outcome = [{"outcome": r[0], "n": r[1], "avg_score": round(r[2] or 0, 2)}
