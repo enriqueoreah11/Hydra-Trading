@@ -65,11 +65,17 @@ class Fleet:
 
     # ------------------------------------------------------------ creación
 
-    def seed(self, symbol: str, timeframe: str = "M15", per_strategy: int = 5) -> int:
+    def seed(self, symbol: str, timeframe: str = "M15", per_strategy: int = 5,
+             only: list[str] | None = None) -> int:
         """Crea la flota inicial: variantes de cada estrategia + un champion
-        congelado por estrategia como control."""
+        congelado por estrategia como control.
+
+        `only` limita las estrategias a las asignadas a ese instrumento; si va
+        vacío se prueban todas (comportamiento de siempre).
+        """
         made = 0
-        for strat in strategies.STRATEGIES:
+        picked = [s for s in strategies.STRATEGIES if not only or s in only]
+        for strat in picked:
             base = strategies.DEFAULTS[strat]
             # champion: parámetros por defecto, CONGELADO (nunca se ajusta)
             self.store.add_arm(f"{strat}·champion", strat, symbol, timeframe,

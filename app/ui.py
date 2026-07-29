@@ -96,6 +96,17 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 .ssec{display:flex;flex-wrap:wrap;gap:8px}
 .cfg{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:9px 2px;border-bottom:1px solid #10293650;font-size:12.5px;color:#a9bcd0}
 .cfg span{color:#5f7387}.cfg b{color:#dffaff}.cfg code{background:#03121b;padding:1px 6px;border-radius:5px;color:#7ff6ff}
+.wrow{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid #10293650}
+.wrow .wsym{font-size:12.5px;color:#dffaff;letter-spacing:1px;min-width:74px}
+.wrow .wx{margin-left:auto;cursor:pointer;color:#4a5f70;font-size:14px;padding:0 3px}
+.wrow .wx:hover{color:#ff5d73}
+.chip2{cursor:pointer;font-size:10px;letter-spacing:.6px;padding:3px 8px;border-radius:99px;
+  border:1px solid #17323f;color:#4a6072;background:#08131d;transition:all .15s ease;white-space:nowrap}
+.chip2.on{border-color:#38e6ff;color:#02141b;background:linear-gradient(180deg,#66f0ff,#22d3ee);
+  box-shadow:0 0 12px #22d3ee55}
+.wadd{display:flex;gap:7px;margin-top:12px}
+.wadd input{flex:1;background:#08131d;color:#dffaff;border:1px solid #17495d;border-radius:8px;
+  padding:7px 9px;font-family:inherit;font-size:12.5px;text-transform:uppercase}
 .prm{margin:11px 0}.prm label{display:block;font-size:12px;color:#cfe6f2;margin-bottom:4px}
 .prm input,.prm select{width:100%;background:#08131d;color:#dffaff;border:1px solid #17495d;border-radius:8px;padding:7px 9px;font-family:inherit;font-size:12.5px}
 .phelp{font-size:10.5px;color:#5f7387;margin-top:3px}
@@ -260,6 +271,8 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     </div>
     <div class="slbl">CONEXIÓN Y CONFIGURACIÓN</div>
     <div id="sys-info"></div>
+    <div class="slbl">📈 INSTRUMENTOS Y ESTRATEGIAS</div>
+    <div id="sys-watch"></div>
     <div class="slbl">🔑 CLAVES (API KEYS)</div>
     <div id="sys-keys"></div>
     <div class="slbl">📓 MEMORIA (OBSIDIAN)</div>
@@ -397,7 +410,60 @@ function banner(c){ const b=$('#banner'); let m='';
 function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('show'); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),3800); }
 
 $('#b-refresh').onclick=()=>{ toast('Datos actualizados'); load(); }; $('#b-halt').onclick=doHalt; $('#b-demo').onclick=runDemo; $('#b-cal').onclick=openCalendar;
-$('#b-sistema').onclick=()=>{ renderSysInfo(); renderSecrets(); renderVault(); renderProps(); renderFleet(); $('#sistema').classList.add('open'); };
+$('#b-sistema').onclick=()=>{ renderSysInfo(); renderWatch(); renderSecrets(); renderVault(); renderProps(); renderFleet(); $('#sistema').classList.add('open'); };
+/* ------- INSTRUMENTOS Y ESTRATEGIAS: añadir, quitar y asignar en los dos sentidos ------- */
+let WATCH=null, WVIEW='sym';
+async function renderWatch(){ const box=$('#sys-watch'); if(!box)return;
+  try{ WATCH=await (await fetch('/watchlist')).json(); }
+  catch(e){ box.innerHTML='<div class="empty">No se pudo cargar. ¿Falta redesplegar?</div>'; return; }
+  const av=WATCH.available||[], rows=WATCH.symbols||[];
+  let h='<div class="phelp">Elige QUÉ vigila Hydra y CON QUÉ estrategia. Sin estrategia marcada, ese instrumento prueba <b>todas</b>. Esto manda en la flota de pruebas; las entradas en vivo las sigue proponiendo el Analyst.</div>';
+  h+='<div class="ssec" style="margin:10px 0">'
+    +'<button class="btn '+(WVIEW==='sym'?'':'ghost')+'" style="padding:5px 10px" onclick="wView(\'sym\')">Por instrumento</button>'
+    +'<button class="btn '+(WVIEW==='str'?'':'ghost')+'" style="padding:5px 10px" onclick="wView(\'str\')">Por estrategia</button></div>';
+  if(WVIEW==='sym'){
+    rows.forEach(r=>{ const on=r.strategies||[];
+      h+='<div class="wrow"><span class="wsym">'+escapeHtml(r.symbol)+'</span>'
+        +av.map(a=>'<span class="chip2'+(on.indexOf(a.id)>=0?' on':'')+'" title="'+escapeHtml(JSON.stringify(a.params))
+          +'" onclick="wTog(\''+r.symbol+'\',\''+a.id+'\')">'+escapeHtml(a.label)+'</span>').join('')
+        +'<span class="wx" title="Quitar" onclick="wDel(\''+r.symbol+'\')">✕</span></div>'; });
+    const list=(WATCH.broker_symbols||[]);
+    h+='<div class="wadd"><input id="w-new" placeholder="AÑADIR (p. ej. EURUSD)"'
+      +(list.length?' list="w-syms"':'')+' onkeydown="if(event.key===\'Enter\')wAdd()">'
+      +'<button class="btn" onclick="wAdd()">＋</button></div>';
+    if(list.length) h+='<datalist id="w-syms">'+list.map(x=>'<option value="'+escapeHtml(x)+'">').join('')+'</datalist>';
+    else h+='<div class="phelp">Conecta cTrader para que te sugiera los nombres exactos de tu broker.</div>';
+  } else {
+    av.forEach(a=>{ h+='<div class="wrow" style="align-items:flex-start"><span class="wsym" style="padding-top:3px">'+escapeHtml(a.label)+'</span>'
+      +'<span style="display:flex;gap:6px;flex-wrap:wrap;flex:1">'
+      +rows.map(r=>'<span class="chip2'+((r.strategies||[]).indexOf(a.id)>=0?' on':'')
+        +'" onclick="wTog(\''+r.symbol+'\',\''+a.id+'\')">'+escapeHtml(r.symbol)+'</span>').join('')
+      +'</span></div>'; });
+    h+='<div class="phelp">Toca un instrumento para meterlo o sacarlo de esa estrategia.</div>';
+  }
+  box.innerHTML=h; }
+function wView(v){ WVIEW=v; renderWatch(); }
+async function wTog(sym,strat){ if(!WATCH)return;
+  const r=(WATCH.symbols||[]).find(x=>x.symbol===sym); if(!r)return;
+  const cur=(r.strategies||[]).slice(), i=cur.indexOf(strat);
+  if(i>=0) cur.splice(i,1); else cur.push(strat);
+  r.strategies=cur; renderWatch();                       // respuesta inmediata
+  try{ await fetch('/watchlist/strategies',{method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({symbol:sym,strategies:cur})}); }
+  catch(e){ toast('No se pudo guardar'); }
+  renderWatch(); }
+async function wAdd(){ const el=$('#w-new'); const v=(el&&el.value||'').trim().toUpperCase(); if(!v)return;
+  const r=await fetch('/watchlist',{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({add:v})});
+  const d=await r.json();
+  if(!d.ok){ toast(d.error||'No se pudo añadir'); return; }
+  toast(v+' añadido'); speak(L(v+' añadido a la vigilancia.',v+' added to the watchlist.'));
+  el.value=''; renderWatch(); load(); pollInstruments(); }
+async function wDel(sym){ const r=await fetch('/watchlist',{method:'POST',
+    headers:{'content-type':'application/json'},body:JSON.stringify({remove:sym})});
+  const d=await r.json();
+  if(!d.ok){ toast(d.error||'No se pudo quitar'); return; }
+  toast(sym+' fuera de la vigilancia'); renderWatch(); load(); pollInstruments(); }
 async function renderFleet(){ let d; try{ d=await (await fetch('/fleet')).json(); }catch(e){ $('#sys-fleet').innerHTML='<div class="empty">Falta redesplegar.</div>'; return; }
   const lb=d.leaderboard||[];
   let h='<div class="phelp">N estrategias corriendo en paralelo en <b>papel</b>. El 👑 <b>champion</b> nunca se ajusta: es el control. Si las variantes no le ganan, la «mejora» era ruido. Todo el R es <b>neto de costos</b>.</div>';

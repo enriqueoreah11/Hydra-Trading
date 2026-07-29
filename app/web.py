@@ -93,6 +93,18 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             settings.ollama_model = str(_llm["ollama_model"])
     except Exception:  # noqa: BLE001
         pass
+    # instrumentos vigilados y su estrategia asignada, editados desde la UI
+    _watch: dict = {"symbols": [], "assign": {}}
+    try:
+        _w = json.loads((settings.data_path / "watchlist.json").read_text())
+        if isinstance(_w.get("symbols"), list) and _w["symbols"]:
+            _watch["symbols"] = [str(x).upper() for x in _w["symbols"]]
+            settings.symbols = ",".join(_watch["symbols"])
+        if isinstance(_w.get("assign"), dict):
+            _watch["assign"] = {str(k).upper(): [str(v) for v in (vs or [])]
+                                for k, vs in _w["assign"].items()}
+    except Exception:  # noqa: BLE001
+        pass
     # voz elegida desde la UI
     try:
         _v = json.loads((settings.data_path / "voice.json").read_text())
@@ -517,6 +529,9 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             return {"ok": False, "reason": str(exc)[:140]}
         return {"ok": True, "symbol": symbol, "timeframe": timeframe, **_summarize(snap)}
 
+    _STRAT_LABEL = {"donchian": "Ruptura Donchian", "rsi_fade": "Reversión RSI",
+                    "momentum_burst": "Impulso", "ema_trend": "Tendencia EMA"}
+
     _instr_cache: dict = {"ts": 0.0, "data": None}
     _dxy_cache: dict = {"ts": 0.0, "row": None}
 
@@ -780,6 +795,99 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             return JSONResponse({"error": "no existe"}, status_code=404)
         return row
 
+    # ------------------------------------------ instrumentos y sus estrategias
+
+    def _save_watch() -> None:
+        _watch["symbols"] = settings.symbol_list
+        # una asignación sin instrumento vigilado no sirve de nada: se limpia
+        _watch["assign"] = {k: v for k, v in _watch["assign"].items()
+                            if k in _watch["symbols"] and v}
+        (settings.data_path / "watchlist.json").write_text(
+            json.dumps(_watch, ensure_ascii=False))
+
+    def strategies_for(symbol: str) -> list[str]:
+        """Estrategias asignadas a un instrumento. Sin asignación = todas."""
+        from . import strategies as st
+        got = _watch["assign"].get(symbol.upper()) or []
+        return [s for s in got if s in st.STRATEGIES]
+
+    @app.get("/watchlist")
+    async def watchlist():
+        """Instrumentos vigilados + qué estrategia lleva cada uno."""
+        from . import strategies as st
+        rows = [{"symbol": sym, "strategies": strategies_for(sym)}
+                for sym in settings.symbol_list]
+        known = broker.symbol_names() if broker.client.account_authorized else []
+        return {"symbols": rows,
+                "available": [{"id": k, "label": _STRAT_LABEL.get(k, k),
+                               "params": st.DEFAULTS.get(k, {})} for k in st.STRATEGIES],
+                "broker_symbols": known[:400], "broker_ready": bool(known),
+                "timeframe": settings.timeframe}
+
+    @app.post("/watchlist")
+    async def watchlist_set(request: Request):
+        """Añade, quita o reemplaza la lista de instrumentos vigilados."""
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        syms = settings.symbol_list
+        if isinstance(body.get("symbols"), list):
+            syms = [str(x).strip().upper() for x in body["symbols"] if str(x).strip()]
+        if body.get("add"):
+            add = str(body["add"]).strip().upper()
+            if add and add not in syms:
+                syms = syms + [add]
+        if body.get("remove"):
+            rm = str(body["remove"]).strip().upper()
+            syms = [x for x in syms if x != rm]
+        # sin duplicados y sin lista vacía (el cerebro no tendría nada que mirar)
+        seen, clean = set(), []
+        for x in syms:
+            if x not in seen:
+                seen.add(x)
+                clean.append(x)
+        if not clean:
+            return JSONResponse({"ok": False, "error": "deja al menos un instrumento"},
+                                status_code=400)
+        if len(clean) > 24:
+            return JSONResponse({"ok": False, "error": "máximo 24 instrumentos"},
+                                status_code=400)
+        settings.symbols = ",".join(clean)
+        _save_watch()
+        store.log("system", "watchlist", "instrumentos: " + ", ".join(clean))
+        return {"ok": True, "symbols": clean}
+
+    @app.post("/watchlist/strategies")
+    async def watchlist_strategies(request: Request):
+        """Asigna estrategias a un instrumento, o un instrumento a una estrategia."""
+        from . import strategies as st
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        if body.get("strategy") and body.get("symbols") is not None:
+            # al revés: esta estrategia corre en estos instrumentos
+            strat = str(body["strategy"])
+            if strat not in st.STRATEGIES:
+                return JSONResponse({"ok": False, "error": "estrategia desconocida"},
+                                    status_code=400)
+            want = {str(x).upper() for x in body["symbols"]}
+            for sym in settings.symbol_list:
+                cur = set(_watch["assign"].get(sym) or [])
+                cur.add(strat) if sym in want else cur.discard(strat)
+                _watch["assign"][sym] = sorted(cur)
+            _save_watch()
+            return {"ok": True, "strategy": strat, "symbols": sorted(want)}
+        sym = str(body.get("symbol") or "").strip().upper()
+        if sym not in settings.symbol_list:
+            return JSONResponse({"ok": False, "error": "ese instrumento no está vigilado"},
+                                status_code=400)
+        picked = [str(x) for x in (body.get("strategies") or []) if x in st.STRATEGIES]
+        _watch["assign"][sym] = picked
+        _save_watch()
+        return {"ok": True, "symbol": sym, "strategies": picked}
+
     # --------------------------------------------------------------- flota
 
     _fleet_state = {"running": False}
@@ -806,9 +914,10 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         per = max(2, min(8, int(body.get("per_strategy", 5))))
         if body.get("reset"):
             store.clear_fleet()
-        n = _fleet().seed(symbol, tf, per)
+        n = _fleet().seed(symbol, tf, per, only=strategies_for(symbol))
         store.log("system", "fleet_seed", f"{n} arms en {symbol} {tf}")
-        return {"ok": True, "created": n, "symbol": symbol, "timeframe": tf}
+        return {"ok": True, "created": n, "symbol": symbol, "timeframe": tf,
+                "strategies": strategies_for(symbol) or "todas"}
 
     @app.post("/fleet/cycle")
     async def fleet_cycle(request: Request):
