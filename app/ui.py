@@ -895,6 +895,9 @@ async function pollTape(){ const box=$('#tape-b'); if(!box)return;
 /* Nombre corto del agente para que quepa dentro del segmento del anillo. */
 function shortName(n){ const w=String(n||'').trim().split(/\s+/); return (w[0]||'').toUpperCase().slice(0,10); }
 function hudStart(){ document.querySelectorAll('.hudcol .hud').forEach((e,i)=>setTimeout(()=>e.classList.add('in'),180+i*110));
+  // las pistas se rutean al borde de cada ventana: hay que esperar a que
+  // terminen de entrar para medirlas donde de verdad se quedan.
+  [900,1800].forEach(t=>setTimeout(()=>window.pcbRewire&&window.pcbRewire(),t));
   setTimeout(()=>{const t=$('#tape');if(t)t.classList.add('in');},140);
   renderSessions(); pollPositions(); pollInstruments(); pollNews(); renderHudSys(); pollBrain(); pollTape();
   setInterval(renderSessions,30000); setInterval(pollPositions,20000);
@@ -1109,11 +1112,12 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
 /* ============ CONSTELACIÓN DE AGENTES (estrella de datos + agentes + ramas) ============ */
 (function(){
   const cv=$('#corefx'), g=cv.getContext('2d');
+  let pcbDirty=true;                 // la placa se re-rutea al cambiar el tamaño
   let W=0,H=0,CX=0,CY=0,S=0,Rh=0,Rlab=0,Rctx=0, mx=-9999,my=-9999, hoverKey=null, hoverC=false, hoverI=-1, dirty=true;
   const dpr=Math.min(window.devicePixelRatio||1,1.5);
   function rs(){ W=cv.clientWidth||innerWidth; H=cv.clientHeight||innerHeight; cv.width=W*dpr; cv.height=H*dpr; g.setTransform(dpr,0,0,dpr,0,0); CX=W/2; CY=H*0.53;
     const side=W>1180?296:16;                       // deja aire para las pantallas laterales
-    S=Math.max(260,Math.min(W-side*2,H)); Rh=S*0.25; Rlab=S*0.44; Rctx=S*0.385; dirty=true; }
+    S=Math.max(260,Math.min(W-side*2,H)); Rh=S*0.25; Rlab=S*0.44; Rctx=S*0.385; dirty=true; pcbDirty=true; }
   rs(); addEventListener('resize',rs);
   function stateOf(k){ const a=agentByKey(k); return a?a.state:'idle'; }
   function entriesOf(k){ const a=agentByKey(k); return a&&a.entries?a.entries.length:0; }
@@ -1240,18 +1244,165 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     g.fillStyle='rgba('+eye+','+(0.6+0.4*blink)*al+')'; MK_EYES.forEach(q=>g.fill(q));
     g.shadowBlur=0; g.restore();
   }
-  // fondo de universo: campo de estrellas (posiciones normalizadas 0..1)
-  const STARS=[]; for(let i=0;i<170;i++) STARS.push({x:Math.random(),y:Math.random(),r:0.3+Math.random()*1.5,ph:Math.random()*6.28,br:0.18+Math.random()*0.55,gold:Math.random()<0.1});
-  // estrellas fugaces: aparecen de repente dentro del cielo, con estela afilada
-  let SHOOT=[], shootNext=1800, shootLast=0;
-  function spawnShoot(){ const fromLeft=Math.random()<0.5;
-    const sp=0.00058+Math.random()*0.0004;                             // normalizado por ms (más suave)
-    const ang=(0.14+Math.random()*0.20)*Math.PI;                       // 25°..61° hacia abajo
-    SHOOT.push({x:(fromLeft?0.05:0.95)+ (fromLeft?1:-1)*Math.random()*0.35,  // aparece dentro del cielo
-      y:0.06+Math.random()*0.34,
-      vx:(fromLeft?1:-1)*Math.cos(ang)*sp, vy:Math.sin(ang)*sp,
-      life:0, max:900+Math.random()*700, tailms:140+Math.random()*120,
-      gold:Math.random()<0.25}); }
+  /* ==================== FONDO: PLACA / CPU ====================
+     El reactor deja de flotar en el espacio: ahora vive sobre el die de un chip
+     y de sus pines salen pistas que llegan a las ventanas laterales. Las pistas
+     no se inventan: se rutan hacia el borde interior REAL de cada panel, medido
+     del DOM, para que se lea que la app está cableada a sus opciones. */
+  const PCB={ traces:[], etch:[], die:null };
+  // esquina achaflanada: las pistas de una placa nunca giran a 90° secos
+  function chamfer(pts, c){
+    if(pts.length<3) return pts.slice();
+    const out=[pts[0]];
+    for(let i=1;i<pts.length-1;i++){
+      const p=pts[i-1], q=pts[i], r=pts[i+1];
+      const d1=Math.hypot(q.x-p.x,q.y-p.y), d2=Math.hypot(r.x-q.x,r.y-q.y);
+      const c1=Math.min(c,d1*0.45), c2=Math.min(c,d2*0.45);
+      out.push({x:q.x+(p.x-q.x)/(d1||1)*c1, y:q.y+(p.y-q.y)/(d1||1)*c1});
+      out.push({x:q.x+(r.x-q.x)/(d2||1)*c2, y:q.y+(r.y-q.y)/(d2||1)*c2});
+    }
+    out.push(pts[pts.length-1]);
+    return out;
+  }
+  function panelAnchors(){
+    // borde interior de cada ventana del HUD: ahí es donde debe morder la pista
+    const out=[];
+    document.querySelectorAll('.hudcol .hud').forEach(el=>{
+      const r=el.getBoundingClientRect();
+      if(r.width<40) return;                       // oculta en pantalla estrecha
+      const left=r.left<W/2;
+      out.push({x:left?r.right:r.left, y:r.top+Math.min(26,r.height*0.3), left, panel:true});
+    });
+    return out;
+  }
+  function buildPCB(){
+    // El die vive dentro del anillo de modulos: su diagonal no debe cruzarlo.
+    // Rh es el radio del anillo, asi que el medio lado se limita a Rh*0.55/√2·√2.
+    const half=Math.max(64,Math.min(Rh*0.46,Math.min(W,H)*0.14));
+    PCB.die={x:CX-half, y:CY-half, s:half*2};
+    PCB.traces=[]; PCB.etch=[];
+    const anchors=panelAnchors();
+    // si no hay paneles (móvil), se cablea al borde de la pantalla
+    const edge=[];
+    if(!anchors.length){
+      for(let i=0;i<4;i++){ edge.push({x:-20, y:H*(0.2+i*0.2), left:true});
+                            edge.push({x:W+20, y:H*(0.2+i*0.2), left:false}); }
+    }
+    const targets=anchors.concat(edge);
+    targets.forEach((t,i)=>{
+      const sideX=t.left?PCB.die.x:PCB.die.x+PCB.die.s;
+      // el pin de salida se reparte por el lado del die, no todos del mismo punto
+      const py=PCB.die.y+PCB.die.s*(0.18+0.64*((i%5)+0.5)/5);
+      const midX=t.left ? sideX-(sideX-t.x)*(0.42+0.12*(i%3))
+                        : sideX+(t.x-sideX)*(0.42+0.12*(i%3));
+      const pts=[{x:sideX,y:py},{x:midX,y:py},{x:midX,y:t.y},{x:t.x,y:t.y}];
+      PCB.traces.push({pts:chamfer(pts,10), left:t.left, panel:!!t.panel,
+                       ph:i*0.37, sp:0.00013+0.00005*(i%4)});
+    });
+    // pistas verticales de relleno: dan densidad de placa arriba y abajo
+    for(let i=0;i<8;i++){
+      const up=i%2===0, px=PCB.die.x+PCB.die.s*(0.14+0.72*((i>>1)+0.5)/4);
+      const endY=up?-20:H+20, midY=up?PCB.die.y-40-i*14:PCB.die.y+PCB.die.s+40+i*14;
+      const outX=px+(i%4<2?-1:1)*(30+i*9);
+      const pts=[{x:px,y:up?PCB.die.y:PCB.die.y+PCB.die.s},{x:px,y:midY},
+                 {x:outX,y:midY},{x:outX,y:endY}];
+      PCB.traces.push({pts:chamfer(pts,9), left:i%4<2, panel:false,
+                       ph:i*0.61, sp:0.00010+0.00004*(i%3)});
+    }
+    // pistas internas del die: el detalle fino que hace que parezca silicio
+    for(let i=0;i<10;i++){
+      const f=(i+0.5)/10, side=i%2===0;
+      const y=PCB.die.y+PCB.die.s*f;
+      const x0=side?PCB.die.x+6:PCB.die.x+PCB.die.s-6;
+      const x1=side?PCB.die.x+PCB.die.s*(0.30+0.16*(i%3)):PCB.die.x+PCB.die.s*(0.70-0.16*(i%3));
+      const y1=PCB.die.y+PCB.die.s*(0.5+(side?-1:1)*0.06*(i%4));
+      PCB.traces.push({pts:chamfer([{x:x0,y},{x:x1,y},{x:x1,y:y1}],6),
+                       left:side, panel:false, inner:true, ph:i*0.29, sp:0.00022});
+    }
+    // grabado de fondo: segmentos cortos, deterministas (misma placa cada vez)
+    let seed=1337;
+    const rnd=()=>((seed=(seed*1103515245+12345)&0x7fffffff)/0x7fffffff);
+    for(let i=0;i<340;i++){
+      const x=rnd()*W, y=rnd()*H, ln=10+rnd()*58, hor=rnd()<0.5;
+      PCB.etch.push({x,y,ln,hor,a:0.05+rnd()*0.13});
+    }
+    pcbDirty=false;
+  }
+  function drawPCB(now){
+    if(pcbDirty) buildPCB();
+    const d=PCB.die;
+    // 1) grabado tenue: textura de cobre bajo todo lo demás
+    g.strokeStyle='rgba(90,150,190,0.5)'; g.lineWidth=1;
+    for(const e of PCB.etch){ g.globalAlpha=e.a; g.beginPath(); g.moveTo(e.x,e.y);
+      g.lineTo(e.hor?e.x+e.ln:e.x, e.hor?e.y:e.y+e.ln); g.stroke(); }
+    g.globalAlpha=1;
+    // 2) pistas: cobre apagado + un pulso de datos que viaja del chip a la ventana.
+    //    Las de dentro del die van DESPUES de rellenarlo, o el relleno las tapa.
+    for(const t of PCB.traces){ if(t.inner) continue; drawTrace(t,now); }
+    drawDie(now);
+    for(const t of PCB.traces){ if(t.inner) drawTrace(t,now); }
+  }
+  function drawTrace(t,now){
+      const col=t.left?'90,190,255':'170,120,255';        // azul a un lado, violeta al otro
+      g.strokeStyle='rgba('+col+','+(t.panel?0.28:(t.inner?0.34:0.16))+')';
+      g.lineWidth=t.panel?1.4:1;
+      g.beginPath(); g.moveTo(t.pts[0].x,t.pts[0].y);
+      for(let i=1;i<t.pts.length;i++) g.lineTo(t.pts[i].x,t.pts[i].y);
+      g.stroke();
+      // longitudes acumuladas para poder recorrer la pista a velocidad constante
+      if(!t.len){ t.seg=[]; t.len=0;
+        for(let i=1;i<t.pts.length;i++){ const l=Math.hypot(t.pts[i].x-t.pts[i-1].x,t.pts[i].y-t.pts[i-1].y);
+          t.seg.push(l); t.len+=l; } }
+      const u=((now*t.sp+t.ph)%1);
+      let want=u*t.len, k=0;
+      while(k<t.seg.length&&want>t.seg[k]){ want-=t.seg[k]; k++; }
+      if(k>=t.seg.length) return;      // el pulso ya salió del último tramo
+      const p=t.pts[k], q=t.pts[k+1], f=t.seg[k]?want/t.seg[k]:0;
+      const hx=p.x+(q.x-p.x)*f, hy=p.y+(q.y-p.y)*f;
+      const tl=Math.min(t.seg[k]*f, 26), ux=(q.x-p.x)/(t.seg[k]||1), uy=(q.y-p.y)/(t.seg[k]||1);
+      const gr=g.createLinearGradient(hx,hy,hx-ux*tl,hy-uy*tl);
+      gr.addColorStop(0,'rgba('+col+',0.9)'); gr.addColorStop(1,'rgba('+col+',0)');
+      g.strokeStyle=gr; g.lineWidth=t.panel?2:1.5;
+      g.beginPath(); g.moveTo(hx,hy); g.lineTo(hx-ux*tl,hy-uy*tl); g.stroke();
+      // al llegar a la ventana, la almohadilla destella
+      if(t.panel){ const e=t.pts[t.pts.length-1], near=Math.max(0,1-(1-u)*14);
+        g.fillStyle='rgba('+col+','+(0.25+0.7*near)+')';
+        g.beginPath(); g.arc(e.x,e.y,2+2.6*near,0,7); g.fill();
+        if(near>0.05){ g.strokeStyle='rgba('+col+','+(0.5*near)+')'; g.lineWidth=1;
+          g.beginPath(); g.arc(e.x,e.y,4+7*(1-near),0,7); g.stroke(); } }
+  }
+  function drawDie(now){
+    const d=PCB.die;
+    // el die: pastilla oscura con borde vivo y pines en los cuatro lados
+    g.globalCompositeOperation='source-over';
+    const dg=g.createLinearGradient(d.x,d.y,d.x+d.s,d.y+d.s);
+    dg.addColorStop(0,'rgba(9,14,22,0.92)'); dg.addColorStop(1,'rgba(4,7,12,0.96)');
+    g.fillStyle=dg; g.fillRect(d.x,d.y,d.s,d.s);
+    g.globalCompositeOperation='lighter';
+    const hot=halted?'255,110,130':'120,220,255';
+    g.strokeStyle='rgba('+hot+',0.55)'; g.lineWidth=1.6; g.strokeRect(d.x,d.y,d.s,d.s);
+    g.strokeStyle='rgba('+hot+',0.14)'; g.lineWidth=1;
+    g.strokeRect(d.x+7,d.y+7,d.s-14,d.s-14);
+    // pines: dientes cortos por fuera de cada lado
+    g.strokeStyle='rgba('+hot+',0.34)'; g.lineWidth=1.4; g.beginPath();
+    const N=14;
+    for(let i=1;i<N;i++){ const f=i/N, px=d.x+d.s*f, py=d.y+d.s*f;
+      g.moveTo(px,d.y); g.lineTo(px,d.y-7);
+      g.moveTo(px,d.y+d.s); g.lineTo(px,d.y+d.s+7);
+      g.moveTo(d.x,py); g.lineTo(d.x-7,py);
+      g.moveTo(d.x+d.s,py); g.lineTo(d.x+d.s+7,py); }
+    g.stroke();
+    // esquinas marcadas, como el chip de la foto
+    g.strokeStyle='rgba('+hot+',0.8)'; g.lineWidth=2; const cc=16;
+    [[d.x,d.y,1,1],[d.x+d.s,d.y,-1,1],[d.x,d.y+d.s,1,-1],[d.x+d.s,d.y+d.s,-1,-1]]
+      .forEach(([x,y,sx,sy])=>{ g.beginPath(); g.moveTo(x+sx*cc,y); g.lineTo(x,y);
+        g.lineTo(x,y+sy*cc); g.stroke(); });
+    // respiración del die, sincronizada con el reactor
+    const br=0.5+0.5*Math.sin(now*0.0016);
+    const rg=g.createRadialGradient(CX,CY,0,CX,CY,d.s*0.62);
+    rg.addColorStop(0,'rgba('+hot+','+(0.05+0.05*br)+')'); rg.addColorStop(1,'rgba(0,0,0,0)');
+    g.fillStyle=rg; g.fillRect(d.x,d.y,d.s,d.s);
+  }
   // TRADE CONTEXT: orbe de memoria. Gira fuera del orbe, en un plano inclinado,
   // en sentido contrario a los agentes (por eso a veces pasa por detrás).
   const CTXO={sx:0,sy:0,depth:0.5,n:-1,pulse:-1e9,tilt:0.46};
@@ -1262,6 +1413,7 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
   pollCtx(); setInterval(pollCtx,12000);
   window.ctxCaptured=()=>{ CTXO.pulse=performance.now(); pollCtx(); };
   window.ctxAt=()=>[CTXO.sx,CTXO.sy];      // donde va el modulo ahora mismo
+  window.pcbRewire=()=>{ pcbDirty=true; };   // re-rutea a las ventanas
   let A=[], byKey={}, curOpen=null, openAt=0;
   function build(){
     const ags=DATA?DATA.agents:[], N=(ags.length||1)+1;   // +1: el modulo trade_context
@@ -1341,39 +1493,17 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     const flash=now<wakeUntil?1:0, Rorb=Rh;
     g.globalCompositeOperation='source-over'; g.fillStyle='#03050b'; g.fillRect(0,0,W,H);
     g.globalCompositeOperation='lighter'; g.shadowBlur=0;
-    // FONDO UNIVERSO: nebulosas tenues + campo de estrellas
-    const nb1=g.createRadialGradient(W*0.24,H*0.30,0,W*0.24,H*0.30,W*0.55); nb1.addColorStop(0,'rgba(70,45,120,0.08)'); nb1.addColorStop(1,'rgba(0,0,0,0)');
+    // FONDO: la placa. Dos halos de color muy tenues (azul / violeta, como la
+    // foto de referencia) y encima el cobre, las pistas y el die.
+    const nb1=g.createRadialGradient(W*0.18,H*0.72,0,W*0.18,H*0.72,W*0.55);
+    nb1.addColorStop(0,'rgba(30,90,150,0.10)'); nb1.addColorStop(1,'rgba(0,0,0,0)');
     g.fillStyle=nb1; g.fillRect(0,0,W,H);
-    const nb2=g.createRadialGradient(W*0.80,H*0.72,0,W*0.80,H*0.72,W*0.5); nb2.addColorStop(0,'rgba(20,70,110,0.07)'); nb2.addColorStop(1,'rgba(0,0,0,0)');
+    const nb2=g.createRadialGradient(W*0.84,H*0.24,0,W*0.84,H*0.24,W*0.5);
+    nb2.addColorStop(0,'rgba(95,45,150,0.10)'); nb2.addColorStop(1,'rgba(0,0,0,0)');
     g.fillStyle=nb2; g.fillRect(0,0,W,H);
-    for(const st of STARS){ const tw=0.6+0.4*Math.sin(now*0.001+st.ph), al=st.br*tw;
-      g.fillStyle='rgba('+(st.gold?'255,224,170':'185,212,255')+','+al+')'; g.beginPath(); g.arc(st.x*W,st.y*H,st.r,0,7); g.fill(); }
-    // ESTRELLAS FUGACES: encienden rápido, se apagan lento, con estela afilada
-    const sdt=Math.min(60,now-(shootLast||now)); shootLast=now;
-    if(now>shootNext){ spawnShoot(); if(Math.random()<0.15) spawnShoot();
-      shootNext=now+3200+Math.random()*7000; }
-    for(let i=SHOOT.length-1;i>=0;i--){ const m=SHOOT[i]; m.life+=sdt; m.x+=m.vx*sdt; m.y+=m.vy*sdt;
-      if(m.life>m.max||m.x<-0.2||m.x>1.2||m.y>1.2){ SHOOT.splice(i,1); continue; }
-      const p=m.life/m.max;
-      const ignite=Math.min(1,p/0.08);                                  // encendido casi instantáneo
-      const burn=1-Math.max(0,(p-0.30)/0.70);                           // apagado largo
-      const fade=ignite*burn*burn; if(fade<=0.01) continue;
-      const hx=m.x*W, hy=m.y*H;
-      const vpx=m.vx*W, vpy=m.vy*H, vmag=Math.hypot(vpx,vpy)||1;
-      const ux=vpx/vmag, uy=vpy/vmag;                                   // dirección de avance
-      const tl=vmag*m.tailms;                                           // largo de la estela (px)
-      const tx=hx-ux*tl, ty=hy-uy*tl;                                   // punta de la cola
-      const px=-uy, py=ux, hw=1.5*fade;                                 // perpendicular (ancho en la cabeza)
-      const col=m.gold?'255,214,140':'198,226,255';
-      const gr=g.createLinearGradient(hx,hy,tx,ty);
-      gr.addColorStop(0,'rgba('+col+','+(0.85*fade)+')'); gr.addColorStop(0.4,'rgba('+col+','+(0.25*fade)+')'); gr.addColorStop(1,'rgba('+col+',0)');
-      g.fillStyle=gr; g.beginPath();                                    // estela afilada (aguja): ancha en cabeza, punta en cola
-      g.moveTo(hx+px*hw,hy+py*hw); g.lineTo(hx-px*hw,hy-py*hw); g.lineTo(tx,ty); g.closePath(); g.fill();
-      const hg=g.createRadialGradient(hx,hy,0,hx,hy,3.4*fade+1);        // cabeza brillante
-      hg.addColorStop(0,'rgba(255,255,255,'+fade+')'); hg.addColorStop(0.5,'rgba('+col+','+(0.7*fade)+')'); hg.addColorStop(1,'rgba('+col+',0)');
-      g.fillStyle=hg; g.beginPath(); g.arc(hx,hy,3.4*fade+1,0,7); g.fill(); }
+    drawPCB(now);
     // volumen del orbe (glow interno)
-    const vg=g.createRadialGradient(CX,CY,Rorb*0.08,CX,CY,Rorb); vg.addColorStop(0,halted?'rgba(255,110,130,0.12)':'rgba(90,185,225,0.13)'); vg.addColorStop(0.7,'rgba(40,95,125,0.05)'); vg.addColorStop(1,'rgba(0,0,0,0)');
+    const vg=g.createRadialGradient(CX,CY,Rorb*0.08,CX,CY,Rorb); vg.addColorStop(0,halted?'rgba(255,110,130,0.07)':'rgba(90,185,225,0.08)'); vg.addColorStop(0.7,'rgba(40,95,125,0.05)'); vg.addColorStop(1,'rgba(0,0,0,0)');
     g.fillStyle=vg; g.beginPath(); g.arc(CX,CY,Rorb,0,7); g.fill();
     // conexiones de HYDRA (centro) → agentes. Base tenue + resaltado del agente señalado/abierto
     const hyHover=hoverKey==='__hydra';
