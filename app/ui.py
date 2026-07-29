@@ -9,9 +9,10 @@ BRAIN_HTML = r"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>HYDRA · núcleo</title>
-<link rel="icon" type="image/png" href="/static/favicon.png?v=3">
-<link rel="apple-touch-icon" sizes="180x180" href="/static/icon-180.png?v=3">
-<link rel="manifest" href="/manifest.webmanifest?v=3">
+<link rel="icon" type="image/png" href="/icon/4/favicon.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/icon/4/icon-180.png">
+<link rel="apple-touch-icon-precomposed" sizes="180x180" href="/icon/4/icon-180.png">
+<link rel="manifest" href="/manifest.webmanifest?v=4">
 <meta name="theme-color" content="#04070e">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -227,7 +228,7 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 <div id="boot">
   <div class="bcore">
     <svg viewBox="0 0 120 120" width="120" height="120">
-      <g fill="#7ff6ff"><path fill-rule="evenodd" d="M60 5 L107.6 32.5 L107.6 87.5 L60 115 L12.4 87.5 L12.4 32.5 Z M60 17.6 L96.7 38.8 L96.7 81.2 L60 102.4 L23.3 81.2 L23.3 38.8 Z"/><path d="M60 27 L65 37.5 L60 44 L55 37.5 Z"/><path d="M30 43 L53.5 51.5 L53.5 60.5 L30 53.5 Z"/><path d="M90 43 L66.5 51.5 L66.5 60.5 L90 53.5 Z"/><path d="M29 61.5 L39.5 65.5 L39.5 78 L29 71.5 Z"/><path d="M91 61.5 L80.5 65.5 L80.5 78 L91 71.5 Z"/><path d="M45 65 L75 65 L71.5 71.5 L48.5 71.5 Z"/><path d="M49 75.5 L71 75.5 L68 82 L52 82 Z"/><path d="M53.5 86 L66.5 86 L60 95.5 Z"/></g>
+      <g fill="#7ff6ff"><path fill-rule="evenodd" d="M60 5 L107.6 32.5 L107.6 87.5 L60 115 L12.4 87.5 L12.4 32.5 Z M60 17.6 L96.7 38.8 L96.7 81.2 L60 102.4 L23.3 81.2 L23.3 38.8 Z"/><path d="M60 23 L65 34.5 L60 41.5 L55 34.5 Z"/><path d="M26.5 40.5 L54 55 L54 59 L26.5 49 Z"/><path d="M93.5 40.5 L66 55 L66 59 L93.5 49 Z"/><path d="M27.5 62.5 L38 67 L38 78.5 L27.5 72 Z"/><path d="M92.5 62.5 L82 67 L82 78.5 L92.5 72 Z"/><path d="M42 62 L78 62 L78 67.5 L71.5 84 L67 68.5 L63.5 74 L60 67.5 L56.5 74 L53 68.5 L48.5 84 L42 67.5 Z"/><path d="M52 87 L56.5 81.5 L60 85.5 L63.5 81.5 L68 87 L60 96.5 Z"/></g>
     </svg>
     <div class="bring"></div>
   </div>
@@ -238,7 +239,7 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 
 <div id="top">
   <span class="brand"><svg viewBox="0 0 120 120" width="20" height="20" style="vertical-align:-4px;filter:drop-shadow(0 0 6px #38e6ff)">
-    <g fill="#7ff6ff"><path fill-rule="evenodd" d="M60 5 L107.6 32.5 L107.6 87.5 L60 115 L12.4 87.5 L12.4 32.5 Z M60 17.6 L96.7 38.8 L96.7 81.2 L60 102.4 L23.3 81.2 L23.3 38.8 Z"/><path d="M60 27 L65 37.5 L60 44 L55 37.5 Z"/><path d="M30 43 L53.5 51.5 L53.5 60.5 L30 53.5 Z"/><path d="M90 43 L66.5 51.5 L66.5 60.5 L90 53.5 Z"/><path d="M29 61.5 L39.5 65.5 L39.5 78 L29 71.5 Z"/><path d="M91 61.5 L80.5 65.5 L80.5 78 L91 71.5 Z"/><path d="M45 65 L75 65 L71.5 71.5 L48.5 71.5 Z"/><path d="M49 75.5 L71 75.5 L68 82 L52 82 Z"/><path d="M53.5 86 L66.5 86 L60 95.5 Z"/></g>
+    <g fill="#7ff6ff"><path fill-rule="evenodd" d="M60 5 L107.6 32.5 L107.6 87.5 L60 115 L12.4 87.5 L12.4 32.5 Z M60 17.6 L96.7 38.8 L96.7 81.2 L60 102.4 L23.3 81.2 L23.3 38.8 Z"/><path d="M60 23 L65 34.5 L60 41.5 L55 34.5 Z"/><path d="M26.5 40.5 L54 55 L54 59 L26.5 49 Z"/><path d="M93.5 40.5 L66 55 L66 59 L93.5 49 Z"/><path d="M27.5 62.5 L38 67 L38 78.5 L27.5 72 Z"/><path d="M92.5 62.5 L82 67 L82 78.5 L92.5 72 Z"/><path d="M42 62 L78 62 L78 67.5 L71.5 84 L67 68.5 L63.5 74 L60 67.5 L56.5 74 L53 68.5 L48.5 84 L42 67.5 Z"/><path d="M52 87 L56.5 81.5 L60 85.5 L63.5 81.5 L68 87 L60 96.5 Z"/></g>
   </svg> HYDRA</span>
   <span id="vstatus"></span>
   <span class="spacer"></span>
@@ -1207,18 +1208,16 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     ct.strokeStyle='rgba('+m.c2+',0.85)'; ct.lineWidth=R*0.1; ct.beginPath(); ct.arc(cx,cy,R*0.82,0,7); ct.stroke();
     ct.save(); ct.translate(cx,cy); ct.fillStyle='rgba('+m.dk+',0.92)'; ct.strokeStyle='rgba('+m.dk+',0.92)'; ct.lineJoin='round'; ct.lineCap='round';
     coinSym(ct,m.sym,R*0.5,m.t); ct.restore(); return cv2; };
-  // LA MARCA (cabeza de robot en hexágono) dibujada en el lienzo, pieza a pieza,
+  // LA MARCA (vibora robotica en hexagono) dibujada en el lienzo, pieza a pieza,
   // para poder encender los ojos y la boca por separado. Coordenadas 0..120.
-  const MK_FRAME=new Path2D('M60 5 L107.6 32.5 L107.6 87.5 L60 115 L12.4 87.5 L12.4 32.5 Z '
-    +'M60 17.6 L96.7 38.8 L96.7 81.2 L60 102.4 L23.3 81.2 L23.3 38.8 Z');
-  const MK_SENSOR=new Path2D('M60 27 L65 37.5 L60 44 L55 37.5 Z');
-  const MK_EYES=[new Path2D('M30 43 L53.5 51.5 L53.5 60.5 L30 53.5 Z'),
-                 new Path2D('M90 43 L66.5 51.5 L66.5 60.5 L90 53.5 Z')];
-  const MK_PLATES=[new Path2D('M29 61.5 L39.5 65.5 L39.5 78 L29 71.5 Z'),
-                   new Path2D('M91 61.5 L80.5 65.5 L80.5 78 L91 71.5 Z')];
-  const MK_MOUTH=[new Path2D('M45 65 L75 65 L71.5 71.5 L48.5 71.5 Z'),
-                  new Path2D('M49 75.5 L71 75.5 L68 82 L52 82 Z'),
-                  new Path2D('M53.5 86 L66.5 86 L60 95.5 Z')];
+  const MK_FRAME=new Path2D('M60 5 L107.6 32.5 L107.6 87.5 L60 115 L12.4 87.5 L12.4 32.5 Z M60 17.6 L96.7 38.8 L96.7 81.2 L60 102.4 L23.3 81.2 L23.3 38.8 Z');
+  const MK_SENSOR=new Path2D('M60 23 L65 34.5 L60 41.5 L55 34.5 Z');
+  const MK_EYES=[new Path2D('M26.5 40.5 L54 55 L54 59 L26.5 49 Z'),
+                 new Path2D('M93.5 40.5 L66 55 L66 59 L93.5 49 Z')];
+  const MK_PLATES=[new Path2D('M27.5 62.5 L38 67 L38 78.5 L27.5 72 Z'),
+                   new Path2D('M92.5 62.5 L82 67 L82 78.5 L92.5 72 Z')];
+  const MK_MOUTH=[new Path2D('M42 62 L78 62 L78 67.5 L71.5 84 L67 68.5 L63.5 74 L60 67.5 L56.5 74 L53 68.5 L48.5 84 L42 67.5 Z'),
+                  new Path2D('M52 87 L56.5 81.5 L60 85.5 L63.5 81.5 L68 87 L60 96.5 Z')];
   /* r = radio en pantalla; eye = color rgb de los ojos; blink 0..1 = luz de la boca */
   function drawMark(cx,cy,r,body,eye,blink,al){
     const k=r*2/110;
@@ -1230,7 +1229,7 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     g.shadowColor='rgba('+eye+',1)'; g.shadowBlur=16/k;
     g.fillStyle='rgba('+eye+','+al+')'; MK_EYES.forEach(q=>g.fill(q));
     g.shadowBlur=0;
-    // BOCA: la luz que parpadea, más viva en las barras de arriba
+    // BOCA: la luz late en la mandíbula (colmillos) y algo menos en el mentón
     MK_MOUTH.forEach((q,i)=>{ const b=blink*(1-i*0.22);
       g.shadowColor='rgba(255,255,255,1)'; g.shadowBlur=(4+10*b)/k;
       g.fillStyle='rgba(255,255,255,'+(0.25+0.7*b)*al+')'; g.fill(q); });

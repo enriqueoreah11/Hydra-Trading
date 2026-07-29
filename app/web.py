@@ -39,7 +39,30 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
     if _static.is_dir():
         app.mount("/static", StaticFiles(directory=str(_static)), name="static")
 
-    ICON_V = "3"          # súbelo cada vez que cambie el icono
+    ICON_V = "4"          # súbelo cada vez que cambie el icono
+
+    # iOS cachea el apple-touch-icon POR RUTA e ignora el ?v=, así que la versión
+    # va dentro de la ruta: /icon/3/… es una URL nueva y no puede reusar la vieja.
+    @app.get("/icon/{ver}/{name}")
+    async def icon_versioned(ver: str, name: str):
+        from fastapi.responses import FileResponse
+        f = (Path(__file__).parent / "static" / name).resolve()
+        static_dir = (Path(__file__).parent / "static").resolve()
+        if static_dir not in f.parents or not f.is_file() or f.suffix != ".png":
+            raise HTTPException(status_code=404, detail="no existe")
+        # inmutable: la URL cambia cuando cambia el icono, así que se puede cachear
+        return FileResponse(f, media_type="image/png",
+                            headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
+    # Rutas que iOS busca por su cuenta si no le gusta el <link>. Sin caché para
+    # que un icono viejo no se quede pegado.
+    @app.get("/apple-touch-icon.png")
+    @app.get("/apple-touch-icon-precomposed.png")
+    async def apple_touch_icon():
+        from fastapi.responses import FileResponse
+        return FileResponse(Path(__file__).parent / "static" / "icon-180.png",
+                            media_type="image/png",
+                            headers={"Cache-Control": "no-store"})
 
     @app.get("/manifest.webmanifest")
     async def manifest():
@@ -52,13 +75,13 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             "icons": [
                 # "any": ocupa todo el cuadro. "maskable": va con aire porque
                 # Android lo recorta a un círculo y se comería las puntas.
-                {"src": f"/static/icon-192.png?v={ICON_V}", "sizes": "192x192",
+                {"src": f"/icon/{ICON_V}/icon-192.png", "sizes": "192x192",
                  "type": "image/png", "purpose": "any"},
-                {"src": f"/static/icon-512.png?v={ICON_V}", "sizes": "512x512",
+                {"src": f"/icon/{ICON_V}/icon-512.png", "sizes": "512x512",
                  "type": "image/png", "purpose": "any"},
-                {"src": f"/static/icon-maskable-192.png?v={ICON_V}", "sizes": "192x192",
+                {"src": f"/icon/{ICON_V}/icon-maskable-192.png", "sizes": "192x192",
                  "type": "image/png", "purpose": "maskable"},
-                {"src": f"/static/icon-maskable-512.png?v={ICON_V}", "sizes": "512x512",
+                {"src": f"/icon/{ICON_V}/icon-maskable-512.png", "sizes": "512x512",
                  "type": "image/png", "purpose": "maskable"},
             ],
         })
