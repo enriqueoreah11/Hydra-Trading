@@ -41,6 +41,29 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
 
     ICON_V = "4"          # súbelo cada vez que cambie el icono
 
+    # Favicon en SVG: Safari guarda los favicons en una base de datos propia que
+    # no se limpia ni con recarga forzada, pero la entrada es por tipo de recurso.
+    # Ofrecer un SVG (que prefiere sobre el PNG) le hace pedir uno nuevo.
+    _MARK_SVG = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">'
+        '<rect width="120" height="120" fill="#04070e"/><g fill="#7ff6ff">'
+        '<path fill-rule="evenodd" d="M60 5 L107.6 32.5 L107.6 87.5 L60 115 L12.4 87.5 '
+        'L12.4 32.5 Z M60 17.6 L96.7 38.8 L96.7 81.2 L60 102.4 L23.3 81.2 L23.3 38.8 Z"/>'
+        '<path d="M60 23 L65 34.5 L60 41.5 L55 34.5 Z"/>'
+        '<path d="M26.5 40.5 L54 55 L54 59 L26.5 49 Z"/>'
+        '<path d="M93.5 40.5 L66 55 L66 59 L93.5 49 Z"/>'
+        '<path d="M27.5 62.5 L38 67 L38 78.5 L27.5 72 Z"/>'
+        '<path d="M92.5 62.5 L82 67 L82 78.5 L92.5 72 Z"/>'
+        '<path d="M42 62 L78 62 L78 67.5 L71.5 84 L67 68.5 L63.5 74 L60 67.5 '
+        'L56.5 74 L53 68.5 L48.5 84 L42 67.5 Z"/>'
+        '<path d="M52 87 L56.5 81.5 L60 85.5 L63.5 81.5 L68 87 L60 96.5 Z"/>'
+        '</g></svg>')
+
+    @app.get("/icon/{ver}/mark.svg")
+    async def icon_svg(ver: str):
+        return Response(content=_MARK_SVG, media_type="image/svg+xml",
+                        headers={"Cache-Control": "public, max-age=31536000, immutable"})
+
     # iOS cachea el apple-touch-icon POR RUTA e ignora el ?v=, así que la versión
     # va dentro de la ruta: /icon/3/… es una URL nueva y no puede reusar la vieja.
     @app.get("/icon/{ver}/{name}")
@@ -54,8 +77,15 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         return FileResponse(f, media_type="image/png",
                             headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
-    # Rutas que iOS busca por su cuenta si no le gusta el <link>. Sin caché para
-    # que un icono viejo no se quede pegado.
+    # Rutas que el navegador busca por su cuenta si no le gusta el <link>.
+    # Sin caché para que un icono viejo no se quede pegado.
+    @app.get("/favicon.ico")
+    async def favicon_ico():
+        from fastapi.responses import FileResponse
+        return FileResponse(Path(__file__).parent / "static" / "favicon.png",
+                            media_type="image/png",
+                            headers={"Cache-Control": "no-store"})
+
     @app.get("/apple-touch-icon.png")
     @app.get("/apple-touch-icon-precomposed.png")
     async def apple_touch_icon():

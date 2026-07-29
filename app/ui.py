@@ -9,7 +9,9 @@ BRAIN_HTML = r"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>HYDRA · núcleo</title>
-<link rel="icon" type="image/png" href="/icon/4/favicon.png">
+<link rel="icon" type="image/svg+xml" href="/icon/4/mark.svg">
+<link rel="icon" type="image/png" sizes="64x64" href="/icon/4/favicon.png">
+<link rel="shortcut icon" href="/icon/4/favicon.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/icon/4/icon-180.png">
 <link rel="apple-touch-icon-precomposed" sizes="180x180" href="/icon/4/icon-180.png">
 <link rel="manifest" href="/manifest.webmanifest?v=4">
