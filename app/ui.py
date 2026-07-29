@@ -1137,7 +1137,10 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
   const LINKS=[['sentinel','analyst'],['analyst','risk_manager'],['risk_manager','portfolio'],['portfolio','executor'],
     ['executor','auditor'],['overnight','executor'],['reviewer','architect'],['architect','validator'],
     ['validator','analyst'],['watchdog','executor'],['watchdog','sentinel'],
-    ['tester','analyst'],['tester','executor']];
+    ['tester','analyst'],['tester','executor'],
+    // el contexto de decision alimenta la revision diaria, y de ahi la
+    // evolucion del playbook. Solo esos dos: el Analyst NO lo lee.
+    ['__ctx','reviewer'],['__ctx','architect']];
   // símbolo vectorial propio de cada agente (dibujado, no un emoji genérico)
   function glyph(k,x,y,s,rgb,al,G){ G=G||g; G.save(); G.translate(x,y); G.strokeStyle='rgba('+rgb+','+al+')'; G.fillStyle='rgba('+rgb+','+al+')'; G.lineWidth=1.7; G.lineJoin='round'; G.lineCap='round';
     switch(k){
@@ -1220,21 +1223,21 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
                    new Path2D('M92.5 62.5 L82 67 L82 78.5 L92.5 72 Z')];
   const MK_MOUTH=[new Path2D('M42 62 L78 62 L78 67.5 L71.5 84 L67 68.5 L63.5 74 L60 67.5 L56.5 74 L53 68.5 L48.5 84 L42 67.5 Z'),
                   new Path2D('M52 87 L56.5 81.5 L60 85.5 L63.5 81.5 L68 87 L60 96.5 Z')];
-  /* r = radio en pantalla; eye = color rgb de los ojos; blink 0..1 = luz de la boca */
+  /* r = radio en pantalla; eye = color rgb de los ojos; blink 0..1 = latido de los ojos */
   function drawMark(cx,cy,r,body,eye,blink,al){
     const k=r*2/110;
     g.save(); g.translate(cx,cy); g.scale(k,k); g.translate(-60,-60);
     g.fillStyle='rgba('+body+','+(0.85*al)+')'; g.fill(MK_FRAME,'evenodd');
     g.fillStyle='rgba('+body+','+(0.7*al)+')';
     g.fill(MK_SENSOR); MK_PLATES.forEach(q=>g.fill(q));
-    // OJOS: verde en marcha, amarillo al señalar, rojo en pausa
-    g.shadowColor='rgba('+eye+',1)'; g.shadowBlur=16/k;
-    g.fillStyle='rgba('+eye+','+al+')'; MK_EYES.forEach(q=>g.fill(q));
-    g.shadowBlur=0;
-    // BOCA: la luz late en la mandíbula (colmillos) y algo menos en el mentón
-    MK_MOUTH.forEach((q,i)=>{ const b=blink*(1-i*0.22);
-      g.shadowColor='rgba(255,255,255,1)'; g.shadowBlur=(4+10*b)/k;
-      g.fillStyle='rgba(255,255,255,'+(0.25+0.7*b)*al+')'; g.fill(q); });
+    // BOCA: parte del cuerpo, sin luz propia (el latido vive en los ojos)
+    g.fillStyle='rgba('+body+','+(0.78*al)+')'; MK_MOUTH.forEach(q=>g.fill(q));
+    // OJOS: aquí late la luz. Color por estado — verde en marcha, amarillo al
+    // señalar, rojo en pausa — y el brillo sube y baja con `blink`.
+    // Una sola pasada: repetir la forma en modo aditivo satura a blanco y se
+    // pierde el color. El latido va en el alfa y en el halo, no en capas.
+    g.shadowColor='rgba('+eye+',1)'; g.shadowBlur=(8+26*blink)/k;
+    g.fillStyle='rgba('+eye+','+(0.6+0.4*blink)*al+')'; MK_EYES.forEach(q=>g.fill(q));
     g.shadowBlur=0; g.restore();
   }
   // fondo de universo: campo de estrellas (posiciones normalizadas 0..1)
@@ -1258,6 +1261,7 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     }catch(e){} }
   pollCtx(); setInterval(pollCtx,12000);
   window.ctxCaptured=()=>{ CTXO.pulse=performance.now(); pollCtx(); };
+  window.ctxAt=()=>[CTXO.sx,CTXO.sy];      // donde va el modulo ahora mismo
   let A=[], byKey={}, curOpen=null, openAt=0;
   function build(){
     const ags=DATA?DATA.agents:[], N=(ags.length||1)+1;   // +1: el modulo trade_context
@@ -1292,7 +1296,10 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       a.lalign=c>0.35?'left':(c<-0.35?'right':'center'); }
     CTXO.ang=CTXO.baseAng+orb; CTXO.sx=CX+Math.cos(CTXO.ang)*Rh; CTXO.sy=CY+Math.sin(CTXO.ang)*Rh;
     // RING = los agentes + el modulo de memoria, todos plazas del mismo anillo
-    const RING=A.concat([{key:'__ctx',name:'CONTEXT',rgb:'176,150,255',ang:CTXO.ang,ctx:true}]);
+    const CTXMOD={key:'__ctx',name:'CONTEXT',rgb:'176,150,255',ang:CTXO.ang,ctx:true,
+                  x:CTXO.sx,y:CTXO.sy,role:'Memoria de decisiones'};
+    byKey['__ctx']=CTXMOD;                       // para que LINKS lo encuentre
+    const RING=A.concat([CTXMOD]);
     // ANILLO DE MÓDULOS: una banda que gira alrededor del reactor, partida en
     // segmentos separados (uno por agente). Todo el cálculo es en polares.
     const NSEG=Math.max(RING.length,1), SEG=Math.PI*2/NSEG;
@@ -1370,17 +1377,18 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     g.fillStyle=vg; g.beginPath(); g.arc(CX,CY,Rorb,0,7); g.fill();
     // conexiones de HYDRA (centro) → agentes. Base tenue + resaltado del agente señalado/abierto
     const hyHover=hoverKey==='__hydra';
+    const hk=hoverC?'__ctx':hoverKey;      // el modulo de memoria cuenta como nodo
     g.lineWidth=1; g.strokeStyle='rgba(90,150,180,0.12)'; g.beginPath();
-    for(const a of A){ g.moveTo(CX,CY); g.lineTo(a.x,a.y); } g.stroke();
-    // se ilumina el radio a Hydra del agente abierto (sel) o señalado; o TODOS si señalas el núcleo
-    const litHydra=hyHover?A.map(a=>a.key):[sel,hoverKey].filter(Boolean);
+    for(const a of RING){ g.moveTo(CX,CY); g.lineTo(a.x,a.y); } g.stroke();
+    // se ilumina el radio a Hydra del nodo abierto (sel) o señalado; o TODOS si señalas el núcleo
+    const litHydra=hyHover?RING.map(a=>a.key):[sel,hk].filter(Boolean);
     if(litHydra.length){ g.lineWidth=1.7; g.strokeStyle='rgba(127,246,255,0.8)'; g.beginPath();
-      for(const a of A){ if(litHydra.indexOf(a.key)>=0){ g.moveTo(CX,CY); g.lineTo(a.x,a.y); } } g.stroke();
+      for(const a of RING){ if(litHydra.indexOf(a.key)>=0){ g.moveTo(CX,CY); g.lineTo(a.x,a.y); } } g.stroke();
       const t=(now*0.0007)%1; g.fillStyle='rgba(190,250,255,0.95)';
-      for(const a of A){ if(litHydra.indexOf(a.key)>=0){ g.beginPath(); g.arc(CX+(a.x-CX)*t,CY+(a.y-CY)*t,2.2,0,7); g.fill(); } } }
+      for(const a of RING){ if(litHydra.indexOf(a.key)>=0){ g.beginPath(); g.arc(CX+(a.x-CX)*t,CY+(a.y-CY)*t,2.2,0,7); g.fill(); } } }
     // conexiones entre agentes (curvas); se iluminan al pasar el cursor o si el agente está abierto
     for(const L of LINKS){ const a=byKey[L[0]], b=byKey[L[1]]; if(!a||!b) continue;
-      const hot=(hoverKey&&(L[0]===hoverKey||L[1]===hoverKey))||(sel&&(L[0]===sel||L[1]===sel));
+      const hot=(hk&&(L[0]===hk||L[1]===hk))||(sel&&(L[0]===sel||L[1]===sel));
       const cx=(a.x+b.x)/2+(CX-(a.x+b.x)/2)*0.42, cy=(a.y+b.y)/2+(CY-(a.y+b.y)/2)*0.42;
       g.strokeStyle=hot?'rgba(127,246,255,0.85)':'rgba(90,150,180,0.13)'; g.lineWidth=hot?1.7:1;
       g.beginPath(); g.moveTo(a.x,a.y); g.quadraticCurveTo(cx,cy,b.x,b.y); g.stroke();
@@ -1492,8 +1500,10 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     g.restore();
     // anillo interior fino: el marco donde vive la cabeza
     g.strokeStyle='rgba('+hyc+',0.75)'; g.lineWidth=1.6; g.beginPath(); g.arc(0,0,hyR,0,7); g.stroke();
-    // LA CABEZA: ojos por estado y la boca parpadeando
-    const eyeCol=halted?'255,93,115':(hyHover?'255,214,90':'52,211,153');
+    // LA CABEZA: los ojos laten y su color dice el estado
+    // Colores puros: el lienzo va en modo 'lighter' y cualquier mezcla tira a
+    // blanco, asi que se parte de un canal dominante y los otros muy bajos.
+    const eyeCol=halted?'255,16,40':(hyHover?'255,196,0':'0,255,102');
     const blink=0.35+0.65*Math.pow(0.5+0.5*Math.sin(now*0.0042),2);   // latido, no parpadeo plano
     g.restore();
     drawMark(CX,CY,hyR*0.92,em,eyeCol,blink,1);
@@ -1521,7 +1531,8 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     else if(hoverC){ tip.style.left=(CTXO.sx+22)+'px'; tip.style.top=CTXO.sy+'px';
       tip.innerHTML='🗄 <b>TRADE CONTEXT</b> · '+L('memoria','memory')+'<br><span>'
         +(CTXO.n>0?CTXO.n+' '+L('capturas guardadas','captures stored'):L('esperando la primera captura','waiting for the first capture'))
-        +'</span><br><span style="opacity:.7">'+L('clic para ver todo lo que guarda','click to see everything it stores')+'</span>';
+        +'</span><br><span>↔ Reviewer, Architect</span>'
+        +'<br><span style="opacity:.7">'+L('clic para ver todo lo que guarda','click to see everything it stores')+'</span>';
       tip.classList.add('show'); }
     else if(hoverKey==='__hydra'){ tip.style.left=(CX+30)+'px'; tip.style.top=CY+'px';
       tip.innerHTML='🐉 <b>HYDRA</b> · orquestador<br><span>Coordina a todos los agentes como un solo cerebro.</span><br><span style="opacity:.7">clic para ver el conjunto</span>';
