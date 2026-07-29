@@ -128,6 +128,26 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         pass
 
     @app.on_event("startup")
+    async def _autostart_ollama():
+        """Si la configuración usa el cerebro local, lo encendemos nosotros.
+
+        Así no hace falta dejar una terminal abierta con `ollama serve`: al
+        abrir Hydra, el cerebro queda listo en segundo plano.
+        """
+        if settings.brain_for("analyst") != "ollama" and settings.llm_provider != "hybrid":
+            return
+        try:
+            if await _ollama_alive(2):
+                return
+            import logging
+            from . import ollama_boot
+            ok, msg = ollama_boot.start()
+            logging.getLogger("web").info("ollama autostart: %s", msg)
+        except Exception:  # noqa: BLE001 - nunca debe tumbar el arranque
+            import logging
+            logging.getLogger("web").warning("ollama autostart falló", exc_info=True)
+
+    @app.on_event("startup")
     async def _start_brain():
         # NUNCA debe tumbar el arranque de la web: cualquier fallo aquí se ignora.
         try:
@@ -222,8 +242,11 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                     "models": models, "selected": settings.ollama_model,
                     "routing": _routing()}
         except Exception as exc:  # noqa: BLE001
+            from . import ollama_boot
             return {"ok": True, "running": False, "provider": settings.llm_provider,
                     "error": f"{exc}"[:160], "url": settings.ollama_url,
+                    "installed": bool(ollama_boot.binary() or ollama_boot.app_bundle()),
+                    "boot": ollama_boot.state,
                     "routing": _routing()}
 
     def _routing() -> list[dict]:
@@ -306,6 +329,33 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                     "seconds": round(_t.time() - t0, 1), "error": f"{exc}"[:300]}
         finally:
             settings.llm_provider = prev
+
+    async def _ollama_alive(timeout: float = 3) -> bool:
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as cli:
+                r = await cli.get(settings.ollama_url.rstrip("/") + "/api/tags")
+                return r.status_code == 200
+        except Exception:  # noqa: BLE001
+            return False
+
+    @app.post("/llm/local/start")
+    async def llm_local_start():
+        """Enciende Ollama en segundo plano si no está corriendo."""
+        from . import ollama_boot
+        if await _ollama_alive():
+            return {"ok": True, "running": True, "message": "ya estaba encendido"}
+        ok, msg = ollama_boot.start()
+        if not ok:
+            return JSONResponse({"ok": False, "error": msg}, status_code=400)
+        # tarda un par de segundos en abrir el puerto
+        for _ in range(12):
+            await asyncio.sleep(1)
+            if await _ollama_alive(2):
+                store.log("system", "ollama", "cerebro local encendido")
+                return {"ok": True, "running": True, "message": msg}
+        return {"ok": True, "running": False,
+                "message": msg + " — sigue arrancando, dale unos segundos"}
 
     @app.post("/llm/local")
     async def llm_local_set(request: Request):

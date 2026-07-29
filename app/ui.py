@@ -621,7 +621,18 @@ async function renderLocal(){ const el=$('#sys-local'); if(!el) return;
     +opt('anthropic','☁️ Nube','Todo con Claude. Sin instalar nada.')
     +opt('hybrid','⚡ Híbrido','El volumen en local (gratis), el juicio con Claude. Recomendado.')
     +opt('ollama','💻 Local','Todo en tu Mac. Costo cero.')+'</div>';
-  if(!d.running) h+='<div class="phelp" style="color:#fbbf24">Ollama no responde en '+escapeHtml(d.url||'')+'. Bájalo en <b>ollama.com</b>, ábrelo (queda en la barra de arriba) y corre <code>ollama pull qwen3:8b</code>.</div>';
+  if(!d.running){
+    if(d.installed){   // está instalado pero apagado: se enciende desde aquí
+      h+='<div class="phelp" style="color:#fbbf24">Cerebro local apagado. Enciéndelo sin abrir la terminal:</div>'
+        +'<button class="btn" id="ol-go" onclick="startLocal()">▶ Encender cerebro local</button>'
+        +'<div id="ol-out" class="phelp"></div>'
+        +'<div class="phelp">Para que arranque solo al encender el Mac:<br>'
+        +'<code>bash scripts/install-ollama-service.sh</code></div>';
+    } else {
+      h+='<div class="phelp" style="color:#fbbf24">Ollama no responde en '+escapeHtml(d.url||'')
+        +'. Bájalo en <b>ollama.com</b>, ábrelo (queda en la barra de arriba) y corre <code>ollama pull qwen3:8b</code>.</div>';
+    }
+  }
   else { h+='<div class="phelp" style="color:#34d399">Ollama activo ✅ — lo que corra en local es gratis e ilimitado.</div>';
     if((d.models||[]).length) h+='<div class="prm"><label>Modelo local</label><select id="olm" onchange="setProvider(\''+P+'\',this.value)">'
       +d.models.map(m=>'<option'+(m===d.selected?' selected':'')+'>'+escapeHtml(m)+'</option>').join('')+'</select></div>';
@@ -630,6 +641,18 @@ async function renderLocal(){ const el=$('#sys-local'); if(!el) return;
   if(rt.length){ h+='<div class="phelp" style="margin-top:6px">Quién usa qué:</div>'
     +rt.map(r=>'<div class="cfg"><span>'+escapeHtml(r.label)+' <span style="opacity:.55">· '+escapeHtml(r.why)+'</span></span> <b style="color:'+(r.brain==='ollama'?'#34d399':'#7ff6ff')+'">'+(r.brain==='ollama'?'💻 local':'☁️ Claude')+'</b></div>').join(''); }
   el.innerHTML=h; }
+async function startLocal(){ const b=$('#ol-go'), o=$('#ol-out');
+  if(b){ b.disabled=true; b.textContent='Encendiendo…'; }
+  if(o) o.textContent='';
+  let d; try{ d=await (await fetch('/llm/local/start',{method:'POST'})).json(); }
+  catch(e){ if(o){o.style.color='#ff5d73';o.textContent='Error de red.';}
+            if(b){b.disabled=false;b.textContent='▶ Encender cerebro local';} return; }
+  if(d.running){ toast('Cerebro local encendido ✅');
+    speak(L('Cerebro local encendido, '+SIR+'.','Local brain online, '+SIR+'.'));
+    renderLocal(); pollBrain(); return; }
+  if(o){ o.style.color=d.ok?'#fbbf24':'#ff5d73'; o.textContent=d.message||d.error||'No pude encenderlo.'; }
+  if(b){ b.disabled=false; b.textContent='▶ Reintentar'; }
+  if(d.ok) setTimeout(()=>{ renderLocal(); pollBrain(); },6000); }
 async function testLocal(){ const o=$('#lm-test'); if(o) o.innerHTML='<div class="empty">Probando… (la primera vez tarda: carga el modelo en memoria)</div>';
   let j; try{ j=await (await fetch('/llm/test',{method:'POST'})).json(); }catch(e){ o.innerHTML='<div class="empty" style="color:#ff5d73">Error de red.</div>'; return; }
   if(j.ok){ const g=j.good_judgement;
@@ -887,6 +910,9 @@ async function pollBrain(){ const box=$('#hud-brain'); if(!box)return;
   let h=row(L('Cerebro','Brain'),prov,'#7ff6ff')+row('Claude',short||'—');
   if(pv!=='anthropic')
     h+=row('Ollama',(lo.selected||m.ollama_model||'—')+(lo.running?'':' ⚠'),lo.running?'#34d399':'#fbbf24');
+    if(!lo.running&&lo.installed)
+      h+='<div class="sysact" style="border:0;padding:6px 0 0"><button class="btn ghost" '
+        +'onclick="startLocal()">▶ ENCENDER CEREBRO</button></div>';
   const vp=vo.provider||'';
   h+=row(L('Voz','Voice'),vp==='voicebox'?'Voicebox':(vp||L('navegador','browser')),
          vp==='voicebox'?(vo.running?'#34d399':'#ff5d73'):'#5f7387');
