@@ -503,6 +503,63 @@ async function openMarket(sym,tf){ selected=null; tf=tf||(DATA&&DATA.core&&DATA.
   sp.forEach(r=> h+='<div class="cfg"><span>'+L('Soporte','Support')+'</span> <b style="color:#34d399">'+r+'</b></div>');
   if(sym==='DXY') h+='<div class="empty" style="margin-top:10px">DXY sintético, calculado de la canasta EUR, JPY, GBP, CAD, SEK, CHF.</div>';
   $('#d-body').innerHTML=h; }
+/* ---------- TRADE CONTEXT: memoria inmutable de como se veia el mundo al decidir ---------- */
+let CTXF={symbol:'',outcome:''};
+function ctxColor(o){ o=String(o||''); if(o.indexOf('blocked')===0)return'#ff5d73';
+  if(o==='low_score'||o==='rejected')return'#fbbf24'; if(o==='alerted'||o==='taken')return'#34d399'; return'#9d8cff'; }
+function ctxAgo(ts){ if(!ts)return''; const s=Math.max(0,Date.now()/1000-ts);
+  if(s<90)return Math.round(s)+'s'; if(s<5400)return Math.round(s/60)+'m';
+  if(s<172800)return Math.round(s/3600)+'h'; return Math.round(s/86400)+'d'; }
+async function openTradeContext(sym,out){ selected=null;
+  if(sym!==undefined) CTXF.symbol=sym; if(out!==undefined) CTXF.outcome=out;
+  $('#d-e').textContent='🗄'; $('#d-name').textContent='TRADE CONTEXT';
+  $('#d-role').textContent=L('Memoria inmutable · append-only','Immutable memory · append-only');
+  $('#d-body').innerHTML='<div class="empty">Cargando…</div>'; $('#drawer').classList.add('open');
+  let d; try{ d=await (await fetch('/trade-context?limit=40&symbol='+encodeURIComponent(CTXF.symbol)+'&outcome='+encodeURIComponent(CTXF.outcome))).json(); }
+  catch(e){ $('#d-body').innerHTML='<div class="empty" style="color:#ff5d73">Error de red.</div>'; return; }
+  const st=d.stats||{}, rows=d.rows||[];
+  let h='<p class="role">'+L('Cómo se veía el mercado en el instante exacto en que el bot decidió. No se puede modificar ni borrar: cada fila queda tal cual llegó.','How the market looked at the exact instant the bot decided. It cannot be modified or deleted: every row stays exactly as it arrived.')+'</p>';
+  h+='<div class="cfg"><span>'+L('Capturas','Captures')+'</span> <b style="color:#b096ff">'+(st.total||0)+'</b></div>';
+  if(st.first_ts) h+='<div class="cfg"><span>'+L('Ventana','Window')+'</span> <b>'+ctxAgo(st.first_ts)+' → '+ctxAgo(st.last_ts)+'</b></div>';
+  if(!st.total){ h+='<div class="slbl">'+L('AÚN NO LLEGA NADA','NOTHING YET')+'</div><div class="empty" style="text-align:left;line-height:1.6">'
+      +L('Apunta el bot a este backend y empieza a guardar:','Point the bot at this backend and it starts saving:')
+      +'<br><code>BackendUrl = '+location.origin+'/ingest/trade-context</code><br><br>'
+      +L('Acepta el JSON tal como lo mande — no hace falta que el formato coincida.','It accepts whatever JSON the bot sends — the format does not need to match.')+'</div>';
+    $('#d-body').innerHTML=h; return; }
+  const bo=st.by_outcome||[];
+  if(bo.length){ h+='<div class="slbl">'+L('POR DESENLACE','BY OUTCOME')+'</div>';
+    bo.forEach(o=>{ const on=CTXF.outcome&&String(o.outcome||'').indexOf(CTXF.outcome)===0;
+      h+='<div class="cfg" style="cursor:pointer;'+(on?'background:#12203a55':'')+'" onclick="openTradeContext(undefined,\''+(on?'':String(o.outcome||''))+'\')"><span style="color:'+ctxColor(o.outcome)+'">'
+        +escapeHtml(String(o.outcome||'?'))+'</span> <b>'+o.n+(o.avg_score?' · score '+o.avg_score:'')+'</b></div>'; }); }
+  const bs=st.by_symbol||[];
+  if(bs.length>1){ h+='<div class="slbl">'+L('POR MERCADO','BY MARKET')+'</div><div class="ssec">'
+      +bs.map(s=>'<button class="btn ghost'+(CTXF.symbol===s.symbol?' on':'')+'" style="padding:5px 10px" onclick="openTradeContext(\''+(CTXF.symbol===s.symbol?'':String(s.symbol||''))+'\')">'
+        +escapeHtml(String(s.symbol||'?'))+' '+s.n+'</button>').join('')+'</div>'; }
+  h+='<div class="slbl">'+L('ÚLTIMAS CAPTURAS','LATEST CAPTURES')+'</div>';
+  if(!rows.length) h+='<div class="empty">'+L('Nada con ese filtro.','Nothing with that filter.')+'</div>';
+  rows.forEach(r=>{ const col=ctxColor(r.outcome);
+    let sig=[]; try{ sig=JSON.parse(r.signals_json||'[]')||[]; }catch(_){}
+    const det=[r.zone_price&&L('zona ','zone ')+r.zone_price,
+               r.zone_width_pips&&r.zone_width_pips+' pips',
+               r.n_confluences&&r.n_confluences+' '+L('confluencias','confluences'),
+               r.dist_pips&&'dist '+r.dist_pips,
+               r.spread_pips&&'spread '+r.spread_pips].filter(Boolean).join(' · ');
+    h+='<div id="ctx'+r.id+'" style="border:1px solid #1a2440;border-left:2px solid '+col+';border-radius:8px;padding:9px 11px;margin:8px 0;background:#0a1020aa">'
+      +'<div style="display:flex;gap:8px;align-items:baseline"><b style="color:#dff0ff">'+escapeHtml(String(r.symbol||'—'))+'</b>'
+      +'<span style="color:#5f7387;font-size:11px">'+escapeHtml(String(r.timeframe||''))+' '+escapeHtml(String(r.bias||''))+'</span>'
+      +(r.score!=null?'<span style="color:#b096ff;font-size:11px">score '+r.score+'</span>':'')
+      +'<span style="margin-left:auto;color:'+col+';font-size:11px">'+escapeHtml(String(r.outcome||''))+'</span>'
+      +'<span style="color:#5f7387;font-size:11px">'+ctxAgo(r.ts)+'</span></div>'
+      +(det?'<div style="color:#8aa;font-size:11px;margin-top:4px">'+escapeHtml(det)+'</div>':'')
+      +(sig.length?'<div style="color:#6f8aa5;font-size:10.5px;margin-top:4px">'+escapeHtml(sig.slice(0,6).map(s=>(s&&(s.label||s.name))||s).join(' · '))+(sig.length>6?' +'+(sig.length-6):'')+'</div>':'')
+      +'<div style="margin-top:6px"><span style="cursor:pointer;color:#5ad1e6;font-size:11px" onclick="ctxRaw('+r.id+')">'+L('ver todo lo guardado ▾','see everything stored ▾')+'</span></div></div>'; });
+  $('#d-body').innerHTML=h; }
+async function ctxRaw(id){ const box=$('#ctx'+id); if(!box)return;
+  if(box.querySelector('pre')){ box.querySelector('pre').remove(); return; }
+  let d; try{ d=await (await fetch('/trade-context/'+id)).json(); }catch(e){ toast('Error de red'); return; }
+  const pre=document.createElement('pre');
+  pre.style.cssText='margin:8px 0 0;padding:8px;background:#050810;border:1px solid #12203a;border-radius:6px;color:#9ec6dd;font-size:10.5px;line-height:1.45;max-height:280px;overflow:auto;white-space:pre-wrap;word-break:break-word';
+  pre.textContent=JSON.stringify(d.raw!==undefined?d.raw:d,null,2); box.appendChild(pre); }
 function renderDemo(results){ let h='<p class="role">Datos sintéticos. Así lee el mercado el Analyst.</p>';
   results.forEach(r=>{ const p=r.proposal,m=r.market; const dir=p.action==='propose'?(p.direction==='buy'?'🟢 COMPRA':'🔴 VENTA'):'⚪ SIN OPERACIÓN';
     h+='<li style="list-style:none;border:1px solid #12303f;border-radius:10px;padding:12px;margin:10px 0;background:#08131e88"><b style="color:#7ff6ff">'+r.symbol+'</b> — '+dir+' <span style="color:#5f7387">(confianza '+(p.confidence||0)+')</span>';
@@ -614,9 +671,9 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
 /* ============ CONSTELACIÓN DE AGENTES (estrella de datos + agentes + ramas) ============ */
 (function(){
   const cv=$('#corefx'), g=cv.getContext('2d');
-  let W=0,H=0,CX=0,CY=0,S=0,Rh=0,Rlab=0, mx=-9999,my=-9999, hoverKey=null, dirty=true;
+  let W=0,H=0,CX=0,CY=0,S=0,Rh=0,Rlab=0,Rctx=0, mx=-9999,my=-9999, hoverKey=null, hoverC=false, dirty=true;
   const dpr=Math.min(window.devicePixelRatio||1,1.5);
-  function rs(){ W=cv.clientWidth||innerWidth; H=cv.clientHeight||innerHeight; cv.width=W*dpr; cv.height=H*dpr; g.setTransform(dpr,0,0,dpr,0,0); CX=W/2; CY=H*0.53; S=Math.min(W,H); Rh=S*0.25; Rlab=S*0.44; dirty=true; }
+  function rs(){ W=cv.clientWidth||innerWidth; H=cv.clientHeight||innerHeight; cv.width=W*dpr; cv.height=H*dpr; g.setTransform(dpr,0,0,dpr,0,0); CX=W/2; CY=H*0.53; S=Math.min(W,H); Rh=S*0.25; Rlab=S*0.44; Rctx=S*0.385; dirty=true; }
   rs(); addEventListener('resize',rs);
   function stateOf(k){ const a=agentByKey(k); return a?a.state:'idle'; }
   function entriesOf(k){ const a=agentByKey(k); return a&&a.entries?a.entries.length:0; }
@@ -731,6 +788,14 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       life:0, max:900+Math.random()*700, tailms:140+Math.random()*120,
       gold:Math.random()<0.25}); }
   let MK=[], hoverM=-1;
+  // TRADE CONTEXT: orbe de memoria. Gira fuera del orbe, en un plano inclinado,
+  // en sentido contrario a los agentes (por eso a veces pasa por detrás).
+  const CTXO={sx:0,sy:0,depth:0.5,n:-1,pulse:-1e9,tilt:0.46};
+  async function pollCtx(){ try{ const d=await (await fetch('/trade-context?limit=1')).json();
+      const t=(d.stats&&d.stats.total)|0; if(CTXO.n>=0&&t>CTXO.n) CTXO.pulse=performance.now(); CTXO.n=t;
+    }catch(e){} }
+  pollCtx(); setInterval(pollCtx,12000);
+  window.ctxCaptured=()=>{ CTXO.pulse=performance.now(); pollCtx(); };
   let A=[], byKey={}, curOpen=null, openAt=0;
   function build(){
     const ags=DATA?DATA.agents:[], N=ags.length||1;
@@ -757,7 +822,7 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
   function openHydra(){ const names=(DATA?DATA.agents:[]).map(a=>a.emoji+' '+a.name).join(' · ');
     openInfo('🐉 HYDRA · orquestador','<p class="role">El núcleo que coordina a todos los agentes: recibe sus señales, decide y ejecuta como un solo cerebro.</p><div class="empty">Controla a: '+names+'</div>');
     speak('Hydra en línea, '+SIR+'. Coordino a los '+(DATA?DATA.agents.length:0)+' agentes.'); }
-  cv.addEventListener('click',()=>{ if(hoverKey==='__hydra') openHydra(); else if(hoverKey) openAgent(hoverKey); else if(hoverM>=0) openMarket(MK[hoverM].sym); else { speakStatus(); toast('HYDRA · '+(DATA?DATA.agents.length:0)+' agentes'); } });
+  cv.addEventListener('click',()=>{ if(hoverC) openTradeContext(); else if(hoverKey==='__hydra') openHydra(); else if(hoverKey) openAgent(hoverKey); else if(hoverM>=0) openMarket(MK[hoverM].sym); else { speakStatus(); toast('HYDRA · '+(DATA?DATA.agents.length:0)+' agentes'); } });
   function frame(now){
     if(!DATA){ requestAnimationFrame(frame); return; }
     if(dirty||A.length!==(DATA.agents||[]).length) build();
@@ -809,6 +874,10 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     // volumen del orbe (glow interno)
     const vg=g.createRadialGradient(CX,CY,Rorb*0.08,CX,CY,Rorb); vg.addColorStop(0,halted?'rgba(255,110,130,0.12)':'rgba(90,185,225,0.13)'); vg.addColorStop(0.7,'rgba(40,95,125,0.05)'); vg.addColorStop(1,'rgba(0,0,0,0)');
     g.fillStyle=vg; g.beginPath(); g.arc(CX,CY,Rorb,0,7); g.fill();
+    // órbita del TRADE CONTEXT: elipse inclinada, apenas visible (el camino del orbe)
+    { const ry=Rctx*Math.sin(CTXO.tilt)*0.55;
+      g.strokeStyle='rgba(176,150,255,0.10)'; g.lineWidth=1; g.setLineDash([5,9]);
+      g.beginPath(); g.ellipse(CX,CY,Rctx,ry,0,0,7); g.stroke(); g.setLineDash([]); }
     // orbe hecho de orbes pequeños (gira lentamente)
     const rot=now*0.00018, ca=Math.cos(rot), sa=Math.sin(rot);
     for(const p of ORB){ const X=p.x*ca-p.z*sa, Z=p.x*sa+p.z*ca; const sx=CX+X*Rorb, sy=CY+p.y*Rorb, depth=(Z+1)/2;
@@ -851,6 +920,31 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       g.shadowBlur=0; g.lineWidth=(h||o)?2.4:1.7; g.strokeStyle='rgba('+a.rgb+','+(dim?0.45:((h||o)?1:0.88))+')'; g.beginPath(); g.arc(a.x,a.y,R,0,7); g.stroke();
       if(st==='alert'){ g.strokeStyle='rgba(255,93,115,'+(0.5+0.5*Math.sin(now*0.006))+')'; g.lineWidth=2; g.beginPath(); g.arc(a.x,a.y,R+4,0,7); g.stroke(); }
       glyph(a.key,a.x,a.y,R*0.55,a.rgb,dim?0.5:0.98); }
+    // ORBE DE MEMORIA (trade_context): gira fuera, al revés que los agentes.
+    { const ca2=-now*0.000045, cc=Math.cos(ca2), ss=Math.sin(ca2);
+      const y3=ss*Math.sin(CTXO.tilt)*0.55, z3=ss*Math.cos(CTXO.tilt);
+      CTXO.sx=CX+cc*Rctx; CTXO.sy=CY+y3*Rctx; CTXO.depth=(z3+1)/2;
+      const d=CTXO.depth, hc=Math.abs(CTXO.sx-mx)<26&&Math.abs(CTXO.sy-my)<26;
+      hoverC=hc; if(hc) cv.style.cursor='pointer';
+      const R=(9+d*5)*(hc?1.45:1), col='176,150,255', bright=0.45+d*0.55;
+      // hilo tenue al núcleo: la memoria alimenta a Hydra
+      g.strokeStyle='rgba('+col+','+(0.05+d*0.10)+')'; g.lineWidth=1;
+      g.beginPath(); g.moveTo(CX,CY); g.lineTo(CTXO.sx,CTXO.sy); g.stroke();
+      // pulso al llegar una captura nueva: anillo que se expande y se apaga
+      const pt=(now-CTXO.pulse)/1400;
+      if(pt>=0&&pt<1){ g.strokeStyle='rgba(200,180,255,'+(0.55*(1-pt))+')'; g.lineWidth=1.6;
+        g.beginPath(); g.arc(CTXO.sx,CTXO.sy,R+pt*26,0,7); g.stroke(); }
+      g.shadowColor='rgba('+col+',1)'; g.shadowBlur=hc?26:12+d*10;
+      g.fillStyle='#06060f'; g.beginPath(); g.arc(CTXO.sx,CTXO.sy,R,0,7); g.fill(); g.shadowBlur=0;
+      g.strokeStyle='rgba('+col+','+bright+')'; g.lineWidth=hc?2.2:1.6;
+      g.beginPath(); g.arc(CTXO.sx,CTXO.sy,R,0,7); g.stroke();
+      // glifo: tres capas apiladas (un archivo que crece hacia abajo)
+      g.strokeStyle='rgba(214,200,255,'+bright+')'; g.lineWidth=1.2;
+      for(let k=-1;k<=1;k++){ const yy=CTXO.sy+k*R*0.42;
+        g.beginPath(); g.ellipse(CTXO.sx,yy,R*0.52,R*0.20,0,0,7); g.stroke(); }
+      g.font='9px system-ui,sans-serif'; g.textAlign='center'; g.textBaseline='top';
+      g.fillStyle='rgba('+col+','+(hc?1:0.30+d*0.5)+')';
+      g.fillText('CONTEXT'+(CTXO.n>0?' · '+CTXO.n:''),CTXO.sx,CTXO.sy+R+4); }
     // emblema HYDRA (orquestador central) — encima del orbe, conectado a todos
     const hyR=hyHover?26:22, hp=0.5+0.5*Math.sin(now*0.003), hyc=halted?'255,93,115':'127,246,255', em=halted?'255,150,165':'205,246,255';
     g.shadowColor='rgba('+hyc+',1)'; g.shadowBlur=hyHover?32:20+flash*18;
@@ -873,7 +967,12 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     for(const a of A){ if(a.key!==hoverKey&&a.key!==sel) continue; g.textAlign=a.lalign; g.fillStyle='rgba(220,240,250,0.96)'; g.fillText(a.name.toUpperCase(),a.lx,a.ly); }
     // tooltip al pasar el cursor: rol + con quién colabora + pista de click
     const tip=$('#tip');
-    if(hoverKey==='__hydra'){ tip.style.left=(CX+30)+'px'; tip.style.top=CY+'px';
+    if(hoverC){ tip.style.left=(CTXO.sx+22)+'px'; tip.style.top=CTXO.sy+'px';
+      tip.innerHTML='🗄 <b>TRADE CONTEXT</b> · '+L('memoria','memory')+'<br><span>'
+        +(CTXO.n>0?CTXO.n+' '+L('capturas guardadas','captures stored'):L('esperando la primera captura','waiting for the first capture'))
+        +'</span><br><span style="opacity:.7">'+L('clic para ver todo lo que guarda','click to see everything it stores')+'</span>';
+      tip.classList.add('show'); }
+    else if(hoverKey==='__hydra'){ tip.style.left=(CX+30)+'px'; tip.style.top=CY+'px';
       tip.innerHTML='🐉 <b>HYDRA</b> · orquestador<br><span>Coordina a todos los agentes como un solo cerebro.</span><br><span style="opacity:.7">clic para ver el conjunto</span>';
       tip.classList.add('show'); }
     else if(hoverKey){ const a=byKey[hoverKey];

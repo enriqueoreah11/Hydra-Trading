@@ -99,6 +99,37 @@ class Store:
             occurrences INTEGER DEFAULT 0,
             status TEXT DEFAULT 'open'   -- open | promoted | rejected
         );
+        -- trade_context: CÓMO SE VEÍA EL MUNDO cuando el bot decidió.
+        -- No el resultado — el estado que produjo la decisión. Ese estado no es
+        -- reconstruible después: el spread de ese milisegundo, los fibs que había
+        -- dibujados, por qué el score dio 7 y no 5. Si no se captura aquí, se pierde.
+        -- Lo escribe el Confluence Bot vía POST; ver /ingest/trade-context.
+        CREATE TABLE IF NOT EXISTS trade_context(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts REAL NOT NULL,                -- cuándo lo recibimos
+            ts_bot REAL,                     -- cuándo decidió el bot
+            signal_id TEXT,                  -- Candidate.Key del bot
+            broker_position_id TEXT,         -- NULL si nunca se ejecutó
+            symbol TEXT, timeframe TEXT, bias TEXT,
+            outcome TEXT,                    -- alerted | blocked:* | low_score | executed
+            score REAL, raw_score REAL, learning_mult REAL, corr_bonus REAL,
+            zone_price REAL, zone_top REAL, zone_bottom REAL, zone_width_pips REAL,
+            n_confluences INTEGER, n_families INTEGER,
+            dist_pips REAL, spread_pips REAL,
+            regime TEXT, bot_label TEXT, build_tag TEXT,
+            signals_json TEXT,               -- [{label, price, time}] — varía por estrategia
+            raw_json TEXT NOT NULL           -- el payload íntegro, tal cual llegó
+        );
+        CREATE INDEX IF NOT EXISTS ix_tc_ts ON trade_context(ts DESC);
+        CREATE INDEX IF NOT EXISTS ix_tc_sym ON trade_context(symbol, outcome);
+        CREATE INDEX IF NOT EXISTS ix_tc_sig ON trade_context(signal_id);
+        -- INMUTABLE de verdad: la base rechaza cualquier cambio o borrado.
+        -- Una corrección entra como fila nueva, nunca modificando la original.
+        CREATE TRIGGER IF NOT EXISTS tc_no_update BEFORE UPDATE ON trade_context
+        BEGIN SELECT RAISE(ABORT, 'trade_context es append-only: no se puede modificar'); END;
+        CREATE TRIGGER IF NOT EXISTS tc_no_delete BEFORE DELETE ON trade_context
+        BEGIN SELECT RAISE(ABORT, 'trade_context es append-only: no se puede borrar'); END;
+
         -- Flota: N estrategias corriendo en paralelo en papel. 'frozen' marca el
         -- champion de control, que nunca se ajusta.
         CREATE TABLE IF NOT EXISTS arms(
@@ -209,6 +240,71 @@ class Store:
         self.db.execute("INSERT INTO kv(key,value) VALUES(?,?) "
                         "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
         self.db.commit()
+
+    # ---------------------------------------------------------- trade_context
+
+    def add_trade_context(self, row: dict, raw: dict) -> int:
+        cols = ("ts_bot", "signal_id", "broker_position_id", "symbol", "timeframe",
+                "bias", "outcome", "score", "raw_score", "learning_mult", "corr_bonus",
+                "zone_price", "zone_top", "zone_bottom", "zone_width_pips",
+                "n_confluences", "n_families", "dist_pips", "spread_pips",
+                "regime", "bot_label", "build_tag", "signals_json")
+        vals = [row.get(c) for c in cols]
+        cur = self.db.execute(
+            f"INSERT INTO trade_context(ts,{','.join(cols)},raw_json) "
+            f"VALUES(?,{','.join('?' * len(cols))},?)",
+            (time.time(), *vals, json.dumps(raw, ensure_ascii=False)))
+        self.db.commit()
+        return int(cur.lastrowid)
+
+    def trade_contexts(self, limit: int = 50, symbol: str = "",
+                       outcome: str = "") -> list[dict]:
+        q = ("SELECT id,ts,ts_bot,signal_id,symbol,timeframe,bias,outcome,score,"
+             "learning_mult,zone_price,zone_width_pips,n_confluences,dist_pips,"
+             "spread_pips,regime,bot_label,signals_json FROM trade_context")
+        where, args = [], []
+        if symbol:
+            where.append("symbol=?")
+            args.append(symbol.upper())
+        if outcome:
+            where.append("outcome LIKE ?")
+            args.append(outcome + "%")
+        if where:
+            q += " WHERE " + " AND ".join(where)
+        q += " ORDER BY id DESC LIMIT ?"
+        rows = self.db.execute(q, (*args, limit)).fetchall()
+        keys = ("id", "ts", "ts_bot", "signal_id", "symbol", "timeframe", "bias",
+                "outcome", "score", "learning_mult", "zone_price", "zone_width_pips",
+                "n_confluences", "dist_pips", "spread_pips", "regime", "bot_label",
+                "signals_json")
+        return [dict(zip(keys, r)) for r in rows]
+
+    def trade_context_one(self, ctx_id: int) -> dict | None:
+        """Una captura completa, con el JSON íntegro tal como llegó del bot."""
+        r = self.db.execute(
+            "SELECT id,ts,symbol,timeframe,outcome,score,raw_json FROM trade_context "
+            "WHERE id=?", (int(ctx_id),)).fetchone()
+        if not r:
+            return None
+        try:
+            raw = json.loads(r[6] or "{}")
+        except json.JSONDecodeError:
+            raw = {}
+        return {"id": r[0], "ts": r[1], "symbol": r[2], "timeframe": r[3],
+                "outcome": r[4], "score": r[5], "raw": raw}
+
+    def trade_context_stats(self) -> dict:
+        total = self.db.execute("SELECT COUNT(*) FROM trade_context").fetchone()[0]
+        by_outcome = [{"outcome": r[0], "n": r[1], "avg_score": round(r[2] or 0, 2)}
+                      for r in self.db.execute(
+                          "SELECT outcome, COUNT(*), AVG(score) FROM trade_context "
+                          "GROUP BY outcome ORDER BY COUNT(*) DESC").fetchall()]
+        by_symbol = [{"symbol": r[0], "n": r[1]} for r in self.db.execute(
+            "SELECT symbol, COUNT(*) FROM trade_context GROUP BY symbol "
+            "ORDER BY COUNT(*) DESC LIMIT 12").fetchall()]
+        row = self.db.execute("SELECT MIN(ts), MAX(ts) FROM trade_context").fetchone()
+        return {"total": int(total), "by_outcome": by_outcome, "by_symbol": by_symbol,
+                "first_ts": row[0], "last_ts": row[1]}
 
     # ------------------------------------------------------------------ flota
 

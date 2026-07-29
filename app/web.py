@@ -621,6 +621,114 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         applied = agent_params.apply_and_save(settings.data_path / "overrides.json", key, body)
         return {"ok": True, "applied": applied}
 
+    # -------------------------------------------------- trade_context (bot)
+
+    def _pick(d: dict, *names, default=None):
+        """Busca una clave sin importar mayúsculas ni guiones bajos.
+
+        El bot está en C#: sus campos salen en PascalCase (ZonePrice, RawScore).
+        Aceptamos cualquier variante para no depender de cómo serialice.
+        """
+        flat = {str(k).lower().replace("_", ""): v for k, v in d.items()}
+        for n in names:
+            v = flat.get(n.lower().replace("_", ""))
+            if v is not None:
+                return v
+        return default
+
+    @app.post("/ingest/trade-context")
+    async def ingest_trade_context(request: Request):
+        """Recibe el contexto de decisión del Confluence Bot y lo guarda inmutable.
+
+        Acepta el payload TAL CUAL llegue: mapea los campos que reconoce a columnas
+        indexadas y guarda el JSON íntegro en `raw_json`. Así podemos empezar a
+        capturar sin conocer de antemano el formato exacto — nada se pierde.
+        """
+        if settings.dashboard_token:
+            key = request.headers.get("x-api-key") or request.query_params.get("token")
+            if key != settings.dashboard_token:
+                return JSONResponse({"ok": False, "error": "no autorizado"}, status_code=401)
+        try:
+            raw = await request.json()
+        except Exception:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": "JSON inválido"}, status_code=400)
+        if isinstance(raw, list):                      # lotes
+            ids = [_store_ctx(r) for r in raw if isinstance(r, dict)]
+            return {"ok": True, "stored": len(ids), "ids": ids[:20]}
+        if not isinstance(raw, dict):
+            return JSONResponse({"ok": False, "error": "se esperaba un objeto"}, status_code=400)
+        return {"ok": True, "id": _store_ctx(raw)}
+
+    def _store_ctx(raw: dict) -> int:
+        signals = _pick(raw, "signals", "levels", "confluences") or []
+        fams = set()
+        for s in signals if isinstance(signals, list) else []:
+            lbl = str(_pick(s, "label", "name") or "") if isinstance(s, dict) else str(s)
+            fams.add(_family(lbl))
+        row = {
+            "ts_bot": _pick(raw, "ts", "time", "timestamp", "serverTime"),
+            "signal_id": _pick(raw, "key", "signalId", "signal_id", "id"),
+            "broker_position_id": _pick(raw, "positionId", "broker_position_id"),
+            "symbol": (_pick(raw, "symbol", "symbolName") or "").upper() or None,
+            "timeframe": _pick(raw, "timeframe", "timeFrame", "tf"),
+            "bias": _pick(raw, "bias", "direction", "side"),
+            "outcome": _pick(raw, "outcome", "status", "reason", default="alerted"),
+            "score": _pick(raw, "score", "adjustedScore"),
+            "raw_score": _pick(raw, "rawScore"),
+            "learning_mult": _pick(raw, "learningMult", "mult"),
+            "corr_bonus": _pick(raw, "corrBonus"),
+            "zone_price": _pick(raw, "zonePrice", "price"),
+            "zone_top": _pick(raw, "zoneTop"),
+            "zone_bottom": _pick(raw, "zoneBottom"),
+            "zone_width_pips": _pick(raw, "zoneWidthPips", "zoneWidth"),
+            "n_confluences": len(signals) if isinstance(signals, list) else None,
+            "n_families": len(fams) or None,
+            "dist_pips": _pick(raw, "distPips", "distance"),
+            "spread_pips": _pick(raw, "spreadPips", "spread"),
+            "regime": _pick(raw, "regime", "regimeStatus"),
+            "bot_label": _pick(raw, "botLabel", "label"),
+            "build_tag": _pick(raw, "buildTag", "build"),
+            "signals_json": json.dumps(signals, ensure_ascii=False) if signals else None,
+        }
+        return store.add_trade_context(row, raw)
+
+    def _family(label: str) -> str:
+        """Misma taxonomía que ClassifyFamily() del bot (orden importa: HTF e IKL
+        antes que KL, por los substrings compartidos)."""
+        lb = label or ""
+        if "HTF-KL" in lb:
+            return "HTFKL"
+        if "IKL" in lb:
+            return "IKL"
+        if "Key Level" in lb or " KL" in lb or "BR-KL" in lb:
+            return "KeyLevel"
+        if "Fib" in lb:
+            return "Fib"
+        if "Trend Line" in lb or " TL" in lb or "BR-TL" in lb:
+            return "TrendLine"
+        if lb.startswith("EMA"):
+            return "EMA"
+        if lb.startswith("SMA"):
+            return "SMA"
+        if "Session" in lb:
+            return "Session"
+        if lb.startswith("Round"):
+            return "Round"
+        return "Other"
+
+    @app.get("/trade-context")
+    async def trade_context_list(limit: int = 40, symbol: str = "", outcome: str = ""):
+        return {"stats": store.trade_context_stats(),
+                "rows": store.trade_contexts(min(int(limit), 200), symbol, outcome)}
+
+    @app.get("/trade-context/{ctx_id}")
+    async def trade_context_one(ctx_id: int):
+        """El JSON íntegro de una captura — todo lo que mandó el bot, sin recortar."""
+        row = store.trade_context_one(ctx_id)
+        if row is None:
+            return JSONResponse({"error": "no existe"}, status_code=404)
+        return row
+
     # --------------------------------------------------------------- flota
 
     _fleet_state = {"running": False}
