@@ -109,13 +109,19 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 #banner{position:fixed;left:50%;bottom:78px;transform:translateX(-50%);z-index:25;background:#08192af0;border:1px solid #1a4a5f;border-radius:12px;padding:11px 16px;max-width:min(760px,94vw);font-size:12.5px;color:#bfe6f5;box-shadow:0 10px 40px #000a}
 #banner code{background:#03121b;padding:2px 7px;border-radius:6px;color:#7ff6ff;border:1px solid #12303f}#banner a{color:#7ff6ff}
 #hint{position:fixed;left:50%;top:60px;transform:translateX(-50%);z-index:8;color:#4d6675;font-size:11px;letter-spacing:1px;pointer-events:none}
-/* PANTALLAS LATERALES (HUD tipo reactor): instrumentos a la izquierda, noticias a la derecha */
-.hud{position:fixed;top:64px;bottom:104px;width:266px;z-index:9;display:flex;flex-direction:column;
+/* PANTALLAS LATERALES: columna izquierda = sesiones + calendario de esa sesión;
+   columna derecha = la configuración repartida en pantallas. */
+.hudcol{position:fixed;top:64px;bottom:100px;width:268px;z-index:9;display:flex;flex-direction:column;
+  gap:9px;pointer-events:none}
+#colL{left:16px}#colR{right:16px}
+.hud{flex:none;min-height:0;display:flex;flex-direction:column;pointer-events:auto;position:relative;
   background:linear-gradient(180deg,#061420b0,#04090fb0);border:1px solid #14414f;border-radius:4px;
   box-shadow:0 0 30px #0008,inset 0 0 40px #0a2b3a30;backdrop-filter:blur(2px);
   opacity:0;transform:translateX(var(--slide,0));transition:opacity .6s var(--ease-out),transform .6s var(--ease-out)}
+.hud.grow{flex:1 1 auto;overflow:hidden}
+.spacer-v{flex:1 1 auto;min-height:0}
 .hud.in{opacity:1;transform:none}
-#hudL{left:16px;--slide:-24px}#hudR{right:16px;--slide:24px}
+#colL .hud{--slide:-24px}#colR .hud{--slide:24px}
 .hud::before,.hud::after{content:'';position:absolute;width:12px;height:12px;border:1px solid #38e6ff88;pointer-events:none}
 .hud::before{top:-1px;left:-1px;border-right:0;border-bottom:0}
 .hud::after{bottom:-1px;right:-1px;border-left:0;border-top:0}
@@ -130,11 +136,17 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
   padding:7px 8px;border:1px solid transparent;border-left:2px solid #1b3d4d;border-radius:3px;margin-bottom:4px;
   transition:background .16s ease,border-color .16s ease}
 @media(hover:hover){.irow:hover{background:#0b2130aa;border-color:#1f6a83}}
+.irow.live{background:#0a2320aa}
 .irow .s{font-size:11.5px;color:#dff0ff;letter-spacing:1px}
 .irow .p{font-size:11.5px;color:#9fd8ea;text-align:right}
 .irow .ch{font-size:10px;text-align:right}
 .irow .sp{grid-column:1/-1;height:22px;margin-top:2px}
 .irow .sp svg{display:block;width:100%;height:22px;overflow:visible}
+.impbar{display:flex;gap:5px;padding:2px 1px 7px}
+.impc{flex:1;text-align:center;cursor:pointer;font-size:8.5px;letter-spacing:1.2px;padding:3px 0;border-radius:2px;
+  border:1px solid #17323f;color:#3d5a6b;transition:color .15s ease,border-color .15s ease,background .15s ease}
+.impc.on{color:var(--c);border-color:var(--c);background:color-mix(in srgb,var(--c) 12%,transparent);
+  box-shadow:0 0 10px color-mix(in srgb,var(--c) 30%,transparent)}
 .nrow{display:flex;gap:7px;align-items:baseline;padding:6px 8px;border-radius:3px;font-size:10.5px;margin-bottom:2px}
 .nrow.w{background:#0a2030aa;border-left:2px solid #38e6ff}
 .nrow .t{color:#3d5a6b;width:38px;flex:none}
@@ -145,7 +157,7 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
   font-size:9.5px;letter-spacing:2.4px;color:#5ad1e6;text-shadow:0 0 10px #38e6ff55}
 .hudsub .tf{margin-left:auto;color:#3d5a6b;letter-spacing:1px}
 .sesbox,.posbox{padding:6px 8px}
-.posbox{max-height:132px;overflow:auto}
+.posbox{max-height:118px;overflow:auto}
 .srow{display:grid;grid-template-columns:66px 1fr 34px;gap:7px;align-items:center;padding:3px 2px;font-size:10px}
 .srow .sn{color:#7d97a8;letter-spacing:.6px;white-space:nowrap}
 .srow.on .sn{color:#dff0ff}
@@ -158,9 +170,16 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 .prow .sd{font-size:9px;letter-spacing:1px;padding:1px 5px;border-radius:2px}
 .prow .sy{color:#dff0ff;letter-spacing:1px}
 .prow .vl{color:#5f7387;font-size:9.5px}
+.sysbox{padding:7px 10px}
+.srow2{display:flex;justify-content:space-between;gap:10px;padding:4px 0;font-size:10.5px;color:#5f7387;
+  border-bottom:1px solid #0d2833}
+.srow2:last-child{border-bottom:0}
+.srow2 b{color:#dff0ff;font-weight:600}
+.sysact{display:flex;flex-wrap:wrap;gap:6px;padding:8px 10px;border-top:1px solid #10333f}
+.sysact .btn{padding:6px 9px;font-size:9.5px;letter-spacing:1px}
 .hudfoot{padding:6px 10px;border-top:1px solid #10333f;font-size:9px;letter-spacing:1.6px;color:#33505f;
   display:flex;justify-content:space-between;cursor:pointer}
-@media(max-width:1180px){.hud{display:none}}
+@media(max-width:1180px){.hudcol{display:none}}
 #toast{position:fixed;left:50%;top:88px;z-index:40;background:#08192af5;border:1px solid #1a4a5f;border-radius:10px;padding:10px 16px;color:#dffaff;font-size:12.5px;pointer-events:none;opacity:0;transform:translateX(-50%) translateY(-6px);transition:opacity .18s var(--ease-out),transform .18s var(--ease-out)}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 </style></head>
@@ -238,19 +257,40 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 
 <div id="stage"><canvas id="corefx"></canvas><div id="tip"></div></div>
 
-<div id="hudL" class="hud">
-  <div class="hudhd"><span class="dot"></span>SESIONES<span class="tf" id="hud-ses-n"></span></div>
-  <div class="sesbox" id="hud-ses"></div>
-  <div class="hudsub"><span class="dot"></span>OPERANDO<span class="tf" id="hud-pos-n"></span></div>
-  <div class="posbox" id="hud-pos"><div class="empty" style="padding:4px 2px;font-size:10.5px">…</div></div>
-  <div class="hudsub"><span class="dot"></span>INSTRUMENTOS<span class="tf" id="hud-tf"></span></div>
-  <div class="hudbody" id="hud-inst"><div class="empty" style="padding:8px;font-size:11px">…</div></div>
-  <div class="hudfoot" onclick="$('#b-sistema').click()"><span>MERCADOS VIGILADOS</span><span id="hud-n">—</span></div>
+<div id="colL" class="hudcol">
+  <div id="hudL" class="hud">
+    <div class="hudhd"><span class="dot"></span>SESIONES<span class="tf" id="hud-ses-n"></span></div>
+    <div class="sesbox" id="hud-ses"></div>
+  </div>
+  <div id="hudCal" class="hud grow">
+    <div class="hudhd"><span class="dot"></span>CALENDARIO<span class="tf" id="hud-imp"></span></div>
+    <div class="hudbody" id="hud-news"><div class="empty" style="padding:8px;font-size:11px">…</div></div>
+    <div class="hudfoot" onclick="openCalendar()"><span id="hud-calses">SESIÓN ACTIVA</span><span>VER TODO &#9656;</span></div>
+  </div>
 </div>
-<div id="hudR" class="hud">
-  <div class="hudhd"><span class="dot"></span>NOTICIAS · CALENDARIO<span class="tf" id="hud-imp"></span></div>
-  <div class="hudbody" id="hud-news"><div class="empty" style="padding:8px;font-size:11px">…</div></div>
-  <div class="hudfoot" onclick="openCalendar()"><span>PRÓXIMOS 7 DÍAS</span><span>VER TODO ▸</span></div>
+
+<div id="colR" class="hudcol">
+  <div id="hudS" class="hud">
+    <div class="hudhd"><span class="dot"></span>ESTADO</div>
+    <div class="sysbox" id="hud-sys"></div>
+  </div>
+  <div id="hudP" class="hud">
+    <div class="hudhd"><span class="dot"></span>OPERANDO<span class="tf" id="hud-pos-n"></span></div>
+    <div class="posbox" id="hud-pos"><div class="empty" style="padding:4px 2px;font-size:10.5px">…</div></div>
+  </div>
+  <div id="hudB" class="hud">
+    <div class="hudhd"><span class="dot"></span>CEREBRO Y VOZ</div>
+    <div class="sysbox" id="hud-brain"><div class="empty" style="padding:4px 2px;font-size:10.5px">…</div></div>
+  </div>
+  <div class="spacer-v"></div>
+  <div id="hudA" class="hud">
+    <div class="hudhd"><span class="dot"></span>CONFIGURACION<span class="tf" id="hud-tf"></span></div>
+    <div class="sysact">
+      <button class="btn ghost" id="hud-halt" onclick="doHalt()">&#9208; HALT</button>
+      <button class="btn ghost" onclick="openTradeContext()">&#128452; CONTEXT</button>
+      <button class="btn ghost" onclick="$('#b-sistema').click()">&#9881; TODO</button>
+    </div>
+  </div>
 </div>
 
 <div id="drawer">
@@ -265,7 +305,8 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 <script>
 const $=s=>document.querySelector(s);
 let DATA=null, selected=null, halted=false;
-let OPENSYMS=new Set();          // pares con posición abierta (se marcan en el orbe)
+let OPENSYMS=new Set();          // pares con posición abierta (se marcan en verde)
+let INSTR=[];                    // instrumentos vigilados: alimentan el tercer anillo
 const norm=s=>(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
 function fmtTime(ts){ if(!ts)return"—"; const d=new Date(ts*1000);
   return d.toLocaleString('es',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); }
@@ -282,6 +323,7 @@ function renderCore(c){
   $('#b-cal').style.display='';
   if(c.voice_enabled===false)['b-mic','b-wake','b-clap','b-speak'].forEach(id=>{const e=$('#'+id);if(e)e.style.display='none';});
   ttsServer=!!c.tts_server; if(c.owner_name)SIR=c.owner_name; if(c.owner_lang)LANG=c.owner_lang;
+  renderHudSys();
 }
 function agentByKey(k){ return DATA?DATA.agents.find(a=>a.key===k):null; }
 function openAgent(k){ selected=k; renderDrawer(k); $('#drawer').classList.add('open'); const a=agentByKey(k); if(a)speak(a.name+'. '+a.role); }
@@ -581,38 +623,67 @@ function spark(vals,col){ if(!vals||vals.length<2)return'';
     +'<stop offset="0" stop-color="'+col+'" stop-opacity=".28"/><stop offset="1" stop-color="'+col+'" stop-opacity="0"/></linearGradient></defs>'
     +'<polygon points="0,22 '+pts+' 100,22" fill="url(#'+id+')"/>'
     +'<polyline points="'+pts+'" fill="none" stroke="'+col+'" stroke-width="1" vector-effect="non-scaling-stroke"/></svg>'; }
-async function pollInstruments(){ const box=$('#hud-inst'); if(!box)return;
+async function pollInstruments(){
   let d; try{ d=await (await fetch('/instruments')).json(); }catch(e){ return; }
-  $('#hud-tf').textContent=d.timeframe||'';
   const rows=d.rows||[];
-  $('#hud-n').textContent=rows.length?rows.length:'—';
+  INSTR=rows;                       // los instrumentos SON el tercer anillo del reactor
+  const tf=$('#hud-tf'); if(tf) tf.textContent=d.timeframe||'';
+  const box=$('#hud-inst'); if(!box) return;          // el panel es opcional: el anillo manda
   if(!rows.length){ box.innerHTML='<div class="empty" style="padding:8px;font-size:11px">'
       +escapeHtml(d.reason||L('Sin datos todavía.','No data yet.'))+'</div>'; return; }
   box.innerHTML=rows.map(r=>{ const up=r.change_pct>=0, col=up?'#34d399':'#ff5d73';
     const vc=r.verdict==='compra'?'#34d399':(r.verdict==='venta'?'#ff5d73':'#5f7387');
-    return'<div class="irow" style="border-left-color:'+vc+'" onclick="openMarket(\''+r.symbol+'\')">'
-      +'<span class="s">'+escapeHtml(r.symbol)+'</span><span class="p">'+r.price+'</span>'
+    const live=OPENSYMS.has(String(r.symbol||'').toUpperCase());   // lo está operando ahora
+    const nm=(window.mktName&&window.mktName(r.symbol))||'';
+    return'<div class="irow'+(live?' live':'')+'" style="border-left-color:'+vc+'" onclick="openMarket(\''+r.symbol+'\')">'
+      +'<span class="s">'+escapeHtml(r.symbol)+(nm?'<span style="color:#3d5a6b;font-size:9px;letter-spacing:1px"> '+escapeHtml(nm)+'</span>':'')
+      +(live?'<span style="color:#34d399"> ●</span>':'')+'</span><span class="p">'+r.price+'</span>'
       +'<span class="ch" style="color:'+vc+';font-size:9.5px;letter-spacing:1px">'+escapeHtml(String(r.verdict||'').toUpperCase())+'</span>'
       +'<span class="ch" style="color:'+col+'">'+(up?'▲':'▼')+' '+Math.abs(r.change_pct).toFixed(2)+'%</span>'
       +'<span class="sp">'+spark(r.spark,col)+'</span></div>'; }).join(''); }
+/* Filtro de impacto: se puede encender/apagar cada nivel y se recuerda. */
+let IMPF={high:true,medium:true,low:false};
+try{ const sv=JSON.parse(localStorage.getItem('hydra_impf')||'null'); if(sv)IMPF=sv; }catch(e){}
+const IMPC={high:'#ff5d73',medium:'#fbbf24',low:'#5ad1e6',holiday:'#8aa'};
+function toggleImp(k){ IMPF[k]=!IMPF[k];
+  try{ localStorage.setItem('hydra_impf',JSON.stringify(IMPF)); }catch(e){}
+  pollNews(); }
+function impChips(){ return ['high','medium','low'].map(k=>
+  '<span class="impc'+(IMPF[k]?' on':'')+'" style="--c:'+IMPC[k]+'" onclick="toggleImp(\''+k+'\')">'
+  +{high:L('ALTO','HIGH'),medium:L('MEDIO','MED'),low:L('BAJO','LOW')}[k]+'</span>').join(''); }
+let NEWS_RAW=null;
 async function pollNews(){ const box=$('#hud-news'); if(!box)return;
-  let d; try{ d=await (await fetch('/calendar')).json(); }catch(e){ return; }
-  const ev=(d.events||[]).slice(0,26);
+  if(!NEWS_RAW){ try{ NEWS_RAW=await (await fetch('/calendar')).json(); }catch(e){ return; } }
+  const d=NEWS_RAW;
+  // El calendario cuelga de la sesión: SOLO las divisas de la plaza abierta ahora.
+  const act=SESSIONS.filter(isOpenNow), cur=new Set();
+  act.forEach(s=>(SES_CCY[s.n]||[]).forEach(c=>cur.add(c)));
+  const lab=$('#hud-calses');
+  if(lab) lab.textContent=act.length?act.map(s=>s.n).join(' + '):L('FUERA DE SESIÓN','OUT OF SESSION');
+  const chips='<div class="impbar">'+impChips()+'</div>';
+  if(!act.length){ box.innerHTML=chips+'<div class="empty" style="padding:8px;font-size:11px">'
+      +L('Ninguna sesión abierta. El calendario vuelve al abrir la siguiente plaza.',
+         'No session open. The calendar returns when the next one opens.')+'</div>'; return; }
+  const ev=(d.events||[]).filter(e=>cur.has(String(e.currency||'').toUpperCase()))
+                         .filter(e=>IMPF[String(e.impact||'low').toLowerCase()]!==false
+                                    &&IMPF[String(e.impact||'low').toLowerCase()])
+                         .slice(0,30);
   const hi=ev.filter(e=>String(e.impact||'').toLowerCase()==='high').length;
-  $('#hud-imp').textContent=hi?hi+' ALTO':'';
-  if(!ev.length){ box.innerHTML='<div class="empty" style="padding:8px;font-size:11px">'
-      +escapeHtml(d.error||L('Sin eventos en la ventana.','No events in the window.'))+'</div>'; return; }
-  const ic={high:'#ff5d73',medium:'#fbbf24',low:'#5ad1e6',holiday:'#8aa'};
-  let last='',h='';
+  const imp=$('#hud-imp'); if(imp) imp.textContent=hi?hi+' ALTO':'';
+  if(!ev.length){ box.innerHTML=chips+'<div class="empty" style="padding:8px;font-size:11px">'
+      +escapeHtml(d.error||L('Sin eventos de '+[...cur].join('/')+' con esos filtros.',
+                             'No '+[...cur].join('/')+' events with those filters.'))+'</div>'; return; }
+  let last='',h=chips;
   ev.forEach(e=>{ const dt=new Date(e.ts*1000);
     const day=dt.toLocaleDateString(LANG==='en'?'en':'es',{weekday:'short',day:'numeric',month:'short'});
     if(day!==last){ h+='<div style="color:#3d5a6b;font-size:9px;letter-spacing:2px;margin:9px 0 4px;text-transform:uppercase">'+escapeHtml(day)+'</div>'; last=day; }
-    const col=ic[(e.impact||'low').toLowerCase()]||'#5ad1e6';
+    const col=IMPC[(e.impact||'low').toLowerCase()]||'#5ad1e6';
     h+='<div class="nrow'+(e.watched?' w':'')+'"><span class="t">'+dt.toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'})+'</span>'
       +'<span class="d" style="background:'+col+';color:'+col+'"></span>'
       +'<span class="c">'+escapeHtml(String(e.currency||''))+'</span>'
       +'<span class="n">'+escapeHtml(String(e.title||''))+'</span></div>'; });
   box.innerHTML=h; }
+async function refreshNews(){ NEWS_RAW=null; await pollNews(); }
 /* Sesiones: se calculan con la hora LOCAL de cada plaza (Intl ya aplica el horario
    de verano), así no hay que tocar nada dos veces al año. */
 const SESSIONS=[{n:'SÍDNEY',tz:'Australia/Sydney',o:8,c:17},
@@ -620,12 +691,16 @@ const SESSIONS=[{n:'SÍDNEY',tz:'Australia/Sydney',o:8,c:17},
                 {n:'FRÁNCFORT',tz:'Europe/Berlin',o:8,c:17},
                 {n:'LONDRES',tz:'Europe/London',o:8,c:17},
                 {n:'N. YORK',tz:'America/New_York',o:8,c:17}];
+const SES_CCY={'SÍDNEY':['AUD','NZD'],'TOKIO':['JPY','CNY'],'FRÁNCFORT':['EUR','CHF'],
+               'LONDRES':['GBP','EUR'],'N. YORK':['USD','CAD','MXN']};
+function isOpenNow(s){ const t=tzNow(s.tz);
+  return t.wd!=='Sat'&&t.wd!=='Sun'&&t.h>=s.o&&t.h<s.c; }
 function tzNow(tz){ const p=new Intl.DateTimeFormat('en-GB',{timeZone:tz,hour:'2-digit',minute:'2-digit',
     weekday:'short',hour12:false}).formatToParts(new Date()); const o={};
   p.forEach(x=>o[x.type]=x.value); return {h:+o.hour%24+(+o.minute)/60, wd:o.weekday}; }
 function renderSessions(){ const box=$('#hud-ses'); if(!box)return; let open=0,h='';
   SESSIONS.forEach(s=>{ const t=tzNow(s.tz), wknd=(t.wd==='Sat'||t.wd==='Sun');
-    const on=!wknd&&t.h>=s.o&&t.h<s.c; if(on)open++;
+    const on=isOpenNow(s); if(on)open++;
     const p=on?Math.min(1,(t.h-s.o)/(s.c-s.o)):0;
     const hh=String(Math.floor(t.h)).padStart(2,'0')+':'+String(Math.floor((t.h%1)*60)).padStart(2,'0');
     h+='<div class="srow'+(on?' on':'')+'"><span class="sn">'+s.n+'</span>'
@@ -633,7 +708,10 @@ function renderSessions(){ const box=$('#hud-ses'); if(!box)return; let open=0,h
       +'<span class="hh">'+(wknd?L('cerrado','closed'):hh)+'</span></div>'; });
   box.innerHTML=h;
   const n=$('#hud-ses-n');
-  if(n) n.textContent=open?open+' '+L('ABIERTAS','OPEN')+(open>1?' · SOLAPE':''):L('CERRADO','CLOSED'); }
+  if(n) n.textContent=open?open+' '+L('ABIERTAS','OPEN')+(open>1?' · SOLAPE':''):L('CERRADO','CLOSED');
+  const key=SESSIONS.filter(isOpenNow).map(s=>s.n).join('|');
+  if(key!==SESKEY){ SESKEY=key; pollNews(); } }
+let SESKEY='';
 async function pollPositions(){ const box=$('#hud-pos'); if(!box)return;
   let d; try{ d=await (await fetch('/positions')).json(); }catch(e){ return; }
   const rows=Array.isArray(d)?d:[];
@@ -648,10 +726,46 @@ async function pollPositions(){ const box=$('#hud-pos'); if(!box)return;
       +'<span class="sy">'+escapeHtml(String(p.symbol||'—'))+'</span>'
       +'<span class="vl">'+(lots>=0.01?lots.toFixed(2)+' lot':p.volume_units+' u')+' · '+ctxAgo(p.open_ts)+'</span>'
       +'</div>'; }).join(''); }
-function hudStart(){ ['#hudL','#hudR'].forEach((s,i)=>setTimeout(()=>{const e=$(s);if(e)e.classList.add('in');},220+i*160));
-  renderSessions(); pollPositions(); pollInstruments(); pollNews();
+/* Nombre corto del agente para que quepa dentro del segmento del anillo. */
+function shortName(n){ const w=String(n||'').trim().split(/\s+/); return (w[0]||'').toUpperCase().slice(0,10); }
+function hudStart(){ document.querySelectorAll('.hudcol .hud').forEach((e,i)=>setTimeout(()=>e.classList.add('in'),180+i*110));
+  renderSessions(); pollPositions(); pollInstruments(); pollNews(); renderHudSys(); pollBrain();
   setInterval(renderSessions,30000); setInterval(pollPositions,20000);
-  setInterval(pollInstruments,30000); setInterval(pollNews,300000); }
+  setInterval(pollInstruments,30000); setInterval(refreshNews,300000);
+  setInterval(pollBrain,60000); }
+/* Pantalla CEREBRO Y VOZ: qué modelo piensa y qué voz habla, sin abrir nada. */
+async function pollBrain(){ const box=$('#hud-brain'); if(!box)return;
+  const row=(k,v,col)=>'<div class="srow2"><span>'+k+'</span><b'+(col?' style="color:'+col+'"':'')+'>'+escapeHtml(String(v))+'</b></div>';
+  let m={},lo={},vo={};
+  try{ m=await (await fetch('/model')).json(); }catch(e){}
+  try{ lo=await (await fetch('/llm/local')).json(); }catch(e){}
+  try{ vo=await (await fetch('/voice/local')).json(); }catch(e){}
+  const pv=m.provider||lo.provider||'';
+  const prov={anthropic:'Claude (nube)',ollama:'Ollama (local)',hybrid:'Híbrido'}[pv]||(pv||'—');
+  const short=String(m.model||'').replace('claude-','').replace(/-\d{8}$/,'');
+  let h=row(L('Cerebro','Brain'),prov,'#7ff6ff')+row('Claude',short||'—');
+  if(pv!=='anthropic')
+    h+=row('Ollama',(lo.selected||m.ollama_model||'—')+(lo.running?'':' ⚠'),lo.running?'#34d399':'#fbbf24');
+  const vp=vo.provider||'';
+  h+=row(L('Voz','Voice'),vp==='voicebox'?'Voicebox':(vp||L('navegador','browser')),
+         vp==='voicebox'?(vo.running?'#34d399':'#ff5d73'):'#5f7387');
+  if(vp==='voicebox') h+=row(L('Perfil','Profile'),vo.selected||'—');
+  const rt=(lo.routing||[]).filter(r=>r.brain==='ollama').length;
+  if(rt) h+=row(L('En local','Local'),rt+' '+L('agentes','agents'));
+  box.innerHTML=h; }
+/* Ventana inferior derecha: el estado del sistema de un vistazo + entrada a la configuración. */
+function renderHudSys(){ const box=$('#hud-sys'); if(!box||!DATA)return; const c=DATA.core||{};
+  const row=(k,v,col)=>'<div class="srow2"><span>'+k+'</span><b'+(col?' style="color:'+col+'"':'')+'>'+v+'</b></div>';
+  const conn=c.connected?['viva','#34d399']:(c.oauth_ok?['esperando','#fbbf24']:['sin cTrader','#ff5d73']);
+  box.innerHTML=row(L('Modo','Mode'),c.dry_run?'PAPEL':'REAL',c.dry_run?'#fbbf24':'#34d399')
+    +row(L('Conexión','Link'),conn[0],conn[1])
+    +row('Balance',c.balance!=null?c.balance:'—')
+    +row('Playbook','v'+(c.playbook_version||'—'))
+    +row(L('Agentes','Agents'),(DATA.agents||[]).length)
+    +row(L('Contexto','Context'),CTXCOUNT>0?CTXCOUNT:'0','#b096ff')
+    +row(L('Estado','State'),c.halted?L('DETENIDO','HALTED'):L('en línea','online'),c.halted?'#ff5d73':'#34d399');
+  const b=$('#hud-halt'); if(b) b.textContent=c.halted?'▶ REANUDAR':'⏸ HALT'; }
+let CTXCOUNT=0;
 
 /* ---------- TRADE CONTEXT: memoria inmutable de como se veia el mundo al decidir ---------- */
 let CTXF={symbol:'',outcome:''};
@@ -825,7 +939,7 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
 /* ============ CONSTELACIÓN DE AGENTES (estrella de datos + agentes + ramas) ============ */
 (function(){
   const cv=$('#corefx'), g=cv.getContext('2d');
-  let W=0,H=0,CX=0,CY=0,S=0,Rh=0,Rlab=0,Rctx=0, mx=-9999,my=-9999, hoverKey=null, hoverC=false, dirty=true;
+  let W=0,H=0,CX=0,CY=0,S=0,Rh=0,Rlab=0,Rctx=0, mx=-9999,my=-9999, hoverKey=null, hoverC=false, hoverI=-1, dirty=true;
   const dpr=Math.min(window.devicePixelRatio||1,1.5);
   function rs(){ W=cv.clientWidth||innerWidth; H=cv.clientHeight||innerHeight; cv.width=W*dpr; cv.height=H*dpr; g.setTransform(dpr,0,0,dpr,0,0); CX=W/2; CY=H*0.53;
     const side=W>1180?296:16;                       // deja aire para las pantallas laterales
@@ -897,6 +1011,11 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     DAX:{c:'150,40,44',c2:'255,150,150',dk:'50,10,12',sym:'ticker'},
     FTSE:{c:'40,60,140',c2:'150,170,255',dk:'12,20,54',sym:'ticker'},
     NIKKEI:{c:'170,40,60',c2:'255,150,170',dk:'56,12,20',sym:'ticker'} };
+  // nombre "de calle" de cada símbolo (para la moneda del cajón y el panel)
+  const MKT_NAMES={XAUUSD:'GOLD',XAGUSD:'SILVER',XPTUSD:'PLATINUM',XTIUSD:'OIL',USOIL:'OIL',WTI:'OIL',
+    XBRUSD:'BRENT',UKOIL:'BRENT',US100:'NASDAQ',USTEC:'NASDAQ',NAS100:'NASDAQ',US30:'DOW',
+    US500:'S&P 500',SPX500:'S&P 500',DE40:'DAX',GER40:'DAX',UK100:'FTSE',JPN225:'NIKKEI',JP225:'NIKKEI'};
+  window.mktName=s=>MKT_NAMES[(s||'').toUpperCase()]||'';
   function coinMeta(sym){ const nm=(sym==='DXY')?'DXY':(MKT_NAMES[(sym||'').toUpperCase()]||(sym||'').toUpperCase());
     return COIN[nm]||{c:'110,132,156',c2:'205,222,240',dk:'18,28,44',sym:'ticker',t:nm}; }
   function coinSym(ct,kind,s,txt){ ct.lineWidth=Math.max(1.4,s*0.14);
@@ -921,16 +1040,6 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     ct.strokeStyle='rgba('+m.c2+',0.85)'; ct.lineWidth=R*0.1; ct.beginPath(); ct.arc(cx,cy,R*0.82,0,7); ct.stroke();
     ct.save(); ct.translate(cx,cy); ct.fillStyle='rgba('+m.dk+',0.92)'; ct.strokeStyle='rgba('+m.dk+',0.92)'; ct.lineJoin='round'; ct.lineCap='round';
     coinSym(ct,m.sym,R*0.5,m.t); ct.restore(); return cv2; };
-  // orbe formado por muchos orbes pequeños (esfera fibonacci que gira)
-  const ORB=[]; (function(){ const n=130, ga=Math.PI*(3-Math.sqrt(5)); for(let i=0;i<n;i++){ const yy=1-(i/(n-1))*2, r=Math.sqrt(Math.max(0,1-yy*yy)), th=ga*i;
-    ORB.push({x:Math.cos(th)*r, y:yy, z:Math.sin(th)*r, ph:i*1.3, gold:(i*2654435761>>>0)%100<26}); } })();
-  // los MERCADOS vigilados son puntos que giran dentro del orbe
-  const MKT_NAMES={XAUUSD:'GOLD',XAGUSD:'SILVER',XPTUSD:'PLATINUM',XTIUSD:'OIL',USOIL:'OIL',WTI:'OIL',
-    XBRUSD:'BRENT',UKOIL:'BRENT',US100:'NASDAQ',USTEC:'NASDAQ',NAS100:'NASDAQ',US30:'DOW',
-    US500:'S&P 500',SPX500:'S&P 500',DE40:'DAX',GER40:'DAX',UK100:'FTSE',JPN225:'NIKKEI',JP225:'NIKKEI'};
-  function mktMeta(sym){ const s=(sym||'').toUpperCase(), name=MKT_NAMES[s]||(s.length===6?s.slice(0,3)+'/'+s.slice(3):s);
-    let col='150,240,255'; if(/^XAU|^XAG|^XPT|^XPD/.test(s)) col='255,214,120'; else if(/OIL|^XTI|^XBR|WTI|^XNG/.test(s)) col='255,150,90'; else if(MKT_NAMES[s]&&!/^X/.test(s)) col='130,205,255';
-    return {name,col}; }
   // fondo de universo: campo de estrellas (posiciones normalizadas 0..1)
   const STARS=[]; for(let i=0;i<170;i++) STARS.push({x:Math.random(),y:Math.random(),r:0.3+Math.random()*1.5,ph:Math.random()*6.28,br:0.18+Math.random()*0.55,gold:Math.random()<0.1});
   // estrellas fugaces: aparecen de repente dentro del cielo, con estela afilada
@@ -943,12 +1052,12 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       vx:(fromLeft?1:-1)*Math.cos(ang)*sp, vy:Math.sin(ang)*sp,
       life:0, max:900+Math.random()*700, tailms:140+Math.random()*120,
       gold:Math.random()<0.25}); }
-  let MK=[], hoverM=-1;
   // TRADE CONTEXT: orbe de memoria. Gira fuera del orbe, en un plano inclinado,
   // en sentido contrario a los agentes (por eso a veces pasa por detrás).
   const CTXO={sx:0,sy:0,depth:0.5,n:-1,pulse:-1e9,tilt:0.46};
   async function pollCtx(){ try{ const d=await (await fetch('/trade-context?limit=1')).json();
       const t=(d.stats&&d.stats.total)|0; if(CTXO.n>=0&&t>CTXO.n) CTXO.pulse=performance.now(); CTXO.n=t;
+      CTXCOUNT=t; renderHudSys();
     }catch(e){} }
   pollCtx(); setInterval(pollCtx,12000);
   window.ctxCaptured=()=>{ CTXO.pulse=performance.now(); pollCtx(); };
@@ -966,10 +1075,6 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       for(let s=0;s<ns;s++){ const seg=roots.length?roots[(Math.random()*roots.length)|0]:0; sparks.push({seg,t:Math.random(),sp:0.012+Math.random()*0.020}); }
       return {key:a.key,name:a.name,emoji:a.emoji,role:a.role,baseAng,x:CX,y:CY,ang:baseAng,lx:CX,ly:CY,lalign:'center',rgb:hx2(PAL[i%PAL.length]),segs:sg,leaves:t.leaves,roots,next,sparks}; });
     byKey={}; A.forEach(a=>byKey[a.key]=a);
-    const syms=(DATA&&DATA.core&&DATA.core.symbols)||[];
-    const allm=syms.concat(['DXY']);   // DXY sintético (índice del dólar) como instrumento extra
-    MK=allm.map((sym,i)=>{ const n=Math.max(1,allm.length), yy=0.72*(1-2*(i+0.5)/n), r=Math.sqrt(Math.max(0,1-yy*yy)), th=i*2.39996+0.9;
-      const m=sym==='DXY'?{name:'DXY',col:'220,190,120'}:mktMeta(sym); return {sym,name:m.name,col:m.col,x3:Math.cos(th)*r,y3:yy,z3:Math.sin(th)*r,sx:0,sy:0,ph:i*2.1}; });
     dirty=false;
   }
   function qpt(a,c,b,t){ const u=1-t; return [u*u*a[0]+2*u*t*c[0]+t*t*b[0], u*u*a[1]+2*u*t*c[1]+t*t*b[1]]; }
@@ -978,7 +1083,7 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
   function openHydra(){ const names=(DATA?DATA.agents:[]).map(a=>a.emoji+' '+a.name).join(' · ');
     openInfo('🐉 HYDRA · orquestador','<p class="role">El núcleo que coordina a todos los agentes: recibe sus señales, decide y ejecuta como un solo cerebro.</p><div class="empty">Controla a: '+names+'</div>');
     speak('Hydra en línea, '+SIR+'. Coordino a los '+(DATA?DATA.agents.length:0)+' agentes.'); }
-  cv.addEventListener('click',()=>{ if(hoverC) openTradeContext(); else if(hoverKey==='__hydra') openHydra(); else if(hoverKey) openAgent(hoverKey); else if(hoverM>=0) openMarket(MK[hoverM].sym); else { speakStatus(); toast('HYDRA · '+(DATA?DATA.agents.length:0)+' agentes'); } });
+  cv.addEventListener('click',()=>{ if(hoverI>=0&&INSTR[hoverI]) openMarket(INSTR[hoverI].symbol); else if(hoverC) openTradeContext(); else if(hoverKey==='__hydra') openHydra(); else if(hoverKey) openAgent(hoverKey); else { speakStatus(); toast('HYDRA · '+(DATA?DATA.agents.length:0)+' agentes'); } });
   function frame(now){
     if(!DATA){ requestAnimationFrame(frame); return; }
     if(dirty||A.length!==(DATA.agents||[]).length) build();
@@ -987,9 +1092,28 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     for(const a of A){ a.ang=a.baseAng+orb; const c=Math.cos(a.ang), s=Math.sin(a.ang);
       a.x=CX+c*Rh; a.y=CY+s*Rh; a.lx=a.x+c*24; a.ly=a.y+s*24;
       a.lalign=c>0.35?'left':(c<-0.35?'right':'center'); }
-    hoverKey=null; let hd=1e9; for(const a of A){ const dx=a.x-mx,dy=a.y-my,d=dx*dx+dy*dy; if(d<1100&&d<hd){hd=d;hoverKey=a.key;} }
-    { const hr=Math.max(22,S*0.055)*1.35, dx=CX-mx,dy=CY-my,d=dx*dx+dy*dy;                  // reactor Hydra
-      if(d<hr*hr&&d<hd){ hd=d; hoverKey='__hydra'; } }
+    // ANILLO DE MÓDULOS: una banda que gira alrededor del reactor, partida en
+    // segmentos separados (uno por agente). Todo el cálculo es en polares.
+    const NSEG=Math.max(A.length,1), SEG=Math.PI*2/NSEG;
+    const BAND=Math.max(22,Math.min(46,S*0.062)), GAP=Math.min(SEG*0.28,0.18);
+    const RI=Rh-BAND/2, RO=Rh+BAND/2, SPAN=SEG-GAP;
+    hoverKey=null; let hd=1e9;
+    { const mr=Math.hypot(mx-CX,my-CY), ma=Math.atan2(my-CY,mx-CX);
+      if(mr>RI-4&&mr<RO+4) for(const a of A){
+        let da=ma-a.ang; da=Math.atan2(Math.sin(da),Math.cos(da));      // diferencia angular corta
+        if(Math.abs(da)<SPAN/2&&Math.abs(da)<hd){ hd=Math.abs(da); hoverKey=a.key; } } }
+    { const hr=Math.max(22,S*0.055)*1.35, dx=CX-mx,dy=CY-my;                                // reactor Hydra
+      if(!hoverKey&&dx*dx+dy*dy<hr*hr) hoverKey='__hydra'; }
+    // TERCER ANILLO: un segmento por instrumento, girando al revés que los módulos
+    const NI=INSTR.length, BAND3=Math.max(15,BAND*0.56);
+    const R3=RO+12+BAND3/2, RI3=R3-BAND3/2, RO3=R3+BAND3/2;
+    const SEG3=NI?Math.PI*2/NI:0, GAP3=Math.min(SEG3*0.22,0.14), SPAN3=SEG3-GAP3;
+    const ROT3=-now*0.000048;
+    hoverI=-1;
+    if(NI){ const mr=Math.hypot(mx-CX,my-CY), ma=Math.atan2(my-CY,mx-CX);
+      if(mr>RI3-3&&mr<RO3+3) for(let i=0;i<NI;i++){
+        let da=ma-(ROT3-Math.PI/2+i*SEG3); da=Math.atan2(Math.sin(da),Math.cos(da));
+        if(Math.abs(da)<SPAN3/2){ hoverI=i; hoverKey=null; break; } } }
 
     cv.style.cursor=hoverKey?'pointer':'default';
     const sel=(typeof selected!=='undefined')?selected:null;         // agente abierto (por click)
@@ -1036,33 +1160,6 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     { const ry=Rctx*Math.sin(CTXO.tilt)*0.55;
       g.strokeStyle='rgba(176,150,255,0.10)'; g.lineWidth=1; g.setLineDash([5,9]);
       g.beginPath(); g.ellipse(CX,CY,Rctx,ry,0,0,7); g.stroke(); g.setLineDash([]); }
-    // orbe hecho de orbes pequeños (gira lentamente)
-    const rot=now*0.00018, ca=Math.cos(rot), sa=Math.sin(rot);
-    for(const p of ORB){ const X=p.x*ca-p.z*sa, Z=p.x*sa+p.z*ca; const sx=CX+X*Rorb, sy=CY+p.y*Rorb, depth=(Z+1)/2;
-      const tw=0.7+0.3*Math.sin(now*0.003+p.ph), al=(0.12+depth*0.5)*tw, sz=1.1+depth*2.6, col=p.gold?'255,214,140':'150,225,255';
-      g.fillStyle='rgba('+col+','+(al*0.35)+')'; g.beginPath(); g.arc(sx,sy,sz*2,0,7); g.fill();
-      g.fillStyle='rgba('+col+','+al+')'; g.beginPath(); g.arc(sx,sy,sz,0,7); g.fill(); }
-    // MERCADOS girando dentro del orbe (oro, plata, petróleo, índices…)
-    hoverM=-1;
-    // El reactor ocupa el centro, así que los mercados se empujan a una corona:
-    // se conserva la dirección de la esfera pero nunca caen sobre el núcleo.
-    const mkIn=Math.max(22,S*0.055)*1.9, mkOut=Rorb*0.86;
-    for(let i=0;i<MK.length;i++){ const m=MK[i]; const X=m.x3*ca-m.z3*sa, Z=m.x3*sa+m.z3*ca;
-      const pr2=Math.hypot(X,m.y3)||1e-6, rr=mkIn+(mkOut-mkIn)*Math.min(1,pr2);
-      m.sx=CX+X/pr2*rr; m.sy=CY+m.y3/pr2*rr; const depth=(Z+1)/2, hm=hoverM===-1&&Math.abs(m.sx-mx)<26&&Math.abs(m.sy-my)<20;
-      if(hm)hoverM=i;
-      const pu=0.75+0.25*Math.sin(now*0.0035+m.ph), R=(2.6+depth*2.6)*(hm?1.5:1);
-      g.shadowColor='rgba('+m.col+',1)'; g.shadowBlur=(8+depth*10)*(hm?1.8:1);
-      g.fillStyle='rgba('+m.col+','+((0.45+depth*0.5)*pu)+')'; g.beginPath(); g.arc(m.sx,m.sy,R,0,7); g.fill(); g.shadowBlur=0;
-      // par con posición abierta: anillo que late (se ve de un vistazo qué está operando)
-      if(OPENSYMS.has(m.sym)){ const bp=(now*0.0011)%1;
-        g.strokeStyle='rgba(52,211,153,'+(0.55*(1-bp))+')'; g.lineWidth=1.4;
-        g.beginPath(); g.arc(m.sx,m.sy,R+2+bp*9,0,7); g.stroke();
-        g.strokeStyle='rgba(52,211,153,0.85)'; g.lineWidth=1.2;
-        g.beginPath(); g.arc(m.sx,m.sy,R+2.4,0,7); g.stroke(); }
-      g.font=(hm?'700 10px':'9px')+' system-ui,sans-serif'; g.textAlign='center'; g.textBaseline='top';
-      g.fillStyle='rgba('+m.col+','+(hm?1:(0.30+depth*0.55))+')'; g.fillText(m.name,m.sx,m.sy+R+3); }
-    if(hoverM>=0) cv.style.cursor='pointer';
     // conexiones de HYDRA (centro) → agentes. Base tenue + resaltado del agente señalado/abierto
     const hyHover=hoverKey==='__hydra';
     g.lineWidth=1; g.strokeStyle='rgba(90,150,180,0.12)'; g.beginPath();
@@ -1080,36 +1177,80 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       g.strokeStyle=hot?'rgba(127,246,255,0.85)':'rgba(90,150,180,0.13)'; g.lineWidth=hot?1.7:1;
       g.beginPath(); g.moveTo(a.x,a.y); g.quadraticCurveTo(cx,cy,b.x,b.y); g.stroke();
       if(hot){ const p=qpt([a.x,a.y],[cx,cy],[b.x,b.y],(now*0.0006)%1); g.fillStyle='rgba(190,250,255,1)'; g.beginPath(); g.arc(p[0],p[1],2.2,0,7); g.fill(); } }
-    // MÓDULOS: cada agente es un dial circular girando alrededor del reactor
+    // MÓDULOS: segmentos de un mismo anillo que gira sin parar alrededor del reactor.
+    // Separados entre sí (GAP) para que se lean como piezas independientes.
     for(let ai=0;ai<A.length;ai++){ const a=A[ai];
-      const st=stateOf(a.key), h=a.key===hoverKey, o=a.key===sel, on=st==='active'||st==='alert', dim=(hoverKey&&!h&&!o);
-      const R=o?(17+grow*30):(h?20:15);          // al hacer click, el módulo se agranda
-      const al=dim?0.42:1, load=Math.min(1,entriesOf(a.key)/8), spin=now*0.00022*(ai%2?-1:1)+ai;
-      // 1) disco interno: el módulo tiene "profundidad"
-      const dg=g.createRadialGradient(a.x,a.y,0,a.x,a.y,R);
-      dg.addColorStop(0,'rgba('+a.rgb+','+(0.16*al)+')'); dg.addColorStop(1,'rgba('+a.rgb+',0)');
-      g.fillStyle=dg; g.beginPath(); g.arc(a.x,a.y,R,0,7); g.fill();
-      // 2) anillo exterior de marcas (12 ticks que giran, como un instrumento)
-      g.strokeStyle='rgba('+a.rgb+','+(0.30*al)+')'; g.lineWidth=1;
-      g.beginPath(); for(let k=0;k<12;k++){ const an=spin+k*Math.PI/6, lg=(k%3===0)?R*0.20:R*0.11;
-        g.moveTo(a.x+Math.cos(an)*(R*1.24),a.y+Math.sin(an)*(R*1.24));
-        g.lineTo(a.x+Math.cos(an)*(R*1.24+lg),a.y+Math.sin(an)*(R*1.24+lg)); } g.stroke();
-      // 3) arco medidor: cuánta actividad lleva el agente hoy
-      if(load>0.02){ g.strokeStyle='rgba('+a.rgb+','+(0.75*al)+')'; g.lineWidth=2.2; g.lineCap='round';
-        g.beginPath(); g.arc(a.x,a.y,R*1.16,-Math.PI/2,-Math.PI/2+load*Math.PI*1.6); g.stroke(); g.lineCap='butt'; }
-      // 4) marco del módulo: anillo doble
-      if(on||h||o){ g.shadowColor='rgba('+a.rgb+',1)'; g.shadowBlur=o?(18+grow*22):(h?22:12); } else g.shadowBlur=0;
-      g.lineWidth=(h||o)?2.4:1.7; g.strokeStyle='rgba('+a.rgb+','+((h||o)?1:0.88)*al+')';
-      g.beginPath(); g.arc(a.x,a.y,R,0,7); g.stroke(); g.shadowBlur=0;
-      g.lineWidth=1; g.strokeStyle='rgba('+a.rgb+','+(0.22*al)+')';
-      g.beginPath(); g.arc(a.x,a.y,R*0.80,0,7); g.stroke();
-      // 5) dos cortes en el marco (arriba y abajo) para que se lea como pieza, no como pelota
-      g.globalCompositeOperation='destination-out'; g.strokeStyle='#000'; g.lineWidth=(h||o)?3.4:2.7;
-      g.beginPath(); g.arc(a.x,a.y,R,-Math.PI/2-0.16,-Math.PI/2+0.16); g.stroke();
-      g.beginPath(); g.arc(a.x,a.y,R,Math.PI/2-0.16,Math.PI/2+0.16); g.stroke();
+      const st=stateOf(a.key), h=a.key===hoverKey, o=a.key===sel, on=st==='active'||st==='alert';
+      const dim=(hoverKey&&!h&&!o), al=dim?0.42:1, load=Math.min(1,entriesOf(a.key)/8);
+      const push=o?grow*10:(h?4:0);                       // el abierto sale del anillo
+      const ri=RI-push*0.35, ro=RO+push, a0=a.ang-SPAN/2, a1=a.ang+SPAN/2;
+      const seg=()=>{ g.beginPath(); g.arc(CX,CY,ro,a0,a1); g.arc(CX,CY,ri,a1,a0,true); g.closePath(); };
+      // 1) placa: se rellena opaca para que el anillo tape el fondo, como una pieza real
+      g.globalCompositeOperation='source-over';
+      const pg=g.createRadialGradient(CX,CY,ri,CX,CY,ro);
+      pg.addColorStop(0,'rgba(6,14,22,0.95)'); pg.addColorStop(1,'rgba(4,9,15,0.98)');
+      g.fillStyle=pg; seg(); g.fill();
       g.globalCompositeOperation='lighter';
-      if(st==='alert'){ g.strokeStyle='rgba(255,93,115,'+(0.5+0.5*Math.sin(now*0.006))+')'; g.lineWidth=2; g.beginPath(); g.arc(a.x,a.y,R*1.38,0,7); g.stroke(); }
-      glyph(a.key,a.x,a.y,R*0.55,a.rgb,dim?0.5:0.98); }
+      // 2) brillo interior propio del agente
+      const ig=g.createRadialGradient(CX,CY,ri,CX,CY,ro);
+      ig.addColorStop(0,'rgba('+a.rgb+','+(0.20*al)+')'); ig.addColorStop(1,'rgba('+a.rgb+',0)');
+      g.fillStyle=ig; seg(); g.fill();
+      // 3) marco del segmento
+      if(on||h||o){ g.shadowColor='rgba('+a.rgb+',1)'; g.shadowBlur=o?(14+grow*20):(h?20:10); } else g.shadowBlur=0;
+      g.lineJoin='round'; g.lineWidth=(h||o)?2.2:1.4;
+      g.strokeStyle='rgba('+a.rgb+','+((h||o)?1:0.8)*al+')'; seg(); g.stroke(); g.shadowBlur=0;
+      // 4) barra de actividad pegada al borde interior
+      if(load>0.02){ g.strokeStyle='rgba('+a.rgb+','+(0.85*al)+')'; g.lineWidth=2.4; g.lineCap='round';
+        g.beginPath(); g.arc(CX,CY,ri+3,a0+0.02,a0+0.02+SPAN*load*0.96); g.stroke(); g.lineCap='butt'; }
+      // 5) marcas radiales en el borde exterior (detalle de instrumento)
+      g.strokeStyle='rgba('+a.rgb+','+(0.30*al)+')'; g.lineWidth=1; g.beginPath();
+      for(let k=1;k<5;k++){ const an=a0+SPAN*k/5;
+        g.moveTo(CX+Math.cos(an)*(ro+2),CY+Math.sin(an)*(ro+2));
+        g.lineTo(CX+Math.cos(an)*(ro+2+(k===2||k===3?6:3)),CY+Math.sin(an)*(ro+2+(k===2||k===3?6:3))); }
+      g.stroke();
+      if(st==='alert'){ g.strokeStyle='rgba(255,93,115,'+(0.45+0.45*Math.sin(now*0.006))+')'; g.lineWidth=1.8;
+        g.beginPath(); g.arc(CX,CY,ro+4,a0,a1); g.stroke(); }
+      // 6) contenido: icono + nombre, tangentes al anillo y nunca del revés
+      const cx2=CX+Math.cos(a.ang)*(ri+ro)/2, cy2=CY+Math.sin(a.ang)*(ri+ro)/2;
+      g.save(); g.translate(cx2,cy2); g.rotate(a.ang+Math.PI/2+(Math.sin(a.ang)>0?Math.PI:0));
+      const gr2=Math.min(9,BAND*0.26);
+      glyph(a.key,0,-BAND*0.16,gr2,a.rgb,dim?0.5:0.98);
+      g.font='700 '+Math.max(7,Math.min(9,BAND*0.22))+'px system-ui,sans-serif';
+      g.textAlign='center'; g.textBaseline='top';
+      g.fillStyle='rgba('+a.rgb+','+((h||o)?1:0.72)*al+')';
+      g.fillText(shortName(a.name),0,BAND*0.06);
+      g.restore(); }
+    // TERCER ANILLO: instrumentos. Mismo lenguaje que los módulos, más fino y al revés.
+    for(let i=0;i<NI;i++){ const r=INSTR[i], sym=String(r.symbol||'').toUpperCase();
+      const mid=ROT3-Math.PI/2+i*SEG3, b0=mid-SPAN3/2, b1=mid+SPAN3/2;
+      const hi=hoverI===i, live=OPENSYMS.has(sym);
+      const col=live?'52,211,153':(r.verdict==='compra'?'52,211,153':(r.verdict==='venta'?'255,93,115':'110,150,175'));
+      const push=hi?3:0, ri=RI3, ro=RO3+push;
+      const seg=()=>{ g.beginPath(); g.arc(CX,CY,ro,b0,b1); g.arc(CX,CY,ri,b1,b0,true); g.closePath(); };
+      g.globalCompositeOperation='source-over';
+      g.fillStyle='rgba(5,11,18,0.94)'; seg(); g.fill();
+      g.globalCompositeOperation='lighter';
+      const ig=g.createRadialGradient(CX,CY,ri,CX,CY,ro);
+      ig.addColorStop(0,'rgba('+col+',0)'); ig.addColorStop(1,'rgba('+col+','+(hi?0.24:0.13)+')');
+      g.fillStyle=ig; seg(); g.fill();
+      if(hi||live){ g.shadowColor='rgba('+col+',1)'; g.shadowBlur=hi?16:8; }
+      g.lineJoin='round'; g.lineWidth=hi?1.9:1.2; g.strokeStyle='rgba('+col+','+(hi?1:0.7)+')';
+      seg(); g.stroke(); g.shadowBlur=0;
+      // marca verde parpadeante si hay posición abierta en ese par
+      if(live){ const bp=0.5+0.5*Math.sin(now*0.004);
+        g.strokeStyle='rgba(52,211,153,'+(0.35+0.45*bp)+')'; g.lineWidth=2.2;
+        g.beginPath(); g.arc(CX,CY,ri+1.6,b0+0.02,b1-0.02); g.stroke(); }
+      const cx3=CX+Math.cos(mid)*R3, cy3=CY+Math.sin(mid)*R3;
+      g.save(); g.translate(cx3,cy3); g.rotate(mid+Math.PI/2+(Math.sin(mid)>0?Math.PI:0));
+      g.font='700 '+Math.max(7,Math.min(9,BAND3*0.34))+'px system-ui,sans-serif';
+      g.textAlign='center'; g.textBaseline='middle';
+      g.fillStyle='rgba('+col+','+(hi?1:0.85)+')';
+      g.fillText(((window.mktName&&window.mktName(sym))||sym).slice(0,9),0,-BAND3*0.16);
+      g.font=Math.max(6.5,Math.min(8,BAND3*0.28))+'px system-ui,sans-serif';
+      g.fillStyle='rgba('+col+',0.6)';
+      g.fillText((r.change_pct>=0?'+':'')+(r.change_pct||0).toFixed(2)+'%',0,BAND3*0.28);
+      g.restore(); }
+    if(hoverI>=0) cv.style.cursor='pointer';
     // ORBE DE MEMORIA (trade_context): gira fuera, al revés que los agentes.
     { const ca2=-now*0.000045, cc=Math.cos(ca2), ss=Math.sin(ca2);
       const y3=ss*Math.sin(CTXO.tilt)*0.55, z3=ss*Math.cos(CTXO.tilt);
@@ -1184,7 +1325,16 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     for(const a of A){ if(a.key!==hoverKey&&a.key!==sel) continue; g.textAlign=a.lalign; g.fillStyle='rgba(220,240,250,0.96)'; g.fillText(a.name.toUpperCase(),a.lx,a.ly); }
     // tooltip al pasar el cursor: rol + con quién colabora + pista de click
     const tip=$('#tip');
-    if(hoverC){ tip.style.left=(CTXO.sx+22)+'px'; tip.style.top=CTXO.sy+'px';
+    if(hoverI>=0&&INSTR[hoverI]){ const r=INSTR[hoverI], sym=String(r.symbol||'');
+      const mid=ROT3-Math.PI/2+hoverI*SEG3;
+      tip.style.left=(CX+Math.cos(mid)*(RO3+14))+'px'; tip.style.top=(CY+Math.sin(mid)*(RO3+14))+'px';
+      const nm=(window.mktName&&window.mktName(sym))||'';
+      tip.innerHTML='📈 <b>'+escapeHtml(sym)+'</b>'+(nm?' · '+escapeHtml(nm):'')
+        +'<br><span>'+r.price+' · '+(r.change_pct>=0?'+':'')+(r.change_pct||0).toFixed(2)+'% · '+escapeHtml(String(r.verdict||''))+'</span>'
+        +(OPENSYMS.has(sym.toUpperCase())?'<br><span style="color:#34d399">'+L('con posición abierta','position open')+'</span>':'')
+        +'<br><span style="opacity:.7">'+L('clic para ver precio y técnicos','click for price & technicals')+'</span>';
+      tip.classList.add('show'); }
+    else if(hoverC){ tip.style.left=(CTXO.sx+22)+'px'; tip.style.top=CTXO.sy+'px';
       tip.innerHTML='🗄 <b>TRADE CONTEXT</b> · '+L('memoria','memory')+'<br><span>'
         +(CTXO.n>0?CTXO.n+' '+L('capturas guardadas','captures stored'):L('esperando la primera captura','waiting for the first capture'))
         +'</span><br><span style="opacity:.7">'+L('clic para ver todo lo que guarda','click to see everything it stores')+'</span>';
@@ -1198,9 +1348,7 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       const icu=window.hydraIconURL?window.hydraIconURL(a.key):''; const ico=icu?'<img src="'+icu+'" style="width:16px;height:16px;vertical-align:-3px;margin-right:3px">':a.emoji;
       tip.innerHTML=ico+' <b>'+a.name+'</b> · '+stateOf(a.key)+'<br><span>'+a.role+'</span>'+(nb.length?'<br><span>↔ '+nb.join(', ')+'</span>':'')+'<br><span style="opacity:.7">'+L('clic para ver sus tareas','click to see its tasks')+'</span>';
       tip.classList.add('show'); }
-    else if(hoverM>=0){ const m=MK[hoverM]; tip.style.left=(m.sx+20)+'px'; tip.style.top=m.sy+'px';
-      tip.innerHTML='📈 <b>'+m.name+'</b> · '+m.sym+'<br><span style="opacity:.75">'+L('clic para ver precio y técnicos','click for price & technicals')+'</span>';
-      tip.classList.add('show'); } else tip.classList.remove('show');
+    else tip.classList.remove('show');
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

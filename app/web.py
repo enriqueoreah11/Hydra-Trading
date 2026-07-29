@@ -518,6 +518,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         return {"ok": True, "symbol": symbol, "timeframe": timeframe, **_summarize(snap)}
 
     _instr_cache: dict = {"ts": 0.0, "data": None}
+    _dxy_cache: dict = {"ts": 0.0, "row": None}
 
     @app.get("/instruments")
     async def instruments():
@@ -549,6 +550,20 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                              "rsi14": s["rsi14"], "spark": [round(c, 5) for c in closes]})
             except Exception:  # noqa: BLE001 - un símbolo caído no tumba el panel
                 continue
+        # DXY es sintético (6 pares por cálculo), así que va con su propia caché lenta.
+        if _t.time() - _dxy_cache["ts"] > 180:
+            try:
+                snap = await _dxy_snapshot(settings.timeframe)
+                if snap and not snap.get("__error__"):
+                    s = _summarize(snap)
+                    _dxy_cache.update({"ts": _t.time(), "row": {
+                        "symbol": "DXY", "price": s["price"], "change_pct": 0.0,
+                        "trend": s["trend"], "verdict": s["verdict"],
+                        "rsi14": s["rsi14"], "spark": []}})
+            except Exception:  # noqa: BLE001 - el DXY es un extra, no bloquea el panel
+                pass
+        if _dxy_cache["row"]:
+            rows.append(_dxy_cache["row"])
         out = {"ok": True, "timeframe": settings.timeframe, "rows": rows}
         _instr_cache.update({"ts": _t.time(), "data": out})
         return out
