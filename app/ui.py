@@ -423,6 +423,11 @@ async function renderWatch(){ const box=$('#sys-watch'); if(!box)return;
     +'<button class="btn '+(WVIEW==='str'?'':'ghost')+'" style="padding:5px 10px" onclick="wView(\'str\')">Por estrategia</button></div>';
   if(WVIEW==='sym'){
     rows.forEach(r=>{ const on=r.strategies||[];
+      if(r.fixed){    // referencia fija: ni se quita ni se le asignan estrategias
+        h+='<div class="wrow" style="opacity:.72"><span class="wsym">'+escapeHtml(r.symbol)+'</span>'
+          +'<span class="phelp" style="margin:0;flex:1">'+escapeHtml(r.note||'referencia')+'</span>'
+          +'<span class="wx" title="Fijo: siempre vigilado" style="cursor:default">🔒</span></div>';
+        return; }
       h+='<div class="wrow"><span class="wsym">'+escapeHtml(r.symbol)+'</span>'
         +av.map(a=>'<span class="chip2'+(on.indexOf(a.id)>=0?' on':'')+'" title="'+escapeHtml(JSON.stringify(a.params))
           +'" onclick="wTog(\''+r.symbol+'\',\''+a.id+'\')">'+escapeHtml(a.label)+'</span>').join('')
@@ -436,7 +441,7 @@ async function renderWatch(){ const box=$('#sys-watch'); if(!box)return;
   } else {
     av.forEach(a=>{ h+='<div class="wrow" style="align-items:flex-start"><span class="wsym" style="padding-top:3px">'+escapeHtml(a.label)+'</span>'
       +'<span style="display:flex;gap:6px;flex-wrap:wrap;flex:1">'
-      +rows.map(r=>'<span class="chip2'+((r.strategies||[]).indexOf(a.id)>=0?' on':'')
+      +rows.filter(r=>!r.fixed).map(r=>'<span class="chip2'+((r.strategies||[]).indexOf(a.id)>=0?' on':'')
         +'" onclick="wTog(\''+r.symbol+'\',\''+a.id+'\')">'+escapeHtml(r.symbol)+'</span>').join('')
       +'</span></div>'; });
     h+='<div class="phelp">Toca un instrumento para meterlo o sacarlo de esa estrategia.</div>';
@@ -1281,6 +1286,9 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     const byS={}; INSTR.forEach(r=>{ byS[String(r.symbol||'').toUpperCase()]=r; });
     const order=WATCH.map(x=>String(x).toUpperCase());
     INSTR.forEach(r=>{ const k=String(r.symbol||'').toUpperCase(); if(order.indexOf(k)<0) order.push(k); });
+    // fijos (DXY): referencia que siempre cierra el anillo, aunque no haya datos
+    ((DATA&&DATA.core&&DATA.core.pinned)||['DXY']).forEach(k=>{
+      k=String(k).toUpperCase(); if(order.indexOf(k)<0) order.push(k); });
     const RING3=order.map(k=>byS[k]||{symbol:k}); RING3S=RING3;
     const NI=RING3.length, BAND3=Math.max(15,BAND*0.56);
     const R3=RO+12+BAND3/2, RI3=R3-BAND3/2, RO3=R3+BAND3/2;

@@ -541,6 +541,11 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             return {"ok": False, "reason": str(exc)[:140]}
         return {"ok": True, "symbol": symbol, "timeframe": timeframe, **_summarize(snap)}
 
+    # DXY es sintético (se calcula de una canasta de divisas) y NO existe en el
+    # broker: se vigila siempre como referencia, pero nunca se opera. Por eso vive
+    # aparte de settings.symbols en vez de dentro.
+    PINNED = ["DXY"]
+
     _STRAT_LABEL = {"donchian": "Ruptura Donchian", "rsi_fade": "Reversión RSI",
                     "momentum_burst": "Impulso", "ema_trend": "Tendencia EMA"}
 
@@ -827,8 +832,10 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
     async def watchlist():
         """Instrumentos vigilados + qué estrategia lleva cada uno."""
         from . import strategies as st
-        rows = [{"symbol": sym, "strategies": strategies_for(sym)}
+        rows = [{"symbol": sym, "strategies": strategies_for(sym), "fixed": False}
                 for sym in settings.symbol_list]
+        rows += [{"symbol": sym, "strategies": [], "fixed": True,
+                  "note": "referencia · no se opera"} for sym in PINNED]
         known = broker.symbol_names() if broker.client.account_authorized else []
         return {"symbols": rows,
                 "available": [{"id": k, "label": _STRAT_LABEL.get(k, k),
@@ -852,11 +859,16 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                 syms = syms + [add]
         if body.get("remove"):
             rm = str(body["remove"]).strip().upper()
+            if rm in PINNED:
+                return JSONResponse(
+                    {"ok": False, "error": f"{rm} es fijo: es la referencia del dólar "
+                                           "y siempre se vigila"}, status_code=400)
             syms = [x for x in syms if x != rm]
         # sin duplicados y sin lista vacía (el cerebro no tendría nada que mirar)
+        # los fijos nunca entran en la lista operable (no existen en el broker)
         seen, clean = set(), []
         for x in syms:
-            if x not in seen:
+            if x not in seen and x not in PINNED:
                 seen.add(x)
                 clean.append(x)
         if not clean:
@@ -892,6 +904,9 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             _save_watch()
             return {"ok": True, "strategy": strat, "symbols": sorted(want)}
         sym = str(body.get("symbol") or "").strip().upper()
+        if sym in PINNED:
+            return JSONResponse({"ok": False, "error": f"{sym} es solo referencia: "
+                                 "no se le asignan estrategias"}, status_code=400)
         if sym not in settings.symbol_list:
             return JSONResponse({"ok": False, "error": "ese instrumento no está vigilado"},
                                 status_code=400)
@@ -1157,6 +1172,7 @@ Conecta tu cuenta en <a href="/oauth/login">/oauth/login</a> para operar de verd
             "oauth_ok": tokens.has_tokens,
             "account_id": settings.ctrader_account_id,
             "symbols": settings.symbol_list,
+            "pinned": PINNED,
             "timeframe": settings.timeframe,
             "playbook_version": version,
             "agents": {
