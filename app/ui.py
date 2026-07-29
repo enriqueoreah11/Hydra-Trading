@@ -1279,6 +1279,8 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     // El die vive dentro del anillo de modulos: su diagonal no debe cruzarlo.
     // Rh es el radio del anillo, asi que el medio lado se limita a Rh*0.55/√2·√2.
     const half=Math.max(64,Math.min(Rh*0.46,Math.min(W,H)*0.14));
+    // ya no se dibuja ninguna pastilla: 'die' solo marca de donde salen las
+    // pistas hacia las ventanas. En el centro manda la cara.
     PCB.die={x:CX-half, y:CY-half, s:half*2};
     PCB.traces=[]; PCB.etch=[];
     const anchors=panelAnchors();
@@ -1309,16 +1311,6 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       PCB.traces.push({pts:chamfer(pts,9), left:i%4<2, panel:false,
                        ph:i*0.61, sp:0.00010+0.00004*(i%3)});
     }
-    // pistas internas del die: el detalle fino que hace que parezca silicio
-    for(let i=0;i<10;i++){
-      const f=(i+0.5)/10, side=i%2===0;
-      const y=PCB.die.y+PCB.die.s*f;
-      const x0=side?PCB.die.x+6:PCB.die.x+PCB.die.s-6;
-      const x1=side?PCB.die.x+PCB.die.s*(0.30+0.16*(i%3)):PCB.die.x+PCB.die.s*(0.70-0.16*(i%3));
-      const y1=PCB.die.y+PCB.die.s*(0.5+(side?-1:1)*0.06*(i%4));
-      PCB.traces.push({pts:chamfer([{x:x0,y},{x:x1,y},{x:x1,y:y1}],6),
-                       left:side, panel:false, inner:true, ph:i*0.29, sp:0.00022});
-    }
     // grabado de fondo: segmentos cortos, deterministas (misma placa cada vez)
     let seed=1337;
     const rnd=()=>((seed=(seed*1103515245+12345)&0x7fffffff)/0x7fffffff);
@@ -1327,6 +1319,63 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       PCB.etch.push({x,y,ln,hor,a:0.05+rnd()*0.13});
     }
     pcbDirty=false;
+  }
+  /* Un componente soldado: caja alineada a la placa (no girada), con pines en el
+     lado que mira al chip y una pista que llega hasta ahi. */
+  function compBox(c,w,h){ return {x:c.x-w/2,y:c.y-h/2,w,h}; }
+  function compEntry(b){
+    // por donde entra la pista: el lado de la caja que mira al centro
+    const dx=CX-(b.x+b.w/2), dy=CY-(b.y+b.h/2);
+    if(Math.abs(dx)*b.h>Math.abs(dy)*b.w)
+      return {x:dx>0?b.x+b.w:b.x, y:b.y+b.h/2, side:dx>0?'r':'l'};
+    return {x:b.x+b.w/2, y:dy>0?b.y+b.h:b.y, side:dy>0?'b':'t'};
+  }
+  function wireTo(entry,rcore,ph,sp,col){
+    /* Ruteo de placa: un tocón radial corto para salir del núcleo (como el fan-out
+       de un BGA) y a partir de ahí SOLO tramos ortogonales hasta el borde de la
+       caja. Antes la primera pata era una diagonal larga y el conjunto parecía un
+       abanico de radios, no cobre. */
+    const a=Math.atan2(entry.y-CY,entry.x-CX);
+    const p0={x:CX+Math.cos(a)*rcore, y:CY+Math.sin(a)*rcore};
+    const stub=Math.max(18,rcore*0.30);
+    const p1={x:p0.x+Math.cos(a)*stub, y:p0.y+Math.sin(a)*stub};
+    const e={x:entry.x,y:entry.y};
+    let pts;
+    if(entry.side==='l'||entry.side==='r'){          // se entra en horizontal
+      const midX=p1.x+(e.x-p1.x)*0.55;
+      pts=[p0,p1,{x:midX,y:p1.y},{x:midX,y:e.y},e];
+    } else {                                          // se entra en vertical
+      const midY=p1.y+(e.y-p1.y)*0.55;
+      pts=[p0,p1,{x:p1.x,y:midY},{x:e.x,y:midY},e];
+    }
+    return {pts:chamfer(pts,7), col, ph, sp, comp:true};
+  }
+  function drawComp(b,rgb,al,lit,fillA){
+    g.globalCompositeOperation='source-over';
+    g.fillStyle='rgba(6,11,18,'+(fillA===undefined?0.94:fillA)+')';
+    if(g.roundRect){ g.beginPath(); g.roundRect(b.x,b.y,b.w,b.h,3); g.fill(); }
+    else g.fillRect(b.x,b.y,b.w,b.h);
+    g.globalCompositeOperation='lighter';
+    const ig=g.createLinearGradient(b.x,b.y,b.x,b.y+b.h);
+    ig.addColorStop(0,'rgba('+rgb+','+(0.16*al)+')'); ig.addColorStop(1,'rgba('+rgb+',0)');
+    g.fillStyle=ig;
+    if(g.roundRect){ g.beginPath(); g.roundRect(b.x,b.y,b.w,b.h,3); g.fill(); }
+    else g.fillRect(b.x,b.y,b.w,b.h);
+    if(lit){ g.shadowColor='rgba('+rgb+',1)'; g.shadowBlur=lit; }
+    g.lineWidth=lit?2:1.3; g.strokeStyle='rgba('+rgb+','+((lit?1:0.82)*al)+')';
+    if(g.roundRect){ g.beginPath(); g.roundRect(b.x,b.y,b.w,b.h,3); g.stroke(); }
+    else g.strokeRect(b.x,b.y,b.w,b.h);
+    g.shadowBlur=0;
+  }
+  function compPins(b,entry,rgb,al){
+    g.strokeStyle='rgba('+rgb+','+(0.4*al)+')'; g.lineWidth=1.3; g.beginPath();
+    const hor=(entry.side==='l'||entry.side==='r'), n=3;
+    for(let i=1;i<=n;i++){ const f=i/(n+1);
+      if(hor){ const y=b.y+b.h*f, x=entry.side==='l'?b.x:b.x+b.w, d=entry.side==='l'?-6:6;
+        g.moveTo(x,y); g.lineTo(x+d,y); }
+      else { const x=b.x+b.w*f, y=entry.side==='t'?b.y:b.y+b.h, d=entry.side==='t'?-6:6;
+        g.moveTo(x,y); g.lineTo(x,y+d); } }
+    g.stroke();
   }
   function drawPCB(now){
     if(pcbDirty) buildPCB();
@@ -1338,14 +1387,12 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     g.globalAlpha=1;
     // 2) pistas: cobre apagado + un pulso de datos que viaja del chip a la ventana.
     //    Las de dentro del die van DESPUES de rellenarlo, o el relleno las tapa.
-    for(const t of PCB.traces){ if(t.inner) continue; drawTrace(t,now); }
-    drawDie(now);
-    for(const t of PCB.traces){ if(t.inner) drawTrace(t,now); }
+    for(const t of PCB.traces) drawTrace(t,now);
   }
   function drawTrace(t,now){
       const col=t.left?'90,190,255':'170,120,255';        // azul a un lado, violeta al otro
-      g.strokeStyle='rgba('+col+','+(t.panel?0.28:(t.inner?0.34:0.16))+')';
-      g.lineWidth=t.panel?1.4:1;
+      g.strokeStyle='rgba('+col+','+(t.panel?0.28:(t.comp?0.30:0.16))+')';
+      g.lineWidth=(t.panel||t.comp)?1.4:1;
       g.beginPath(); g.moveTo(t.pts[0].x,t.pts[0].y);
       for(let i=1;i<t.pts.length;i++) g.lineTo(t.pts[i].x,t.pts[i].y);
       g.stroke();
@@ -1370,38 +1417,6 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
         g.beginPath(); g.arc(e.x,e.y,2+2.6*near,0,7); g.fill();
         if(near>0.05){ g.strokeStyle='rgba('+col+','+(0.5*near)+')'; g.lineWidth=1;
           g.beginPath(); g.arc(e.x,e.y,4+7*(1-near),0,7); g.stroke(); } }
-  }
-  function drawDie(now){
-    const d=PCB.die;
-    // el die: pastilla oscura con borde vivo y pines en los cuatro lados
-    g.globalCompositeOperation='source-over';
-    const dg=g.createLinearGradient(d.x,d.y,d.x+d.s,d.y+d.s);
-    dg.addColorStop(0,'rgba(9,14,22,0.92)'); dg.addColorStop(1,'rgba(4,7,12,0.96)');
-    g.fillStyle=dg; g.fillRect(d.x,d.y,d.s,d.s);
-    g.globalCompositeOperation='lighter';
-    const hot=halted?'255,110,130':'120,220,255';
-    g.strokeStyle='rgba('+hot+',0.55)'; g.lineWidth=1.6; g.strokeRect(d.x,d.y,d.s,d.s);
-    g.strokeStyle='rgba('+hot+',0.14)'; g.lineWidth=1;
-    g.strokeRect(d.x+7,d.y+7,d.s-14,d.s-14);
-    // pines: dientes cortos por fuera de cada lado
-    g.strokeStyle='rgba('+hot+',0.34)'; g.lineWidth=1.4; g.beginPath();
-    const N=14;
-    for(let i=1;i<N;i++){ const f=i/N, px=d.x+d.s*f, py=d.y+d.s*f;
-      g.moveTo(px,d.y); g.lineTo(px,d.y-7);
-      g.moveTo(px,d.y+d.s); g.lineTo(px,d.y+d.s+7);
-      g.moveTo(d.x,py); g.lineTo(d.x-7,py);
-      g.moveTo(d.x+d.s,py); g.lineTo(d.x+d.s+7,py); }
-    g.stroke();
-    // esquinas marcadas, como el chip de la foto
-    g.strokeStyle='rgba('+hot+',0.8)'; g.lineWidth=2; const cc=16;
-    [[d.x,d.y,1,1],[d.x+d.s,d.y,-1,1],[d.x,d.y+d.s,1,-1],[d.x+d.s,d.y+d.s,-1,-1]]
-      .forEach(([x,y,sx,sy])=>{ g.beginPath(); g.moveTo(x+sx*cc,y); g.lineTo(x,y);
-        g.lineTo(x,y+sy*cc); g.stroke(); });
-    // respiración del die, sincronizada con el reactor
-    const br=0.5+0.5*Math.sin(now*0.0016);
-    const rg=g.createRadialGradient(CX,CY,0,CX,CY,d.s*0.62);
-    rg.addColorStop(0,'rgba('+hot+','+(0.05+0.05*br)+')'); rg.addColorStop(1,'rgba(0,0,0,0)');
-    g.fillStyle=rg; g.fillRect(d.x,d.y,d.s,d.s);
   }
   // TRADE CONTEXT: orbe de memoria. Gira fuera del orbe, en un plano inclinado,
   // en sentido contrario a los agentes (por eso a veces pasa por detrás).
@@ -1442,29 +1457,28 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     if(!DATA){ requestAnimationFrame(frame); return; }
     if(dirty||A.length!==(DATA.agents||[]).length) build();
     // órbita lenta: los agentes giran alrededor de Hydra (que queda al centro)
-    const orb=now*0.00006;
-    for(const a of A){ a.ang=a.baseAng+orb; const c=Math.cos(a.ang), s=Math.sin(a.ang);
-      a.x=CX+c*Rh; a.y=CY+s*Rh; a.lx=a.x+c*24; a.ly=a.y+s*24;
-      a.lalign=c>0.35?'left':(c<-0.35?'right':'center'); }
-    CTXO.ang=CTXO.baseAng+orb; CTXO.sx=CX+Math.cos(CTXO.ang)*Rh; CTXO.sy=CY+Math.sin(CTXO.ang)*Rh;
-    // RING = los agentes + el modulo de memoria, todos plazas del mismo anillo
-    const CTXMOD={key:'__ctx',name:'CONTEXT',rgb:'176,150,255',ang:CTXO.ang,ctx:true,
-                  x:CTXO.sx,y:CTXO.sy,role:'Memoria de decisiones'};
+    // COMPONENTES FIJOS: van soldados a la placa. La elipse (más ancha que alta)
+    // aprovecha el hueco entre la cinta de arriba y el aviso de abajo, y deja los
+    // laterales para las ventanas.
+    const CTXMOD={key:'__ctx',name:'CONTEXT',rgb:'176,150,255',ctx:true,
+                  role:'Memoria de decisiones'};
+    const NA=A.length+1, arx=S*0.34, ary=S*0.195;
+    for(let i=0;i<A.length;i++){ const a=A[i];
+      a.ang=-Math.PI/2+(i+0.5)*Math.PI*2/NA;       // FIJO: sin el término del giro
+      a.x=CX+Math.cos(a.ang)*arx; a.y=CY+Math.sin(a.ang)*ary; }
+    CTXMOD.ang=-Math.PI/2+(A.length+0.5)*Math.PI*2/NA;
+    CTXMOD.x=CX+Math.cos(CTXMOD.ang)*arx; CTXMOD.y=CY+Math.sin(CTXMOD.ang)*ary;
+    CTXO.sx=CTXMOD.x; CTXO.sy=CTXMOD.y; CTXO.ang=CTXMOD.ang;
     byKey['__ctx']=CTXMOD;                       // para que LINKS lo encuentre
     const RING=A.concat([CTXMOD]);
-    // ANILLO DE MÓDULOS: una banda que gira alrededor del reactor, partida en
-    // segmentos separados (uno por agente). Todo el cálculo es en polares.
-    const NSEG=Math.max(RING.length,1), SEG=Math.PI*2/NSEG;
-    const BAND=Math.max(22,Math.min(46,S*0.062)), GAP=Math.min(SEG*0.28,0.18);
-    const RI=Rh-BAND/2, RO=Rh+BAND/2, SPAN=SEG-GAP;
-    hoverKey=null; hoverC=false; let hd=1e9;
-    { const mr=Math.hypot(mx-CX,my-CY), ma=Math.atan2(my-CY,mx-CX);
-      if(mr>RI-4&&mr<RO+4) for(const a of RING){
-        let da=ma-a.ang; da=Math.atan2(Math.sin(da),Math.cos(da));      // diferencia angular corta
-        if(Math.abs(da)<SPAN/2&&Math.abs(da)<hd){ hd=Math.abs(da); hoverKey=a.key; } } }
+    // Los componentes son cajas fijas: el cursor se prueba contra la caja de cada
+    // uno (las cajas se guardan al dibujarlas en el cuadro anterior).
+    hoverKey=null; hoverC=false;
+    const inBox=(b)=>b&&mx>=b.x-3&&mx<=b.x+b.w+3&&my>=b.y-3&&my<=b.y+b.h+3;
+    for(const a of RING){ if(inBox(a.box)){ hoverKey=a.key; break; } }
     if(hoverKey==='__ctx'){ hoverC=true; hoverKey=null; }
-    { const hr=Math.max(22,S*0.055)*1.35, dx=CX-mx,dy=CY-my;                                // reactor Hydra
-      if(!hoverKey&&dx*dx+dy*dy<hr*hr) hoverKey='__hydra'; }
+    { const hr=Math.max(22,S*0.055)*1.55, dx=CX-mx,dy=CY-my;              // la cara del centro
+      if(!hoverKey&&!hoverC&&dx*dx+dy*dy<hr*hr) hoverKey='__hydra'; }
     // TERCER ANILLO: un segmento por instrumento, girando al revés que los módulos
     // El anillo exterior existe siempre: se construye con los símbolos VIGILADOS
     // y se va rellenando con precios cuando /instruments responde.
@@ -1475,16 +1489,23 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     // fijos (DXY): referencia que siempre cierra el anillo, aunque no haya datos
     ((DATA&&DATA.core&&DATA.core.pinned)||['DXY']).forEach(k=>{
       k=String(k).toUpperCase(); if(order.indexOf(k)<0) order.push(k); });
-    const RING3=order.map(k=>byS[k]||{symbol:k}); RING3S=RING3;
-    const NI=RING3.length, BAND3=Math.max(15,BAND*0.56);
-    const R3=RO+12+BAND3/2, RI3=R3-BAND3/2, RO3=R3+BAND3/2;
-    const SEG3=NI?Math.PI*2/NI:0, GAP3=Math.min(SEG3*0.22,0.14), SPAN3=SEG3-GAP3;
-    const ROT3=-now*0.000048;
+    // Se reusa la lista del cuadro anterior si los símbolos no cambiaron, para no
+    // perder las posiciones ni la caché de las pistas en cada frame.
+    const key3=order.join(',');
+    let RING3;
+    if(RING3S.length&&RING3S._key===key3){ RING3=RING3S;
+      RING3.forEach((r,i)=>{ const fresh=byS[String(r.symbol||'').toUpperCase()];
+        if(fresh) Object.assign(r,{price:fresh.price,change_pct:fresh.change_pct,
+                                   verdict:fresh.verdict,trend:fresh.trend,spark:fresh.spark}); }); }
+    else { RING3=order.map(k=>Object.assign({},byS[k]||{},{symbol:k}));
+           RING3._key=key3; RING3S=RING3; }
+    const NI=RING3.length;
+    // elipse exterior, más ancha que alta: cabe entre la cinta y el aviso de abajo
+    const irx=S*0.475, iry=S*0.285;
+    for(let i=0;i<NI;i++){ const an=-Math.PI/2+(i+0.5)*Math.PI*2/(NI||1);
+      RING3[i].x=CX+Math.cos(an)*irx; RING3[i].y=CY+Math.sin(an)*iry; }
     hoverI=-1;
-    if(NI){ const mr=Math.hypot(mx-CX,my-CY), ma=Math.atan2(my-CY,mx-CX);
-      if(mr>RI3-3&&mr<RO3+3) for(let i=0;i<NI;i++){
-        let da=ma-(ROT3-Math.PI/2+i*SEG3); da=Math.atan2(Math.sin(da),Math.cos(da));
-        if(Math.abs(da)<SPAN3/2){ hoverI=i; hoverKey=null; break; } } }
+    for(let i=0;i<NI;i++){ if(inBox(RING3[i].box)){ hoverI=i; hoverKey=null; hoverC=false; break; } }
 
     cv.style.cursor=(hoverKey||hoverC)?'pointer':'default';
     const sel=(typeof selected!=='undefined')?selected:null;         // agente abierto (por click)
@@ -1508,102 +1529,84 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     // conexiones de HYDRA (centro) → agentes. Base tenue + resaltado del agente señalado/abierto
     const hyHover=hoverKey==='__hydra';
     const hk=hoverC?'__ctx':hoverKey;      // el modulo de memoria cuenta como nodo
-    g.lineWidth=1; g.strokeStyle='rgba(90,150,180,0.12)'; g.beginPath();
-    for(const a of RING){ g.moveTo(CX,CY); g.lineTo(a.x,a.y); } g.stroke();
-    // se ilumina el radio a Hydra del nodo abierto (sel) o señalado; o TODOS si señalas el núcleo
+    // Ya no hay radios rectos al centro: la conexión la hace la PISTA de cobre de
+    // cada componente. Al señalar uno (o el núcleo) su pista se enciende.
     const litHydra=hyHover?RING.map(a=>a.key):[sel,hk].filter(Boolean);
-    if(litHydra.length){ g.lineWidth=1.7; g.strokeStyle='rgba(127,246,255,0.8)'; g.beginPath();
-      for(const a of RING){ if(litHydra.indexOf(a.key)>=0){ g.moveTo(CX,CY); g.lineTo(a.x,a.y); } } g.stroke();
-      const t=(now*0.0007)%1; g.fillStyle='rgba(190,250,255,0.95)';
-      for(const a of RING){ if(litHydra.indexOf(a.key)>=0){ g.beginPath(); g.arc(CX+(a.x-CX)*t,CY+(a.y-CY)*t,2.2,0,7); g.fill(); } } }
+    if(litHydra.length) for(const a of RING){
+      if(litHydra.indexOf(a.key)>=0&&a.wire){
+        const w=a.wire; g.strokeStyle='rgba(190,250,255,0.85)'; g.lineWidth=2;
+        g.beginPath(); g.moveTo(w.pts[0].x,w.pts[0].y);
+        for(let i=1;i<w.pts.length;i++) g.lineTo(w.pts[i].x,w.pts[i].y);
+        g.stroke(); } }
     // conexiones entre agentes (curvas); se iluminan al pasar el cursor o si el agente está abierto
     for(const L of LINKS){ const a=byKey[L[0]], b=byKey[L[1]]; if(!a||!b) continue;
       const hot=(hk&&(L[0]===hk||L[1]===hk))||(sel&&(L[0]===sel||L[1]===sel));
       const cx=(a.x+b.x)/2+(CX-(a.x+b.x)/2)*0.42, cy=(a.y+b.y)/2+(CY-(a.y+b.y)/2)*0.42;
-      g.strokeStyle=hot?'rgba(127,246,255,0.85)':'rgba(90,150,180,0.13)'; g.lineWidth=hot?1.7:1;
+      g.strokeStyle=hot?'rgba(127,246,255,0.85)':'rgba(90,150,180,0.05)'; g.lineWidth=hot?1.7:1;
       g.beginPath(); g.moveTo(a.x,a.y); g.quadraticCurveTo(cx,cy,b.x,b.y); g.stroke();
       if(hot){ const p=qpt([a.x,a.y],[cx,cy],[b.x,b.y],(now*0.0006)%1); g.fillStyle='rgba(190,250,255,1)'; g.beginPath(); g.arc(p[0],p[1],2.2,0,7); g.fill(); } }
-    // MÓDULOS: segmentos de un mismo anillo que gira sin parar alrededor del reactor.
-    // Separados entre sí (GAP) para que se lean como piezas independientes.
+    // MÓDULOS: componentes soldados a la placa. Caja alineada, pines hacia el chip
+    // y una pista que llega hasta ellos, igual que las ventanas.
+    const CW=Math.max(62,Math.min(96,S*0.115)), CH=Math.max(24,Math.min(34,S*0.040));
+    const RCORE=Math.max(22,S*0.055)*1.75;         // borde del circulo que gira
     for(let ai=0;ai<RING.length;ai++){ const a=RING[ai], isctx=!!a.ctx;
       const st=isctx?'idle':stateOf(a.key), h=isctx?hoverC:(a.key===hoverKey);
       const o=!isctx&&a.key===sel, on=st==='active'||st==='alert';
-      const dim=((hoverKey||hoverC)&&!h&&!o), al=dim?0.42:1;
+      const dim=((hoverKey||hoverC)&&!h&&!o), al=dim?0.45:1;
       const load=isctx?Math.min(1,CTXO.n/40):Math.min(1,entriesOf(a.key)/8);
-      const push=o?grow*10:(h?4:0);                       // el abierto sale del anillo
-      const ri=RI-push*0.35, ro=RO+push, a0=a.ang-SPAN/2, a1=a.ang+SPAN/2;
-      const seg=()=>{ g.beginPath(); g.arc(CX,CY,ro,a0,a1); g.arc(CX,CY,ri,a1,a0,true); g.closePath(); };
-      // 1) placa: se rellena opaca para que el anillo tape el fondo, como una pieza real
-      g.globalCompositeOperation='source-over';
-      const pg=g.createRadialGradient(CX,CY,ri,CX,CY,ro);
-      pg.addColorStop(0,'rgba(6,14,22,0.95)'); pg.addColorStop(1,'rgba(4,9,15,0.98)');
-      g.fillStyle=pg; seg(); g.fill();
-      g.globalCompositeOperation='lighter';
-      // 2) brillo interior propio del agente
-      const ig=g.createRadialGradient(CX,CY,ri,CX,CY,ro);
-      ig.addColorStop(0,'rgba('+a.rgb+','+(0.20*al)+')'); ig.addColorStop(1,'rgba('+a.rgb+',0)');
-      g.fillStyle=ig; seg(); g.fill();
-      // 3) marco del segmento
-      if(on||h||o){ g.shadowColor='rgba('+a.rgb+',1)'; g.shadowBlur=o?(14+grow*20):(h?20:10); } else g.shadowBlur=0;
-      g.lineJoin='round'; g.lineWidth=(h||o)?2.2:1.4;
-      g.strokeStyle='rgba('+a.rgb+','+((h||o)?1:0.8)*al+')'; seg(); g.stroke(); g.shadowBlur=0;
-      // 4) barra de actividad pegada al borde interior
-      if(load>0.02){ g.strokeStyle='rgba('+a.rgb+','+(0.85*al)+')'; g.lineWidth=2.4; g.lineCap='round';
-        g.beginPath(); g.arc(CX,CY,ri+3,a0+0.02,a0+0.02+SPAN*load*0.96); g.stroke(); g.lineCap='butt'; }
-      // pulso al llegar una captura nueva al modulo de memoria
-      if(isctx){ const pt=(now-CTXO.pulse)/1400;
-        if(pt>=0&&pt<1){ g.strokeStyle='rgba(200,180,255,'+(0.6*(1-pt))+')'; g.lineWidth=1.8;
-          g.beginPath(); g.arc(CX,CY,ro+2+pt*22,a0,a1); g.stroke(); } }
-      // 5) marcas radiales en el borde exterior (detalle de instrumento)
-      g.strokeStyle='rgba('+a.rgb+','+(0.30*al)+')'; g.lineWidth=1; g.beginPath();
-      for(let k=1;k<5;k++){ const an=a0+SPAN*k/5;
-        g.moveTo(CX+Math.cos(an)*(ro+2),CY+Math.sin(an)*(ro+2));
-        g.lineTo(CX+Math.cos(an)*(ro+2+(k===2||k===3?6:3)),CY+Math.sin(an)*(ro+2+(k===2||k===3?6:3))); }
-      g.stroke();
-      if(st==='alert'){ g.strokeStyle='rgba(255,93,115,'+(0.45+0.45*Math.sin(now*0.006))+')'; g.lineWidth=1.8;
-        g.beginPath(); g.arc(CX,CY,ro+4,a0,a1); g.stroke(); }
-      // 6) contenido: icono + nombre, tangentes al anillo y nunca del revés
-      const cx2=CX+Math.cos(a.ang)*(ri+ro)/2, cy2=CY+Math.sin(a.ang)*(ri+ro)/2;
-      g.save(); g.translate(cx2,cy2); g.rotate(a.ang+Math.PI/2+(Math.sin(a.ang)>0?Math.PI:0));
-      const gr2=Math.min(9,BAND*0.26);
-      if(isctx){ g.strokeStyle='rgba('+a.rgb+','+(dim?0.5:0.98)+')'; g.lineWidth=1.2;   // archivo: capas apiladas
-        for(let k=-1;k<=1;k++){ g.beginPath(); g.ellipse(0,-BAND*0.16+k*gr2*0.42,gr2*0.62,gr2*0.24,0,0,7); g.stroke(); } }
-      else glyph(a.key,0,-BAND*0.16,gr2,a.rgb,dim?0.5:0.98);
-      g.font='700 '+Math.max(7,Math.min(9,BAND*0.22))+'px system-ui,sans-serif';
-      g.textAlign='center'; g.textBaseline='top';
-      g.fillStyle='rgba('+a.rgb+','+((h||o)?1:0.72)*al+')';
-      g.fillText(isctx?('CONTEXT'+(CTXO.n>0?' '+CTXO.n:'')):shortName(a.name),0,BAND*0.06);
-      g.restore(); }
-    // TERCER ANILLO: instrumentos. Mismo lenguaje que los módulos, más fino y al revés.
+      const gw=o?CW*(1+grow*0.22):CW, gh=o?CH*(1+grow*0.16):CH;
+      const b2=compBox(a,gw,gh); a.box=b2;
+      const entry=compEntry(b2);
+      // pista al chip: se cachea mientras no cambie la geometria
+      if(!a.wire||a.wireK!==(gw+','+gh+','+CX+','+CY))
+        { a.wire=wireTo(entry,RCORE,ai*0.41,0.00016+0.00004*(ai%3),
+                        isctx?'176,150,255':a.rgb); a.wireK=gw+','+gh+','+CX+','+CY; }
+      drawTrace(a.wire,now);
+      compPins(b2,entry,a.rgb,al);
+      drawComp(b2,a.rgb,al,(on||h||o)?(o?14+grow*16:(h?18:9)):0);
+      // contenido HORIZONTAL: en una placa la serigrafía no va girada
+      const gr2=Math.min(8,gh*0.30), gx=b2.x+gh*0.52;
+      if(isctx){ g.strokeStyle='rgba('+a.rgb+','+(dim?0.5:0.98)+')'; g.lineWidth=1.2;
+        for(let k=-1;k<=1;k++){ g.beginPath();
+          g.ellipse(gx,a.y+k*gr2*0.5,gr2*0.62,gr2*0.24,0,0,7); g.stroke(); } }
+      else glyph(a.key,gx,a.y,gr2,a.rgb,dim?0.5:0.98);
+      g.font='700 '+Math.max(7.5,Math.min(9.5,gh*0.30))+'px system-ui,sans-serif';
+      g.textAlign='left'; g.textBaseline='middle';
+      g.fillStyle='rgba('+a.rgb+','+((h||o)?1:0.78)*al+')';
+      g.fillText(isctx?('CTX'+(CTXO.n>0?' '+CTXO.n:'')):shortName(a.name),
+                 gx+gr2+5, a.y-(load>0.02?2:0));
+      // barra de actividad: una traza fina bajo la serigrafía
+      if(load>0.02){ g.strokeStyle='rgba('+a.rgb+','+(0.8*al)+')'; g.lineWidth=1.6;
+        const x0=gx+gr2+5, x1=b2.x+b2.w-5;
+        g.beginPath(); g.moveTo(x0,a.y+gh*0.26); g.lineTo(x0+(x1-x0)*load,a.y+gh*0.26); g.stroke(); }
+      if(isctx){ const pt=(now-CTXO.pulse)/1400;      // captura nueva
+        if(pt>=0&&pt<1){ g.strokeStyle='rgba(200,180,255,'+(0.6*(1-pt))+')'; g.lineWidth=1.6;
+          g.beginPath(); g.rect(b2.x-pt*14,b2.y-pt*10,b2.w+pt*28,b2.h+pt*20); g.stroke(); } }
+      if(st==='alert'){ g.strokeStyle='rgba(255,93,115,'+(0.45+0.45*Math.sin(now*0.006))+')';
+        g.lineWidth=1.6; g.strokeRect(b2.x-4,b2.y-4,b2.w+8,b2.h+8); } }
+    // INSTRUMENTOS: también componentes, en la elipse de fuera y sin girar.
+    const IW=Math.max(56,Math.min(88,S*0.105)), IH=Math.max(20,Math.min(28,S*0.033));
     for(let i=0;i<NI;i++){ const r=RING3[i], sym=String(r.symbol||'').toUpperCase();
-      const mid=ROT3-Math.PI/2+i*SEG3, b0=mid-SPAN3/2, b1=mid+SPAN3/2;
       const hi=hoverI===i, live=OPENSYMS.has(sym);
       const col=live?'52,211,153':(r.verdict==='compra'?'52,211,153':(r.verdict==='venta'?'255,93,115':(r.verdict?'110,150,175':'80,110,132')));
-      const push=hi?3:0, ri=RI3, ro=RO3+push;
-      const seg=()=>{ g.beginPath(); g.arc(CX,CY,ro,b0,b1); g.arc(CX,CY,ri,b1,b0,true); g.closePath(); };
-      g.globalCompositeOperation='source-over';
-      g.fillStyle='rgba(5,11,18,0.94)'; seg(); g.fill();
-      g.globalCompositeOperation='lighter';
-      const ig=g.createRadialGradient(CX,CY,ri,CX,CY,ro);
-      ig.addColorStop(0,'rgba('+col+',0)'); ig.addColorStop(1,'rgba('+col+','+(hi?0.24:0.13)+')');
-      g.fillStyle=ig; seg(); g.fill();
-      if(hi||live){ g.shadowColor='rgba('+col+',1)'; g.shadowBlur=hi?16:8; }
-      g.lineJoin='round'; g.lineWidth=hi?1.9:1.2; g.strokeStyle='rgba('+col+','+(hi?1:0.7)+')';
-      seg(); g.stroke(); g.shadowBlur=0;
-      // marca verde parpadeante si hay posición abierta en ese par
-      if(live){ const bp=0.5+0.5*Math.sin(now*0.004);
-        g.strokeStyle='rgba(52,211,153,'+(0.35+0.45*bp)+')'; g.lineWidth=2.2;
-        g.beginPath(); g.arc(CX,CY,ri+1.6,b0+0.02,b1-0.02); g.stroke(); }
-      const cx3=CX+Math.cos(mid)*R3, cy3=CY+Math.sin(mid)*R3;
-      g.save(); g.translate(cx3,cy3); g.rotate(mid+Math.PI/2+(Math.sin(mid)>0?Math.PI:0));
-      g.font='700 '+Math.max(7,Math.min(9,BAND3*0.34))+'px system-ui,sans-serif';
+      const bb=compBox(r,hi?IW*1.06:IW,hi?IH*1.06:IH); r.box=bb;
+      const entry=compEntry(bb);
+      if(!r.wire||r.wireK!==(IW+','+CX+','+CY))
+        { r.wire=wireTo(entry,RCORE,i*0.53+2.1,0.00012+0.00004*(i%3),col); r.wireK=IW+','+CX+','+CY; }
+      r.wire.col=col; drawTrace(r.wire,now);
+      compPins(bb,entry,col,1);
+      drawComp(bb,col,1,hi?16:(live?9:0),0.92);
+      if(live){ const bp=0.5+0.5*Math.sin(now*0.004);   // posición abierta
+        g.strokeStyle='rgba(52,211,153,'+(0.3+0.5*bp)+')'; g.lineWidth=1.4;
+        g.strokeRect(bb.x-3,bb.y-3,bb.w+6,bb.h+6); }
       g.textAlign='center'; g.textBaseline='middle';
-      g.fillStyle='rgba('+col+','+(hi?1:0.85)+')';
-      g.fillText(((window.mktName&&window.mktName(sym))||sym).slice(0,9),0,-BAND3*0.16);
-      g.font=Math.max(6.5,Math.min(8,BAND3*0.28))+'px system-ui,sans-serif';
-      g.fillStyle='rgba('+col+',0.6)';
-      g.fillText(r.change_pct==null?'· · ·':((r.change_pct>=0?'+':'')+r.change_pct.toFixed(2)+'%'),0,BAND3*0.28);
-      g.restore(); }
+      g.font='700 '+Math.max(7.5,Math.min(9.5,IH*0.36))+'px system-ui,sans-serif';
+      g.fillStyle='rgba('+col+','+(hi?1:0.9)+')';
+      g.fillText(((window.mktName&&window.mktName(sym))||sym).slice(0,10), r.x, r.y-IH*0.17);
+      g.font=Math.max(6.5,Math.min(8.5,IH*0.30))+'px system-ui,sans-serif';
+      g.fillStyle='rgba('+col+',0.62)';
+      g.fillText(r.change_pct==null?'· · ·':((r.change_pct>=0?'+':'')+r.change_pct.toFixed(2)+'%'),
+                 r.x, r.y+IH*0.26); }
     if(hoverI>=0) cv.style.cursor='pointer';
     // REACTOR HYDRA: anillos concéntricos girando en sentidos opuestos y, en el
     // centro, la marca: ojos verdes en marcha, amarillos al señalar, rojos en pausa,
@@ -1649,8 +1652,8 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     // tooltip al pasar el cursor: rol + con quién colabora + pista de click
     const tip=$('#tip');
     if(hoverI>=0&&RING3S[hoverI]){ const r=RING3S[hoverI], sym=String(r.symbol||'');
-      const mid=ROT3-Math.PI/2+hoverI*SEG3;
-      tip.style.left=(CX+Math.cos(mid)*(RO3+14))+'px'; tip.style.top=(CY+Math.sin(mid)*(RO3+14))+'px';
+      const bb=r.box||{x:r.x,y:r.y,w:0,h:0};
+      tip.style.left=(bb.x+bb.w+12)+'px'; tip.style.top=(bb.y+bb.h/2)+'px';
       const nm=(window.mktName&&window.mktName(sym))||'';
       tip.innerHTML='📈 <b>'+escapeHtml(sym)+'</b>'+(nm?' · '+escapeHtml(nm):'')
         +'<br><span>'+(r.price==null?L('esperando datos del broker','waiting for broker data')
