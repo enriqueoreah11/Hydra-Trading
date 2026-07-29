@@ -517,6 +517,42 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             return {"ok": False, "reason": str(exc)[:140]}
         return {"ok": True, "symbol": symbol, "timeframe": timeframe, **_summarize(snap)}
 
+    _instr_cache: dict = {"ts": 0.0, "data": None}
+
+    @app.get("/instruments")
+    async def instruments():
+        """Panel lateral de instrumentos: precio, variación y mini-gráfica.
+
+        Se cachea 25 s porque la pantalla la refresca sola y cada símbolo cuesta
+        una petición de velas al broker.
+        """
+        import time as _t
+        if _instr_cache["data"] and _t.time() - _instr_cache["ts"] < 25:
+            return _instr_cache["data"]
+        if not broker.client.account_authorized:
+            return {"ok": False, "reason": "Conecta cTrader.", "rows": []}
+        from . import indicators
+        rows = []
+        for sym in settings.symbol_list:
+            try:
+                cs = await asyncio.wait_for(
+                    broker.candles(sym, settings.timeframe, 120), timeout=12)
+                if len(cs) < 60:
+                    continue
+                snap = indicators.snapshot(cs)
+                s = _summarize(snap)
+                closes = [c.close for c in cs[-40:]]
+                first = closes[0] or 1
+                rows.append({"symbol": sym, "price": s["price"],
+                             "change_pct": round((closes[-1] - first) / abs(first) * 100, 2),
+                             "trend": s["trend"], "verdict": s["verdict"],
+                             "rsi14": s["rsi14"], "spark": [round(c, 5) for c in closes]})
+            except Exception:  # noqa: BLE001 - un símbolo caído no tumba el panel
+                continue
+        out = {"ok": True, "timeframe": settings.timeframe, "rows": rows}
+        _instr_cache.update({"ts": _t.time(), "data": out})
+        return out
+
     @app.get("/correlations")
     async def correlations():
         """Matriz de correlación de rendimientos entre los instrumentos vigilados."""

@@ -109,6 +109,58 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 #banner{position:fixed;left:50%;bottom:78px;transform:translateX(-50%);z-index:25;background:#08192af0;border:1px solid #1a4a5f;border-radius:12px;padding:11px 16px;max-width:min(760px,94vw);font-size:12.5px;color:#bfe6f5;box-shadow:0 10px 40px #000a}
 #banner code{background:#03121b;padding:2px 7px;border-radius:6px;color:#7ff6ff;border:1px solid #12303f}#banner a{color:#7ff6ff}
 #hint{position:fixed;left:50%;top:60px;transform:translateX(-50%);z-index:8;color:#4d6675;font-size:11px;letter-spacing:1px;pointer-events:none}
+/* PANTALLAS LATERALES (HUD tipo reactor): instrumentos a la izquierda, noticias a la derecha */
+.hud{position:fixed;top:64px;bottom:104px;width:266px;z-index:9;display:flex;flex-direction:column;
+  background:linear-gradient(180deg,#061420b0,#04090fb0);border:1px solid #14414f;border-radius:4px;
+  box-shadow:0 0 30px #0008,inset 0 0 40px #0a2b3a30;backdrop-filter:blur(2px);
+  opacity:0;transform:translateX(var(--slide,0));transition:opacity .6s var(--ease-out),transform .6s var(--ease-out)}
+.hud.in{opacity:1;transform:none}
+#hudL{left:16px;--slide:-24px}#hudR{right:16px;--slide:24px}
+.hud::before,.hud::after{content:'';position:absolute;width:12px;height:12px;border:1px solid #38e6ff88;pointer-events:none}
+.hud::before{top:-1px;left:-1px;border-right:0;border-bottom:0}
+.hud::after{bottom:-1px;right:-1px;border-left:0;border-top:0}
+.hudhd{display:flex;align-items:center;gap:8px;padding:8px 11px;border-bottom:1px solid #10333f;
+  font-size:9.5px;letter-spacing:2.4px;color:#5ad1e6;text-shadow:0 0 10px #38e6ff55}
+.hudhd .dot{width:5px;height:5px;border-radius:99px;background:#38e6ff;box-shadow:0 0 8px #38e6ff;animation:hb 2.2s ease-in-out infinite}
+@keyframes hb{0%,100%{opacity:.35}50%{opacity:1}}
+.hudhd .tf{margin-left:auto;color:#3d5a6b;letter-spacing:1px}
+.hudbody{flex:1;overflow:auto;padding:6px 8px;scrollbar-width:thin}
+.hudbody::-webkit-scrollbar{width:5px}.hudbody::-webkit-scrollbar-thumb{background:#12414f;border-radius:9px}
+.irow{display:grid;grid-template-columns:1fr auto;gap:2px 8px;align-items:center;cursor:pointer;
+  padding:7px 8px;border:1px solid transparent;border-left:2px solid #1b3d4d;border-radius:3px;margin-bottom:4px;
+  transition:background .16s ease,border-color .16s ease}
+@media(hover:hover){.irow:hover{background:#0b2130aa;border-color:#1f6a83}}
+.irow .s{font-size:11.5px;color:#dff0ff;letter-spacing:1px}
+.irow .p{font-size:11.5px;color:#9fd8ea;text-align:right}
+.irow .ch{font-size:10px;text-align:right}
+.irow .sp{grid-column:1/-1;height:22px;margin-top:2px}
+.irow .sp svg{display:block;width:100%;height:22px;overflow:visible}
+.nrow{display:flex;gap:7px;align-items:baseline;padding:6px 8px;border-radius:3px;font-size:10.5px;margin-bottom:2px}
+.nrow.w{background:#0a2030aa;border-left:2px solid #38e6ff}
+.nrow .t{color:#3d5a6b;width:38px;flex:none}
+.nrow .d{width:6px;height:6px;border-radius:99px;flex:none;box-shadow:0 0 7px currentColor;align-self:center}
+.nrow .c{color:#9fd8ea;width:30px;flex:none;letter-spacing:.5px}
+.nrow .n{color:#7d97a8;line-height:1.35}
+.hudsub{display:flex;align-items:center;gap:8px;padding:7px 11px;border-top:1px solid #10333f;border-bottom:1px solid #0d2833;
+  font-size:9.5px;letter-spacing:2.4px;color:#5ad1e6;text-shadow:0 0 10px #38e6ff55}
+.hudsub .tf{margin-left:auto;color:#3d5a6b;letter-spacing:1px}
+.sesbox,.posbox{padding:6px 8px}
+.posbox{max-height:132px;overflow:auto}
+.srow{display:grid;grid-template-columns:66px 1fr 34px;gap:7px;align-items:center;padding:3px 2px;font-size:10px}
+.srow .sn{color:#7d97a8;letter-spacing:.6px;white-space:nowrap}
+.srow.on .sn{color:#dff0ff}
+.srow .bar{height:4px;border-radius:99px;background:#0d2430;position:relative;overflow:hidden}
+.srow .bar i{position:absolute;inset:0;width:0;background:linear-gradient(90deg,#1b7f96,#38e6ff);box-shadow:0 0 8px #38e6ff88}
+.srow .hh{color:#3d5a6b;font-size:9px;letter-spacing:.5px}
+.srow.on .hh{color:#5ad1e6}
+.prow{display:grid;grid-template-columns:auto 1fr auto;gap:6px;align-items:baseline;padding:5px 7px;margin-bottom:3px;
+  border-radius:3px;border-left:2px solid #1b3d4d;background:#0a1a26aa;font-size:10.5px;cursor:pointer}
+.prow .sd{font-size:9px;letter-spacing:1px;padding:1px 5px;border-radius:2px}
+.prow .sy{color:#dff0ff;letter-spacing:1px}
+.prow .vl{color:#5f7387;font-size:9.5px}
+.hudfoot{padding:6px 10px;border-top:1px solid #10333f;font-size:9px;letter-spacing:1.6px;color:#33505f;
+  display:flex;justify-content:space-between;cursor:pointer}
+@media(max-width:1180px){.hud{display:none}}
 #toast{position:fixed;left:50%;top:88px;z-index:40;background:#08192af5;border:1px solid #1a4a5f;border-radius:10px;padding:10px 16px;color:#dffaff;font-size:12.5px;pointer-events:none;opacity:0;transform:translateX(-50%) translateY(-6px);transition:opacity .18s var(--ease-out),transform .18s var(--ease-out)}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 </style></head>
@@ -186,6 +238,21 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 
 <div id="stage"><canvas id="corefx"></canvas><div id="tip"></div></div>
 
+<div id="hudL" class="hud">
+  <div class="hudhd"><span class="dot"></span>SESIONES<span class="tf" id="hud-ses-n"></span></div>
+  <div class="sesbox" id="hud-ses"></div>
+  <div class="hudsub"><span class="dot"></span>OPERANDO<span class="tf" id="hud-pos-n"></span></div>
+  <div class="posbox" id="hud-pos"><div class="empty" style="padding:4px 2px;font-size:10.5px">…</div></div>
+  <div class="hudsub"><span class="dot"></span>INSTRUMENTOS<span class="tf" id="hud-tf"></span></div>
+  <div class="hudbody" id="hud-inst"><div class="empty" style="padding:8px;font-size:11px">…</div></div>
+  <div class="hudfoot" onclick="$('#b-sistema').click()"><span>MERCADOS VIGILADOS</span><span id="hud-n">—</span></div>
+</div>
+<div id="hudR" class="hud">
+  <div class="hudhd"><span class="dot"></span>NOTICIAS · CALENDARIO<span class="tf" id="hud-imp"></span></div>
+  <div class="hudbody" id="hud-news"><div class="empty" style="padding:8px;font-size:11px">…</div></div>
+  <div class="hudfoot" onclick="openCalendar()"><span>PRÓXIMOS 7 DÍAS</span><span>VER TODO ▸</span></div>
+</div>
+
 <div id="drawer">
   <div class="hd"><div class="e" id="d-e">🔍</div>
     <div><h2 id="d-name">Agente</h2><div class="role" id="d-role"></div></div>
@@ -198,6 +265,7 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 <script>
 const $=s=>document.querySelector(s);
 let DATA=null, selected=null, halted=false;
+let OPENSYMS=new Set();          // pares con posición abierta (se marcan en el orbe)
 const norm=s=>(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
 function fmtTime(ts){ if(!ts)return"—"; const d=new Date(ts*1000);
   return d.toLocaleString('es',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); }
@@ -503,10 +571,96 @@ async function openMarket(sym,tf){ selected=null; tf=tf||(DATA&&DATA.core&&DATA.
   sp.forEach(r=> h+='<div class="cfg"><span>'+L('Soporte','Support')+'</span> <b style="color:#34d399">'+r+'</b></div>');
   if(sym==='DXY') h+='<div class="empty" style="margin-top:10px">DXY sintético, calculado de la canasta EUR, JPY, GBP, CAD, SEK, CHF.</div>';
   $('#d-body').innerHTML=h; }
+/* ---------- PANTALLAS LATERALES: instrumentos (izq) y noticias (der) ---------- */
+function spark(vals,col){ if(!vals||vals.length<2)return'';
+  const n=vals.length, lo=Math.min.apply(null,vals), hi=Math.max.apply(null,vals), rng=(hi-lo)||1;
+  const pts=vals.map((v,i)=>(i/(n-1)*100).toFixed(2)+','+(20-((v-lo)/rng)*18).toFixed(2)).join(' ');
+  const id='g'+Math.random().toString(36).slice(2,7);
+  return'<svg viewBox="0 0 100 22" preserveAspectRatio="none">'
+    +'<defs><linearGradient id="'+id+'" x1="0" y1="0" x2="0" y2="1">'
+    +'<stop offset="0" stop-color="'+col+'" stop-opacity=".28"/><stop offset="1" stop-color="'+col+'" stop-opacity="0"/></linearGradient></defs>'
+    +'<polygon points="0,22 '+pts+' 100,22" fill="url(#'+id+')"/>'
+    +'<polyline points="'+pts+'" fill="none" stroke="'+col+'" stroke-width="1" vector-effect="non-scaling-stroke"/></svg>'; }
+async function pollInstruments(){ const box=$('#hud-inst'); if(!box)return;
+  let d; try{ d=await (await fetch('/instruments')).json(); }catch(e){ return; }
+  $('#hud-tf').textContent=d.timeframe||'';
+  const rows=d.rows||[];
+  $('#hud-n').textContent=rows.length?rows.length:'—';
+  if(!rows.length){ box.innerHTML='<div class="empty" style="padding:8px;font-size:11px">'
+      +escapeHtml(d.reason||L('Sin datos todavía.','No data yet.'))+'</div>'; return; }
+  box.innerHTML=rows.map(r=>{ const up=r.change_pct>=0, col=up?'#34d399':'#ff5d73';
+    const vc=r.verdict==='compra'?'#34d399':(r.verdict==='venta'?'#ff5d73':'#5f7387');
+    return'<div class="irow" style="border-left-color:'+vc+'" onclick="openMarket(\''+r.symbol+'\')">'
+      +'<span class="s">'+escapeHtml(r.symbol)+'</span><span class="p">'+r.price+'</span>'
+      +'<span class="ch" style="color:'+vc+';font-size:9.5px;letter-spacing:1px">'+escapeHtml(String(r.verdict||'').toUpperCase())+'</span>'
+      +'<span class="ch" style="color:'+col+'">'+(up?'▲':'▼')+' '+Math.abs(r.change_pct).toFixed(2)+'%</span>'
+      +'<span class="sp">'+spark(r.spark,col)+'</span></div>'; }).join(''); }
+async function pollNews(){ const box=$('#hud-news'); if(!box)return;
+  let d; try{ d=await (await fetch('/calendar')).json(); }catch(e){ return; }
+  const ev=(d.events||[]).slice(0,26);
+  const hi=ev.filter(e=>String(e.impact||'').toLowerCase()==='high').length;
+  $('#hud-imp').textContent=hi?hi+' ALTO':'';
+  if(!ev.length){ box.innerHTML='<div class="empty" style="padding:8px;font-size:11px">'
+      +escapeHtml(d.error||L('Sin eventos en la ventana.','No events in the window.'))+'</div>'; return; }
+  const ic={high:'#ff5d73',medium:'#fbbf24',low:'#5ad1e6',holiday:'#8aa'};
+  let last='',h='';
+  ev.forEach(e=>{ const dt=new Date(e.ts*1000);
+    const day=dt.toLocaleDateString(LANG==='en'?'en':'es',{weekday:'short',day:'numeric',month:'short'});
+    if(day!==last){ h+='<div style="color:#3d5a6b;font-size:9px;letter-spacing:2px;margin:9px 0 4px;text-transform:uppercase">'+escapeHtml(day)+'</div>'; last=day; }
+    const col=ic[(e.impact||'low').toLowerCase()]||'#5ad1e6';
+    h+='<div class="nrow'+(e.watched?' w':'')+'"><span class="t">'+dt.toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'})+'</span>'
+      +'<span class="d" style="background:'+col+';color:'+col+'"></span>'
+      +'<span class="c">'+escapeHtml(String(e.currency||''))+'</span>'
+      +'<span class="n">'+escapeHtml(String(e.title||''))+'</span></div>'; });
+  box.innerHTML=h; }
+/* Sesiones: se calculan con la hora LOCAL de cada plaza (Intl ya aplica el horario
+   de verano), así no hay que tocar nada dos veces al año. */
+const SESSIONS=[{n:'SÍDNEY',tz:'Australia/Sydney',o:8,c:17},
+                {n:'TOKIO',tz:'Asia/Tokyo',o:9,c:18},
+                {n:'FRÁNCFORT',tz:'Europe/Berlin',o:8,c:17},
+                {n:'LONDRES',tz:'Europe/London',o:8,c:17},
+                {n:'N. YORK',tz:'America/New_York',o:8,c:17}];
+function tzNow(tz){ const p=new Intl.DateTimeFormat('en-GB',{timeZone:tz,hour:'2-digit',minute:'2-digit',
+    weekday:'short',hour12:false}).formatToParts(new Date()); const o={};
+  p.forEach(x=>o[x.type]=x.value); return {h:+o.hour%24+(+o.minute)/60, wd:o.weekday}; }
+function renderSessions(){ const box=$('#hud-ses'); if(!box)return; let open=0,h='';
+  SESSIONS.forEach(s=>{ const t=tzNow(s.tz), wknd=(t.wd==='Sat'||t.wd==='Sun');
+    const on=!wknd&&t.h>=s.o&&t.h<s.c; if(on)open++;
+    const p=on?Math.min(1,(t.h-s.o)/(s.c-s.o)):0;
+    const hh=String(Math.floor(t.h)).padStart(2,'0')+':'+String(Math.floor((t.h%1)*60)).padStart(2,'0');
+    h+='<div class="srow'+(on?' on':'')+'"><span class="sn">'+s.n+'</span>'
+      +'<span class="bar"><i style="width:'+(p*100).toFixed(1)+'%"></i></span>'
+      +'<span class="hh">'+(wknd?L('cerrado','closed'):hh)+'</span></div>'; });
+  box.innerHTML=h;
+  const n=$('#hud-ses-n');
+  if(n) n.textContent=open?open+' '+L('ABIERTAS','OPEN')+(open>1?' · SOLAPE':''):L('CERRADO','CLOSED'); }
+async function pollPositions(){ const box=$('#hud-pos'); if(!box)return;
+  let d; try{ d=await (await fetch('/positions')).json(); }catch(e){ return; }
+  const rows=Array.isArray(d)?d:[];
+  OPENSYMS=new Set(rows.map(p=>String(p.symbol||'').toUpperCase()));
+  const n=$('#hud-pos-n'); if(n) n.textContent=rows.length?rows.length+' '+L('ABIERTAS','OPEN'):'—';
+  if(!rows.length){ box.innerHTML='<div class="empty" style="padding:4px 2px;font-size:10.5px">'
+      +L('Ninguna posición abierta.','No open positions.')+'</div>'; return; }
+  box.innerHTML=rows.map(p=>{ const buy=String(p.side||'').toUpperCase().indexOf('BUY')>=0;
+    const col=buy?'#34d399':'#ff5d73', lots=(p.volume_units/100000);
+    return'<div class="prow" style="border-left-color:'+col+'" onclick="openMarket(\''+String(p.symbol||'')+'\')">'
+      +'<span class="sd" style="color:#02141b;background:'+col+'">'+(buy?'BUY':'SELL')+'</span>'
+      +'<span class="sy">'+escapeHtml(String(p.symbol||'—'))+'</span>'
+      +'<span class="vl">'+(lots>=0.01?lots.toFixed(2)+' lot':p.volume_units+' u')+' · '+ctxAgo(p.open_ts)+'</span>'
+      +'</div>'; }).join(''); }
+function hudStart(){ ['#hudL','#hudR'].forEach((s,i)=>setTimeout(()=>{const e=$(s);if(e)e.classList.add('in');},220+i*160));
+  renderSessions(); pollPositions(); pollInstruments(); pollNews();
+  setInterval(renderSessions,30000); setInterval(pollPositions,20000);
+  setInterval(pollInstruments,30000); setInterval(pollNews,300000); }
+
 /* ---------- TRADE CONTEXT: memoria inmutable de como se veia el mundo al decidir ---------- */
 let CTXF={symbol:'',outcome:''};
 function ctxColor(o){ o=String(o||''); if(o.indexOf('blocked')===0)return'#ff5d73';
   if(o==='low_score'||o==='rejected')return'#fbbf24'; if(o==='alerted'||o==='taken')return'#34d399'; return'#9d8cff'; }
+/* El bot es C#: sus confluencias pueden venir como {Label:…}, {label:…} o texto suelto. */
+function sigLabel(s){ if(s==null)return'?'; if(typeof s!=='object')return String(s);
+  for(const k of ['Label','label','Name','name','Type','type']) if(s[k])return String(s[k]);
+  const v=Object.values(s).find(x=>typeof x==='string'); return v||JSON.stringify(s).slice(0,28); }
 function ctxAgo(ts){ if(!ts)return''; const s=Math.max(0,Date.now()/1000-ts);
   if(s<90)return Math.round(s)+'s'; if(s<5400)return Math.round(s/60)+'m';
   if(s<172800)return Math.round(s/3600)+'h'; return Math.round(s/86400)+'d'; }
@@ -551,7 +705,7 @@ async function openTradeContext(sym,out){ selected=null;
       +'<span style="margin-left:auto;color:'+col+';font-size:11px">'+escapeHtml(String(r.outcome||''))+'</span>'
       +'<span style="color:#5f7387;font-size:11px">'+ctxAgo(r.ts)+'</span></div>'
       +(det?'<div style="color:#8aa;font-size:11px;margin-top:4px">'+escapeHtml(det)+'</div>':'')
-      +(sig.length?'<div style="color:#6f8aa5;font-size:10.5px;margin-top:4px">'+escapeHtml(sig.slice(0,6).map(s=>(s&&(s.label||s.name))||s).join(' · '))+(sig.length>6?' +'+(sig.length-6):'')+'</div>':'')
+      +(sig.length?'<div style="color:#6f8aa5;font-size:10.5px;margin-top:4px">'+escapeHtml(sig.slice(0,6).map(sigLabel).join(' · '))+(sig.length>6?' +'+(sig.length-6):'')+'</div>':'')
       +'<div style="margin-top:6px"><span style="cursor:pointer;color:#5ad1e6;font-size:11px" onclick="ctxRaw('+r.id+')">'+L('ver todo lo guardado ▾','see everything stored ▾')+'</span></div></div>'; });
   $('#d-body').innerHTML=h; }
 async function ctxRaw(id){ const box=$('#ctx'+id); if(!box)return;
@@ -654,7 +808,7 @@ function speakStatus(){ if(!DATA){ speak('Aún cargando.'); return; } const c=DA
   speak('Modo '+(c.dry_run?'papel':'real')+', '+conn+'. Balance '+(c.balance!=null?c.balance:'desconocido')+'. '+act+' de '+DATA.agents.length+' agentes activos, '+SIR+'.'); }
 
 $('#activate').onclick=()=>{ $('#boot').classList.add('hide'); setTimeout(()=>$('#boot').style.display='none',700);
-  loadVoices(); speak(L('Sistemas en línea, '+SIR+'. Toca Oye Hydra cuando quieras activar el micrófono.','Systems online, '+SIR+'. Tap Oye Hydra to enable the mic.'));
+  hudStart(); loadVoices(); speak(L('Sistemas en línea, '+SIR+'. Toca Oye Hydra cuando quieras activar el micrófono.','Systems online, '+SIR+'. Tap Oye Hydra to enable the mic.'));
   if(SR) setV('Toca 👂 Oye Hydra para activar la voz');
   if(!ttsServer) setTimeout(()=>toast('💡 Voz neural apagada (suena genérica). Actívala: fly secrets set TTS_PROVIDER=elevenlabs TTS_API_KEY=… ELEVENLABS_VOICE_ID=…'),2500); };
 
@@ -673,7 +827,9 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
   const cv=$('#corefx'), g=cv.getContext('2d');
   let W=0,H=0,CX=0,CY=0,S=0,Rh=0,Rlab=0,Rctx=0, mx=-9999,my=-9999, hoverKey=null, hoverC=false, dirty=true;
   const dpr=Math.min(window.devicePixelRatio||1,1.5);
-  function rs(){ W=cv.clientWidth||innerWidth; H=cv.clientHeight||innerHeight; cv.width=W*dpr; cv.height=H*dpr; g.setTransform(dpr,0,0,dpr,0,0); CX=W/2; CY=H*0.53; S=Math.min(W,H); Rh=S*0.25; Rlab=S*0.44; Rctx=S*0.385; dirty=true; }
+  function rs(){ W=cv.clientWidth||innerWidth; H=cv.clientHeight||innerHeight; cv.width=W*dpr; cv.height=H*dpr; g.setTransform(dpr,0,0,dpr,0,0); CX=W/2; CY=H*0.53;
+    const side=W>1180?296:16;                       // deja aire para las pantallas laterales
+    S=Math.max(260,Math.min(W-side*2,H)); Rh=S*0.25; Rlab=S*0.44; Rctx=S*0.385; dirty=true; }
   rs(); addEventListener('resize',rs);
   function stateOf(k){ const a=agentByKey(k); return a?a.state:'idle'; }
   function entriesOf(k){ const a=agentByKey(k); return a&&a.entries?a.entries.length:0; }
@@ -832,7 +988,9 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       a.x=CX+c*Rh; a.y=CY+s*Rh; a.lx=a.x+c*24; a.ly=a.y+s*24;
       a.lalign=c>0.35?'left':(c<-0.35?'right':'center'); }
     hoverKey=null; let hd=1e9; for(const a of A){ const dx=a.x-mx,dy=a.y-my,d=dx*dx+dy*dy; if(d<1100&&d<hd){hd=d;hoverKey=a.key;} }
-    { const dx=CX-mx,dy=CY-my,d=dx*dx+dy*dy; if(d<729&&d<hd){ hd=d; hoverKey='__hydra'; } }   // núcleo Hydra (27px)
+    { const hr=Math.max(22,S*0.055)*1.35, dx=CX-mx,dy=CY-my,d=dx*dx+dy*dy;                  // reactor Hydra
+      if(d<hr*hr&&d<hd){ hd=d; hoverKey='__hydra'; } }
+
     cv.style.cursor=hoverKey?'pointer':'default';
     const sel=(typeof selected!=='undefined')?selected:null;         // agente abierto (por click)
     if(sel!==curOpen){ curOpen=sel; openAt=now; }
@@ -886,12 +1044,22 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       g.fillStyle='rgba('+col+','+al+')'; g.beginPath(); g.arc(sx,sy,sz,0,7); g.fill(); }
     // MERCADOS girando dentro del orbe (oro, plata, petróleo, índices…)
     hoverM=-1;
+    // El reactor ocupa el centro, así que los mercados se empujan a una corona:
+    // se conserva la dirección de la esfera pero nunca caen sobre el núcleo.
+    const mkIn=Math.max(22,S*0.055)*1.9, mkOut=Rorb*0.86;
     for(let i=0;i<MK.length;i++){ const m=MK[i]; const X=m.x3*ca-m.z3*sa, Z=m.x3*sa+m.z3*ca;
-      m.sx=CX+X*Rorb*0.8; m.sy=CY+m.y3*Rorb*0.8; const depth=(Z+1)/2, hm=hoverM===-1&&Math.abs(m.sx-mx)<26&&Math.abs(m.sy-my)<20;
+      const pr2=Math.hypot(X,m.y3)||1e-6, rr=mkIn+(mkOut-mkIn)*Math.min(1,pr2);
+      m.sx=CX+X/pr2*rr; m.sy=CY+m.y3/pr2*rr; const depth=(Z+1)/2, hm=hoverM===-1&&Math.abs(m.sx-mx)<26&&Math.abs(m.sy-my)<20;
       if(hm)hoverM=i;
       const pu=0.75+0.25*Math.sin(now*0.0035+m.ph), R=(2.6+depth*2.6)*(hm?1.5:1);
       g.shadowColor='rgba('+m.col+',1)'; g.shadowBlur=(8+depth*10)*(hm?1.8:1);
       g.fillStyle='rgba('+m.col+','+((0.45+depth*0.5)*pu)+')'; g.beginPath(); g.arc(m.sx,m.sy,R,0,7); g.fill(); g.shadowBlur=0;
+      // par con posición abierta: anillo que late (se ve de un vistazo qué está operando)
+      if(OPENSYMS.has(m.sym)){ const bp=(now*0.0011)%1;
+        g.strokeStyle='rgba(52,211,153,'+(0.55*(1-bp))+')'; g.lineWidth=1.4;
+        g.beginPath(); g.arc(m.sx,m.sy,R+2+bp*9,0,7); g.stroke();
+        g.strokeStyle='rgba(52,211,153,0.85)'; g.lineWidth=1.2;
+        g.beginPath(); g.arc(m.sx,m.sy,R+2.4,0,7); g.stroke(); }
       g.font=(hm?'700 10px':'9px')+' system-ui,sans-serif'; g.textAlign='center'; g.textBaseline='top';
       g.fillStyle='rgba('+m.col+','+(hm?1:(0.30+depth*0.55))+')'; g.fillText(m.name,m.sx,m.sy+R+3); }
     if(hoverM>=0) cv.style.cursor='pointer';
@@ -912,13 +1080,35 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       g.strokeStyle=hot?'rgba(127,246,255,0.85)':'rgba(90,150,180,0.13)'; g.lineWidth=hot?1.7:1;
       g.beginPath(); g.moveTo(a.x,a.y); g.quadraticCurveTo(cx,cy,b.x,b.y); g.stroke();
       if(hot){ const p=qpt([a.x,a.y],[cx,cy],[b.x,b.y],(now*0.0006)%1); g.fillStyle='rgba(190,250,255,1)'; g.beginPath(); g.arc(p[0],p[1],2.2,0,7); g.fill(); } }
-    // círculos de agente: el ABIERTO (click) crece grande; el señalado un poco
-    for(const a of A){ const st=stateOf(a.key), h=a.key===hoverKey, o=a.key===sel, on=st==='active'||st==='alert', dim=(hoverKey&&!h&&!o);
-      const R=o?(16+grow*30):(h?19:14);   // al hacer click, el orbe del agente se agranda
+    // MÓDULOS: cada agente es un dial circular girando alrededor del reactor
+    for(let ai=0;ai<A.length;ai++){ const a=A[ai];
+      const st=stateOf(a.key), h=a.key===hoverKey, o=a.key===sel, on=st==='active'||st==='alert', dim=(hoverKey&&!h&&!o);
+      const R=o?(17+grow*30):(h?20:15);          // al hacer click, el módulo se agranda
+      const al=dim?0.42:1, load=Math.min(1,entriesOf(a.key)/8), spin=now*0.00022*(ai%2?-1:1)+ai;
+      // 1) disco interno: el módulo tiene "profundidad"
+      const dg=g.createRadialGradient(a.x,a.y,0,a.x,a.y,R);
+      dg.addColorStop(0,'rgba('+a.rgb+','+(0.16*al)+')'); dg.addColorStop(1,'rgba('+a.rgb+',0)');
+      g.fillStyle=dg; g.beginPath(); g.arc(a.x,a.y,R,0,7); g.fill();
+      // 2) anillo exterior de marcas (12 ticks que giran, como un instrumento)
+      g.strokeStyle='rgba('+a.rgb+','+(0.30*al)+')'; g.lineWidth=1;
+      g.beginPath(); for(let k=0;k<12;k++){ const an=spin+k*Math.PI/6, lg=(k%3===0)?R*0.20:R*0.11;
+        g.moveTo(a.x+Math.cos(an)*(R*1.24),a.y+Math.sin(an)*(R*1.24));
+        g.lineTo(a.x+Math.cos(an)*(R*1.24+lg),a.y+Math.sin(an)*(R*1.24+lg)); } g.stroke();
+      // 3) arco medidor: cuánta actividad lleva el agente hoy
+      if(load>0.02){ g.strokeStyle='rgba('+a.rgb+','+(0.75*al)+')'; g.lineWidth=2.2; g.lineCap='round';
+        g.beginPath(); g.arc(a.x,a.y,R*1.16,-Math.PI/2,-Math.PI/2+load*Math.PI*1.6); g.stroke(); g.lineCap='butt'; }
+      // 4) marco del módulo: anillo doble
       if(on||h||o){ g.shadowColor='rgba('+a.rgb+',1)'; g.shadowBlur=o?(18+grow*22):(h?22:12); } else g.shadowBlur=0;
-      g.fillStyle='#05090f'; g.beginPath(); g.arc(a.x,a.y,R,0,7); g.fill();
-      g.shadowBlur=0; g.lineWidth=(h||o)?2.4:1.7; g.strokeStyle='rgba('+a.rgb+','+(dim?0.45:((h||o)?1:0.88))+')'; g.beginPath(); g.arc(a.x,a.y,R,0,7); g.stroke();
-      if(st==='alert'){ g.strokeStyle='rgba(255,93,115,'+(0.5+0.5*Math.sin(now*0.006))+')'; g.lineWidth=2; g.beginPath(); g.arc(a.x,a.y,R+4,0,7); g.stroke(); }
+      g.lineWidth=(h||o)?2.4:1.7; g.strokeStyle='rgba('+a.rgb+','+((h||o)?1:0.88)*al+')';
+      g.beginPath(); g.arc(a.x,a.y,R,0,7); g.stroke(); g.shadowBlur=0;
+      g.lineWidth=1; g.strokeStyle='rgba('+a.rgb+','+(0.22*al)+')';
+      g.beginPath(); g.arc(a.x,a.y,R*0.80,0,7); g.stroke();
+      // 5) dos cortes en el marco (arriba y abajo) para que se lea como pieza, no como pelota
+      g.globalCompositeOperation='destination-out'; g.strokeStyle='#000'; g.lineWidth=(h||o)?3.4:2.7;
+      g.beginPath(); g.arc(a.x,a.y,R,-Math.PI/2-0.16,-Math.PI/2+0.16); g.stroke();
+      g.beginPath(); g.arc(a.x,a.y,R,Math.PI/2-0.16,Math.PI/2+0.16); g.stroke();
+      g.globalCompositeOperation='lighter';
+      if(st==='alert'){ g.strokeStyle='rgba(255,93,115,'+(0.5+0.5*Math.sin(now*0.006))+')'; g.lineWidth=2; g.beginPath(); g.arc(a.x,a.y,R*1.38,0,7); g.stroke(); }
       glyph(a.key,a.x,a.y,R*0.55,a.rgb,dim?0.5:0.98); }
     // ORBE DE MEMORIA (trade_context): gira fuera, al revés que los agentes.
     { const ca2=-now*0.000045, cc=Math.cos(ca2), ss=Math.sin(ca2);
@@ -945,23 +1135,50 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       g.font='9px system-ui,sans-serif'; g.textAlign='center'; g.textBaseline='top';
       g.fillStyle='rgba('+col+','+(hc?1:0.30+d*0.5)+')';
       g.fillText('CONTEXT'+(CTXO.n>0?' · '+CTXO.n:''),CTXO.sx,CTXO.sy+R+4); }
-    // emblema HYDRA (orquestador central) — encima del orbe, conectado a todos
-    const hyR=hyHover?26:22, hp=0.5+0.5*Math.sin(now*0.003), hyc=halted?'255,93,115':'127,246,255', em=halted?'255,150,165':'205,246,255';
-    g.shadowColor='rgba('+hyc+',1)'; g.shadowBlur=hyHover?32:20+flash*18;
-    g.fillStyle='#05090f'; g.beginPath(); g.arc(CX,CY,hyR,0,7); g.fill(); g.shadowBlur=0;
-    g.strokeStyle='rgba('+hyc+','+(0.7+0.3*hp)+')'; g.lineWidth=hyHover?2.6:2; g.beginPath(); g.arc(CX,CY,hyR,0,7); g.stroke();
-    // pentagrama de conexiones: 5 nodos interconectados + centro (alusión a Hydra conectando todo)
-    g.save(); g.translate(CX,CY); g.rotate(now*0.00025); g.lineJoin='round';
-    const pr=hyR*0.62, PTS=[]; for(let i=0;i<5;i++){ const an=-Math.PI/2+i*Math.PI*2/5; PTS.push([Math.cos(an)*pr,Math.sin(an)*pr]); }
-    g.strokeStyle='rgba('+em+',0.95)'; g.lineWidth=1.2; g.beginPath();
+    // REACTOR HYDRA: núcleo del sistema. Anillos concéntricos que giran en sentidos
+    // opuestos + triángulo interior; el pentágono (la marca) late en el centro.
+    const hyR=(hyHover?1.14:1)*Math.max(22,S*0.055), hp=0.5+0.5*Math.sin(now*0.003);
+    const hyc=halted?'255,93,115':'127,246,255', em=halted?'255,150,165':'205,246,255';
+    g.save(); g.translate(CX,CY); g.lineJoin='round';
+    // resplandor del núcleo (lo que hace que se lea como reactor y no como círculo)
+    const cg=g.createRadialGradient(0,0,0,0,0,hyR*1.9);
+    cg.addColorStop(0,'rgba('+em+','+(0.30+0.10*hp+flash*0.2)+')');
+    cg.addColorStop(0.45,'rgba('+hyc+',0.10)'); cg.addColorStop(1,'rgba(0,0,0,0)');
+    g.fillStyle=cg; g.beginPath(); g.arc(0,0,hyR*1.9,0,7); g.fill();
+    // anillo exterior de marcas: 48 ticks, gira despacio hacia la derecha
+    g.save(); g.rotate(now*0.00009);
+    g.strokeStyle='rgba('+hyc+',0.42)'; g.lineWidth=1; g.beginPath();
+    for(let k=0;k<48;k++){ const an=k*Math.PI/24, lg=(k%6===0)?hyR*0.20:hyR*0.09;
+      g.moveTo(Math.cos(an)*hyR*1.62,Math.sin(an)*hyR*1.62);
+      g.lineTo(Math.cos(an)*(hyR*1.62+lg),Math.sin(an)*(hyR*1.62+lg)); }
+    g.stroke(); g.restore();
+    // anillo segmentado: 6 arcos gruesos girando al revés (la "carcasa" del reactor)
+    g.save(); g.rotate(-now*0.00016);
+    g.strokeStyle='rgba('+hyc+','+(0.55+0.25*hp)+')'; g.lineWidth=Math.max(2,hyR*0.09); g.lineCap='butt';
+    for(let k=0;k<6;k++){ const a0=k*Math.PI/3+0.16; g.beginPath(); g.arc(0,0,hyR*1.34,a0,a0+Math.PI/3-0.32); g.stroke(); }
+    g.restore();
+    // anillo interior fino + triángulo (el corazón del reactor), giro muy lento
+    g.strokeStyle='rgba('+hyc+',0.75)'; g.lineWidth=1.6; g.beginPath(); g.arc(0,0,hyR,0,7); g.stroke();
+    g.save(); g.rotate(now*0.00006);
+    g.strokeStyle='rgba('+em+','+(0.55+0.35*hp)+')'; g.lineWidth=1.8; g.beginPath();
+    for(let k=0;k<3;k++){ const an=-Math.PI/2+k*Math.PI*2/3, x=Math.cos(an)*hyR*0.86, y=Math.sin(an)*hyR*0.86;
+      if(k)g.lineTo(x,y); else g.moveTo(x,y); }
+    g.closePath(); g.stroke(); g.restore();
+    // pentágono de la marca, pequeño y tenue: textura del núcleo, no protagonista
+    g.save(); g.rotate(now*0.00025);
+    const pr=hyR*0.34, PTS=[]; for(let i=0;i<5;i++){ const an=-Math.PI/2+i*Math.PI*2/5; PTS.push([Math.cos(an)*pr,Math.sin(an)*pr]); }
+    g.strokeStyle='rgba('+em+',0.42)'; g.lineWidth=1; g.beginPath();
     for(let i=0;i<5;i++) for(let j=i+1;j<5;j++){ g.moveTo(PTS[i][0],PTS[i][1]); g.lineTo(PTS[j][0],PTS[j][1]); }
     g.stroke();
-    g.strokeStyle='rgba('+em+',0.5)'; g.lineWidth=1; g.beginPath();
-    for(const p of PTS){ g.moveTo(0,0); g.lineTo(p[0],p[1]); } g.stroke();
-    g.fillStyle='rgba('+em+',1)'; for(const p of PTS){ g.beginPath(); g.arc(p[0],p[1],2.1,0,7); g.fill(); }
-    g.beginPath(); g.arc(0,0,2.8,0,7); g.fill();
+    g.fillStyle='rgba('+em+',0.8)'; for(const p of PTS){ g.beginPath(); g.arc(p[0],p[1],1.5,0,7); g.fill(); }
+    g.shadowColor='rgba('+em+',1)'; g.shadowBlur=14+flash*20;
+    g.beginPath(); g.arc(0,0,3.2+0.6*hp,0,7); g.fill(); g.shadowBlur=0;
     g.restore();
-    g.font='700 10px system-ui,sans-serif'; g.textAlign='center'; g.textBaseline='middle'; g.fillStyle='rgba('+em+',0.95)'; g.fillText('HYDRA',CX,CY+hyR+11);
+    g.font='700 10px system-ui,sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+    g.fillStyle='rgba('+em+',0.95)'; g.fillText('HYDRA',0,hyR*1.62+22);
+    g.font='8px system-ui,sans-serif'; g.fillStyle='rgba('+hyc+',0.5)';
+    g.fillText(halted?'DETENIDO':'REACTOR EN LÍNEA',0,hyR*1.62+34);
+    g.restore();
     // etiquetas (nombres): SOLO del agente señalado o abierto (pantalla más limpia)
     g.font='11px system-ui,sans-serif'; g.textBaseline='middle';
     for(const a of A){ if(a.key!==hoverKey&&a.key!==sel) continue; g.textAlign=a.lalign; g.fillStyle='rgba(220,240,250,0.96)'; g.fillText(a.name.toUpperCase(),a.lx,a.ly); }
