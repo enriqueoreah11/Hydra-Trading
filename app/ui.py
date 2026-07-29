@@ -9,9 +9,9 @@ BRAIN_HTML = r"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>HYDRA · núcleo</title>
-<link rel="icon" type="image/png" href="/static/favicon.png">
-<link rel="apple-touch-icon" href="/static/icon-180.png">
-<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" href="/static/favicon.png?v=3">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/icon-180.png?v=3">
+<link rel="manifest" href="/manifest.webmanifest?v=3">
 <meta name="theme-color" content="#04070e">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">

@@ -39,15 +39,27 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
     if _static.is_dir():
         app.mount("/static", StaticFiles(directory=str(_static)), name="static")
 
+    ICON_V = "3"          # súbelo cada vez que cambie el icono
+
     @app.get("/manifest.webmanifest")
     async def manifest():
+        # ICON_V rompe la caché: el sistema operativo guarda el icono de la pantalla
+        # de inicio con mucha fuerza y sin esto seguiría enseñando el viejo.
         return JSONResponse({
             "name": "HYDRA Trading", "short_name": "HYDRA", "start_url": "/",
             "display": "standalone", "background_color": "#04070e", "theme_color": "#04070e",
+            "id": "/", "scope": "/",
             "icons": [
-                {"src": "/static/icon-180.png", "sizes": "180x180", "type": "image/png"},
-                {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png",
-                 "purpose": "any maskable"},
+                # "any": ocupa todo el cuadro. "maskable": va con aire porque
+                # Android lo recorta a un círculo y se comería las puntas.
+                {"src": f"/static/icon-192.png?v={ICON_V}", "sizes": "192x192",
+                 "type": "image/png", "purpose": "any"},
+                {"src": f"/static/icon-512.png?v={ICON_V}", "sizes": "512x512",
+                 "type": "image/png", "purpose": "any"},
+                {"src": f"/static/icon-maskable-192.png?v={ICON_V}", "sizes": "192x192",
+                 "type": "image/png", "purpose": "maskable"},
+                {"src": f"/static/icon-maskable-512.png?v={ICON_V}", "sizes": "512x512",
+                 "type": "image/png", "purpose": "maskable"},
             ],
         })
     # aplica los parámetros y claves que el usuario haya ajustado desde la UI (persisten en el volumen)
