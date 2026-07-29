@@ -306,7 +306,8 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 const $=s=>document.querySelector(s);
 let DATA=null, selected=null, halted=false;
 let OPENSYMS=new Set();          // pares con posición abierta (se marcan en verde)
-let INSTR=[];                    // instrumentos vigilados: alimentan el tercer anillo
+let INSTR=[];                    // precios de /instruments
+let RING3S=[];                   // el anillo exterior tal como se dibuja
 const norm=s=>(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
 function fmtTime(ts){ if(!ts)return"—"; const d=new Date(ts*1000);
   return d.toLocaleString('es',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); }
@@ -1063,7 +1064,7 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
   window.ctxCaptured=()=>{ CTXO.pulse=performance.now(); pollCtx(); };
   let A=[], byKey={}, curOpen=null, openAt=0;
   function build(){
-    const ags=DATA?DATA.agents:[], N=ags.length||1;
+    const ags=DATA?DATA.agents:[], N=(ags.length||1)+1;   // +1: el modulo trade_context
     A=ags.map((a,i)=>{ const baseAng=-Math.PI/2 + i/N*Math.PI*2;
       const extra=Math.min(2,(entriesOf(a.key)/4)|0);
       const t=makeTree((i+1)*131+7,extra), sg=t.segs;
@@ -1075,6 +1076,7 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       for(let s=0;s<ns;s++){ const seg=roots.length?roots[(Math.random()*roots.length)|0]:0; sparks.push({seg,t:Math.random(),sp:0.012+Math.random()*0.020}); }
       return {key:a.key,name:a.name,emoji:a.emoji,role:a.role,baseAng,x:CX,y:CY,ang:baseAng,lx:CX,ly:CY,lalign:'center',rgb:hx2(PAL[i%PAL.length]),segs:sg,leaves:t.leaves,roots,next,sparks}; });
     byKey={}; A.forEach(a=>byKey[a.key]=a);
+    CTXO.baseAng=-Math.PI/2 + (ags.length||1)/N*Math.PI*2;   // ultima plaza del anillo
     dirty=false;
   }
   function qpt(a,c,b,t){ const u=1-t; return [u*u*a[0]+2*u*t*c[0]+t*t*b[0], u*u*a[1]+2*u*t*c[1]+t*t*b[1]]; }
@@ -1083,7 +1085,7 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
   function openHydra(){ const names=(DATA?DATA.agents:[]).map(a=>a.emoji+' '+a.name).join(' · ');
     openInfo('🐉 HYDRA · orquestador','<p class="role">El núcleo que coordina a todos los agentes: recibe sus señales, decide y ejecuta como un solo cerebro.</p><div class="empty">Controla a: '+names+'</div>');
     speak('Hydra en línea, '+SIR+'. Coordino a los '+(DATA?DATA.agents.length:0)+' agentes.'); }
-  cv.addEventListener('click',()=>{ if(hoverI>=0&&INSTR[hoverI]) openMarket(INSTR[hoverI].symbol); else if(hoverC) openTradeContext(); else if(hoverKey==='__hydra') openHydra(); else if(hoverKey) openAgent(hoverKey); else { speakStatus(); toast('HYDRA · '+(DATA?DATA.agents.length:0)+' agentes'); } });
+  cv.addEventListener('click',()=>{ if(hoverI>=0&&RING3S[hoverI]) openMarket(RING3S[hoverI].symbol); else if(hoverC) openTradeContext(); else if(hoverKey==='__hydra') openHydra(); else if(hoverKey) openAgent(hoverKey); else { speakStatus(); toast('HYDRA · '+(DATA?DATA.agents.length:0)+' agentes'); } });
   function frame(now){
     if(!DATA){ requestAnimationFrame(frame); return; }
     if(dirty||A.length!==(DATA.agents||[]).length) build();
@@ -1092,20 +1094,31 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     for(const a of A){ a.ang=a.baseAng+orb; const c=Math.cos(a.ang), s=Math.sin(a.ang);
       a.x=CX+c*Rh; a.y=CY+s*Rh; a.lx=a.x+c*24; a.ly=a.y+s*24;
       a.lalign=c>0.35?'left':(c<-0.35?'right':'center'); }
+    CTXO.ang=CTXO.baseAng+orb; CTXO.sx=CX+Math.cos(CTXO.ang)*Rh; CTXO.sy=CY+Math.sin(CTXO.ang)*Rh;
+    // RING = los agentes + el modulo de memoria, todos plazas del mismo anillo
+    const RING=A.concat([{key:'__ctx',name:'CONTEXT',rgb:'176,150,255',ang:CTXO.ang,ctx:true}]);
     // ANILLO DE MÓDULOS: una banda que gira alrededor del reactor, partida en
     // segmentos separados (uno por agente). Todo el cálculo es en polares.
-    const NSEG=Math.max(A.length,1), SEG=Math.PI*2/NSEG;
+    const NSEG=Math.max(RING.length,1), SEG=Math.PI*2/NSEG;
     const BAND=Math.max(22,Math.min(46,S*0.062)), GAP=Math.min(SEG*0.28,0.18);
     const RI=Rh-BAND/2, RO=Rh+BAND/2, SPAN=SEG-GAP;
-    hoverKey=null; let hd=1e9;
+    hoverKey=null; hoverC=false; let hd=1e9;
     { const mr=Math.hypot(mx-CX,my-CY), ma=Math.atan2(my-CY,mx-CX);
-      if(mr>RI-4&&mr<RO+4) for(const a of A){
+      if(mr>RI-4&&mr<RO+4) for(const a of RING){
         let da=ma-a.ang; da=Math.atan2(Math.sin(da),Math.cos(da));      // diferencia angular corta
         if(Math.abs(da)<SPAN/2&&Math.abs(da)<hd){ hd=Math.abs(da); hoverKey=a.key; } } }
+    if(hoverKey==='__ctx'){ hoverC=true; hoverKey=null; }
     { const hr=Math.max(22,S*0.055)*1.35, dx=CX-mx,dy=CY-my;                                // reactor Hydra
       if(!hoverKey&&dx*dx+dy*dy<hr*hr) hoverKey='__hydra'; }
     // TERCER ANILLO: un segmento por instrumento, girando al revés que los módulos
-    const NI=INSTR.length, BAND3=Math.max(15,BAND*0.56);
+    // El anillo exterior existe siempre: se construye con los símbolos VIGILADOS
+    // y se va rellenando con precios cuando /instruments responde.
+    const WATCH=(DATA&&DATA.core&&DATA.core.symbols)||[];
+    const byS={}; INSTR.forEach(r=>{ byS[String(r.symbol||'').toUpperCase()]=r; });
+    const order=WATCH.map(x=>String(x).toUpperCase());
+    INSTR.forEach(r=>{ const k=String(r.symbol||'').toUpperCase(); if(order.indexOf(k)<0) order.push(k); });
+    const RING3=order.map(k=>byS[k]||{symbol:k}); RING3S=RING3;
+    const NI=RING3.length, BAND3=Math.max(15,BAND*0.56);
     const R3=RO+12+BAND3/2, RI3=R3-BAND3/2, RO3=R3+BAND3/2;
     const SEG3=NI?Math.PI*2/NI:0, GAP3=Math.min(SEG3*0.22,0.14), SPAN3=SEG3-GAP3;
     const ROT3=-now*0.000048;
@@ -1115,7 +1128,7 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
         let da=ma-(ROT3-Math.PI/2+i*SEG3); da=Math.atan2(Math.sin(da),Math.cos(da));
         if(Math.abs(da)<SPAN3/2){ hoverI=i; hoverKey=null; break; } } }
 
-    cv.style.cursor=hoverKey?'pointer':'default';
+    cv.style.cursor=(hoverKey||hoverC)?'pointer':'default';
     const sel=(typeof selected!=='undefined')?selected:null;         // agente abierto (por click)
     if(sel!==curOpen){ curOpen=sel; openAt=now; }
     const grow=sel?Math.min(1,(now-openAt)/450):0;
@@ -1156,10 +1169,6 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     // volumen del orbe (glow interno)
     const vg=g.createRadialGradient(CX,CY,Rorb*0.08,CX,CY,Rorb); vg.addColorStop(0,halted?'rgba(255,110,130,0.12)':'rgba(90,185,225,0.13)'); vg.addColorStop(0.7,'rgba(40,95,125,0.05)'); vg.addColorStop(1,'rgba(0,0,0,0)');
     g.fillStyle=vg; g.beginPath(); g.arc(CX,CY,Rorb,0,7); g.fill();
-    // órbita del TRADE CONTEXT: elipse inclinada, apenas visible (el camino del orbe)
-    { const ry=Rctx*Math.sin(CTXO.tilt)*0.55;
-      g.strokeStyle='rgba(176,150,255,0.10)'; g.lineWidth=1; g.setLineDash([5,9]);
-      g.beginPath(); g.ellipse(CX,CY,Rctx,ry,0,0,7); g.stroke(); g.setLineDash([]); }
     // conexiones de HYDRA (centro) → agentes. Base tenue + resaltado del agente señalado/abierto
     const hyHover=hoverKey==='__hydra';
     g.lineWidth=1; g.strokeStyle='rgba(90,150,180,0.12)'; g.beginPath();
@@ -1179,9 +1188,11 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       if(hot){ const p=qpt([a.x,a.y],[cx,cy],[b.x,b.y],(now*0.0006)%1); g.fillStyle='rgba(190,250,255,1)'; g.beginPath(); g.arc(p[0],p[1],2.2,0,7); g.fill(); } }
     // MÓDULOS: segmentos de un mismo anillo que gira sin parar alrededor del reactor.
     // Separados entre sí (GAP) para que se lean como piezas independientes.
-    for(let ai=0;ai<A.length;ai++){ const a=A[ai];
-      const st=stateOf(a.key), h=a.key===hoverKey, o=a.key===sel, on=st==='active'||st==='alert';
-      const dim=(hoverKey&&!h&&!o), al=dim?0.42:1, load=Math.min(1,entriesOf(a.key)/8);
+    for(let ai=0;ai<RING.length;ai++){ const a=RING[ai], isctx=!!a.ctx;
+      const st=isctx?'idle':stateOf(a.key), h=isctx?hoverC:(a.key===hoverKey);
+      const o=!isctx&&a.key===sel, on=st==='active'||st==='alert';
+      const dim=((hoverKey||hoverC)&&!h&&!o), al=dim?0.42:1;
+      const load=isctx?Math.min(1,CTXO.n/40):Math.min(1,entriesOf(a.key)/8);
       const push=o?grow*10:(h?4:0);                       // el abierto sale del anillo
       const ri=RI-push*0.35, ro=RO+push, a0=a.ang-SPAN/2, a1=a.ang+SPAN/2;
       const seg=()=>{ g.beginPath(); g.arc(CX,CY,ro,a0,a1); g.arc(CX,CY,ri,a1,a0,true); g.closePath(); };
@@ -1202,6 +1213,10 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       // 4) barra de actividad pegada al borde interior
       if(load>0.02){ g.strokeStyle='rgba('+a.rgb+','+(0.85*al)+')'; g.lineWidth=2.4; g.lineCap='round';
         g.beginPath(); g.arc(CX,CY,ri+3,a0+0.02,a0+0.02+SPAN*load*0.96); g.stroke(); g.lineCap='butt'; }
+      // pulso al llegar una captura nueva al modulo de memoria
+      if(isctx){ const pt=(now-CTXO.pulse)/1400;
+        if(pt>=0&&pt<1){ g.strokeStyle='rgba(200,180,255,'+(0.6*(1-pt))+')'; g.lineWidth=1.8;
+          g.beginPath(); g.arc(CX,CY,ro+2+pt*22,a0,a1); g.stroke(); } }
       // 5) marcas radiales en el borde exterior (detalle de instrumento)
       g.strokeStyle='rgba('+a.rgb+','+(0.30*al)+')'; g.lineWidth=1; g.beginPath();
       for(let k=1;k<5;k++){ const an=a0+SPAN*k/5;
@@ -1214,17 +1229,19 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       const cx2=CX+Math.cos(a.ang)*(ri+ro)/2, cy2=CY+Math.sin(a.ang)*(ri+ro)/2;
       g.save(); g.translate(cx2,cy2); g.rotate(a.ang+Math.PI/2+(Math.sin(a.ang)>0?Math.PI:0));
       const gr2=Math.min(9,BAND*0.26);
-      glyph(a.key,0,-BAND*0.16,gr2,a.rgb,dim?0.5:0.98);
+      if(isctx){ g.strokeStyle='rgba('+a.rgb+','+(dim?0.5:0.98)+')'; g.lineWidth=1.2;   // archivo: capas apiladas
+        for(let k=-1;k<=1;k++){ g.beginPath(); g.ellipse(0,-BAND*0.16+k*gr2*0.42,gr2*0.62,gr2*0.24,0,0,7); g.stroke(); } }
+      else glyph(a.key,0,-BAND*0.16,gr2,a.rgb,dim?0.5:0.98);
       g.font='700 '+Math.max(7,Math.min(9,BAND*0.22))+'px system-ui,sans-serif';
       g.textAlign='center'; g.textBaseline='top';
       g.fillStyle='rgba('+a.rgb+','+((h||o)?1:0.72)*al+')';
-      g.fillText(shortName(a.name),0,BAND*0.06);
+      g.fillText(isctx?('CONTEXT'+(CTXO.n>0?' '+CTXO.n:'')):shortName(a.name),0,BAND*0.06);
       g.restore(); }
     // TERCER ANILLO: instrumentos. Mismo lenguaje que los módulos, más fino y al revés.
-    for(let i=0;i<NI;i++){ const r=INSTR[i], sym=String(r.symbol||'').toUpperCase();
+    for(let i=0;i<NI;i++){ const r=RING3[i], sym=String(r.symbol||'').toUpperCase();
       const mid=ROT3-Math.PI/2+i*SEG3, b0=mid-SPAN3/2, b1=mid+SPAN3/2;
       const hi=hoverI===i, live=OPENSYMS.has(sym);
-      const col=live?'52,211,153':(r.verdict==='compra'?'52,211,153':(r.verdict==='venta'?'255,93,115':'110,150,175'));
+      const col=live?'52,211,153':(r.verdict==='compra'?'52,211,153':(r.verdict==='venta'?'255,93,115':(r.verdict?'110,150,175':'80,110,132')));
       const push=hi?3:0, ri=RI3, ro=RO3+push;
       const seg=()=>{ g.beginPath(); g.arc(CX,CY,ro,b0,b1); g.arc(CX,CY,ri,b1,b0,true); g.closePath(); };
       g.globalCompositeOperation='source-over';
@@ -1248,34 +1265,9 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       g.fillText(((window.mktName&&window.mktName(sym))||sym).slice(0,9),0,-BAND3*0.16);
       g.font=Math.max(6.5,Math.min(8,BAND3*0.28))+'px system-ui,sans-serif';
       g.fillStyle='rgba('+col+',0.6)';
-      g.fillText((r.change_pct>=0?'+':'')+(r.change_pct||0).toFixed(2)+'%',0,BAND3*0.28);
+      g.fillText(r.change_pct==null?'· · ·':((r.change_pct>=0?'+':'')+r.change_pct.toFixed(2)+'%'),0,BAND3*0.28);
       g.restore(); }
     if(hoverI>=0) cv.style.cursor='pointer';
-    // ORBE DE MEMORIA (trade_context): gira fuera, al revés que los agentes.
-    { const ca2=-now*0.000045, cc=Math.cos(ca2), ss=Math.sin(ca2);
-      const y3=ss*Math.sin(CTXO.tilt)*0.55, z3=ss*Math.cos(CTXO.tilt);
-      CTXO.sx=CX+cc*Rctx; CTXO.sy=CY+y3*Rctx; CTXO.depth=(z3+1)/2;
-      const d=CTXO.depth, hc=Math.abs(CTXO.sx-mx)<26&&Math.abs(CTXO.sy-my)<26;
-      hoverC=hc; if(hc) cv.style.cursor='pointer';
-      const R=(9+d*5)*(hc?1.45:1), col='176,150,255', bright=0.45+d*0.55;
-      // hilo tenue al núcleo: la memoria alimenta a Hydra
-      g.strokeStyle='rgba('+col+','+(0.05+d*0.10)+')'; g.lineWidth=1;
-      g.beginPath(); g.moveTo(CX,CY); g.lineTo(CTXO.sx,CTXO.sy); g.stroke();
-      // pulso al llegar una captura nueva: anillo que se expande y se apaga
-      const pt=(now-CTXO.pulse)/1400;
-      if(pt>=0&&pt<1){ g.strokeStyle='rgba(200,180,255,'+(0.55*(1-pt))+')'; g.lineWidth=1.6;
-        g.beginPath(); g.arc(CTXO.sx,CTXO.sy,R+pt*26,0,7); g.stroke(); }
-      g.shadowColor='rgba('+col+',1)'; g.shadowBlur=hc?26:12+d*10;
-      g.fillStyle='#06060f'; g.beginPath(); g.arc(CTXO.sx,CTXO.sy,R,0,7); g.fill(); g.shadowBlur=0;
-      g.strokeStyle='rgba('+col+','+bright+')'; g.lineWidth=hc?2.2:1.6;
-      g.beginPath(); g.arc(CTXO.sx,CTXO.sy,R,0,7); g.stroke();
-      // glifo: tres capas apiladas (un archivo que crece hacia abajo)
-      g.strokeStyle='rgba(214,200,255,'+bright+')'; g.lineWidth=1.2;
-      for(let k=-1;k<=1;k++){ const yy=CTXO.sy+k*R*0.42;
-        g.beginPath(); g.ellipse(CTXO.sx,yy,R*0.52,R*0.20,0,0,7); g.stroke(); }
-      g.font='9px system-ui,sans-serif'; g.textAlign='center'; g.textBaseline='top';
-      g.fillStyle='rgba('+col+','+(hc?1:0.30+d*0.5)+')';
-      g.fillText('CONTEXT'+(CTXO.n>0?' · '+CTXO.n:''),CTXO.sx,CTXO.sy+R+4); }
     // REACTOR HYDRA: núcleo del sistema. Anillos concéntricos que giran en sentidos
     // opuestos + triángulo interior; el pentágono (la marca) late en el centro.
     const hyR=(hyHover?1.14:1)*Math.max(22,S*0.055), hp=0.5+0.5*Math.sin(now*0.003);
@@ -1325,12 +1317,13 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     for(const a of A){ if(a.key!==hoverKey&&a.key!==sel) continue; g.textAlign=a.lalign; g.fillStyle='rgba(220,240,250,0.96)'; g.fillText(a.name.toUpperCase(),a.lx,a.ly); }
     // tooltip al pasar el cursor: rol + con quién colabora + pista de click
     const tip=$('#tip');
-    if(hoverI>=0&&INSTR[hoverI]){ const r=INSTR[hoverI], sym=String(r.symbol||'');
+    if(hoverI>=0&&RING3S[hoverI]){ const r=RING3S[hoverI], sym=String(r.symbol||'');
       const mid=ROT3-Math.PI/2+hoverI*SEG3;
       tip.style.left=(CX+Math.cos(mid)*(RO3+14))+'px'; tip.style.top=(CY+Math.sin(mid)*(RO3+14))+'px';
       const nm=(window.mktName&&window.mktName(sym))||'';
       tip.innerHTML='📈 <b>'+escapeHtml(sym)+'</b>'+(nm?' · '+escapeHtml(nm):'')
-        +'<br><span>'+r.price+' · '+(r.change_pct>=0?'+':'')+(r.change_pct||0).toFixed(2)+'% · '+escapeHtml(String(r.verdict||''))+'</span>'
+        +'<br><span>'+(r.price==null?L('esperando datos del broker','waiting for broker data')
+          :r.price+' · '+(r.change_pct>=0?'+':'')+r.change_pct.toFixed(2)+'% · '+escapeHtml(String(r.verdict||'')))+'</span>'
         +(OPENSYMS.has(sym.toUpperCase())?'<br><span style="color:#34d399">'+L('con posición abierta','position open')+'</span>':'')
         +'<br><span style="opacity:.7">'+L('clic para ver precio y técnicos','click for price & technicals')+'</span>';
       tip.classList.add('show'); }
