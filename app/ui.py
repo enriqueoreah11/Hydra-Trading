@@ -460,8 +460,11 @@ async function algoDir(){ const box=$('#algo-dir'); if(!box)return;
     +'<div class="wadd"><input id="algo-d" placeholder="/Users/tu/…/cAlgo/Sources/Robots" value="'
     +escapeHtml(String(d.dir||''))+'" style="text-transform:none">'
     +'<button class="btn" onclick="algoDirSet()">Guardar</button></div>';
-  if(!d.dir&&(d.guesses||[]).length) h+='<div class="phelp">Prueba con: '
-    +d.guesses.map(g=>'<code style="cursor:pointer" onclick="document.querySelector(\'#algo-d\').value=this.textContent">'+escapeHtml(g)+'</code>').join(' &nbsp; ')+'</div>';
+  if((d.guesses||[]).length){ const c=d.guess_counts||{};
+    h+='<div class="phelp">Detectadas en tu Mac (pulsa para usarla):<br>'
+      +d.guesses.map(g=>'<code style="cursor:pointer;display:inline-block;margin:2px 4px 2px 0" '
+        +'onclick="document.querySelector(\'#algo-d\').value=\''+g.replace(/'/g,"")+'\'">'
+        +escapeHtml(g)+(c[g]!=null?(' ('+c[g]+' .algo)'):'')+'</code>').join(' ')+'</div>'; }
   if(d.dir) h+='<div class="phelp" style="color:'+(d.exists?'#34d399':'#ff5d73')+'">'
     +(d.exists?('✅ '+d.n_found+' archivos .algo encontrados'):'❌ esa carpeta no existe')+'</div>';
   if(d.exists) h+='<button class="btn" onclick="algoScan()">⟳ Escanear e importar todos</button><div id="algo-scan" class="phelp"></div>';

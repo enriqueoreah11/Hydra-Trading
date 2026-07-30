@@ -980,12 +980,22 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         found = []
         if d and d.is_dir():
             found = [str(f.relative_to(d)) for f in sorted(d.rglob("*.algo"))][:200]
-        # rutas donde cTrader suele dejarlos, para sugerirlas
-        guesses = [str(Path.home() / "Documents" / "cAlgo" / "Sources" / "Robots"),
-                   str(Path.home() / "Documents" / "cAlgo" / "Robots")]
+        # Rutas donde cTrader deja los .algo según instalación. Se buscan de más
+        # concreta a más general: el escaneo es recursivo, así que apuntar a la
+        # raíz de cAlgo ya encuentra todo lo que haya debajo.
+        home = Path.home()
+        guesses = [home / "cAlgo", home / "cAlgo" / "Sources" / "Robots",
+                   home / "cAlgo" / "Robots",
+                   home / "Documents" / "cAlgo",
+                   home / "Documents" / "cAlgo" / "Sources" / "Robots",
+                   home / "Documents" / "cAlgo" / "Robots"]
+        real = [str(g) for g in guesses if g.is_dir()]
+        # cuántos .algo hay en cada sugerencia: así se ve de un vistazo cuál sirve
+        counts = {g: len(list(Path(g).rglob("*.algo"))) for g in real}
         return {"dir": str(d) if d else "", "exists": bool(d and d.is_dir()),
                 "found": found, "n_found": len(found),
-                "guesses": [g for g in guesses if Path(g).is_dir()] or guesses}
+                "guesses": real or [str(g) for g in guesses],
+                "guess_counts": counts}
 
     @app.post("/algo/dir")
     async def algo_dir_set(request: Request):
