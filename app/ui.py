@@ -128,6 +128,19 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 .prm{margin:11px 0}.prm label{display:block;font-size:12px;color:#cfe6f2;margin-bottom:4px}
 .prm input,.prm select{width:100%;background:#08131d;color:#dffaff;border:1px solid #17495d;border-radius:8px;padding:7px 9px;font-family:inherit;font-size:12.5px}
 .phelp{font-size:10.5px;color:#5f7387;margin-top:3px}
+/* El calendario completo sale por la IZQUIERDA: es el lado donde ya vive el
+   calendario de la sesion, asi la vista no salta de un borde al otro. */
+#calwin{position:fixed;top:0;left:0;height:100%;width:min(440px,94vw);z-index:33;
+  background:linear-gradient(180deg,#06121cf7,#04080ef7);border-right:1px solid #12414f;
+  box-shadow:20px 0 60px #000b;transform:translateX(-105%);
+  transition:transform .42s var(--ease-drawer);display:flex;flex-direction:column}
+#calwin.open{transform:none}
+#calwin .hd{padding:16px 18px;border-bottom:1px solid #103040;display:flex;gap:12px;align-items:center}
+#calwin .hd .e{display:flex;align-items:center}
+#calwin .hd h2{margin:0;font-size:15px;color:#e6f7ff;letter-spacing:1px}
+#calwin .hd .role{font-size:11px;color:var(--dim)}
+#calwin .hd .x{margin-left:auto;cursor:pointer;color:#5f7387;font-size:16px}
+#calwin .cbody{padding:12px 18px;overflow:auto}
 .cal-day{color:#7ff6ff;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:16px 0 7px;border-bottom:1px solid #10293650;padding-bottom:4px}
 .cal-row{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:8px;font-size:12px}
 .cal-row.watched{background:#0a1f2c88;border-left:2px solid #38e6ff}
@@ -212,6 +225,8 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 .srow2 b{color:#dff0ff;font-weight:600}
 .sysact{display:flex;flex-wrap:wrap;gap:6px;padding:8px 10px;border-top:1px solid #10333f}
 .sysact .btn{padding:6px 9px;font-size:9.5px;letter-spacing:1px}
+.bi{display:inline-flex;align-items:center;margin-right:5px;color:currentColor}
+.bi svg{display:block}
 .hudfoot{padding:6px 10px;border-top:1px solid #10333f;font-size:9px;letter-spacing:1.6px;color:#33505f;
   display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer}
 /* El calendario completo se abre desde AQUI, junto al calendario de la sesion, no
@@ -275,29 +290,29 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     </div>
     <div class="slbl">VOZ</div>
     <div class="ssec">
-      <button class="btn ghost" id="b-mic" title="Hablar (clic, o di “Oye Hydra”)">🎙️ Hablar</button>
-      <button class="btn ghost" id="b-wake" title="Palabra mágica">👂 Oye Hydra</button>
-      <button class="btn ghost" id="b-mute" title="Dejar de oír el micrófono ahora">🔇 No oír</button>
-      <button class="btn ghost" id="b-clap" title="Activar aplaudiendo 2 veces">👏 Aplauso</button>
-      <button class="btn ghost on" id="b-speak" title="Voz de respuesta">🔊 Voz</button>
-      <button class="btn ghost on" id="b-sfx" title="Sonidos de encendido, pausa y apagado" onclick="sfxToggle()">🎛️ Sonidos</button>
+      <button class="btn ghost" id="b-mic" title="Hablar (clic, o di “Oye Hydra”)"><span class="bi" data-ico="mic"></span>Hablar</button>
+      <button class="btn ghost" id="b-wake" title="Palabra mágica"><span class="bi" data-ico="ear"></span>Oye Hydra</button>
+      <button class="btn ghost" id="b-mute" title="Dejar de oír el micrófono ahora"><span class="bi" data-ico="mute"></span>No oír</button>
+      <button class="btn ghost" id="b-clap" title="Activar aplaudiendo 2 veces"><span class="bi" data-ico="clap"></span>Aplauso</button>
+      <button class="btn ghost on" id="b-speak" title="Voz de respuesta"><span class="bi" data-ico="speaker"></span>Voz</button>
+      <button class="btn ghost on" id="b-sfx" title="Sonidos de encendido, pausa y apagado" onclick="sfxToggle()"><span class="bi" data-ico="sliders"></span>Sonidos</button>
     </div>
     <div class="slbl">ACCIONES</div>
     <div class="ssec">
-      <button class="btn" id="b-demo">▶ Demo</button>
-      <button class="btn ghost" id="b-cal">📅 Calendario</button>
+      <button class="btn" id="b-demo"><span class="bi" data-ico="play"></span>Demo</button>
+      <button class="btn ghost" id="b-cal"><span class="bi" data-ico="cal"></span>Calendario</button>
       <button class="btn ghost" id="b-halt">⏸ Halt</button>
-      <button class="btn ghost" id="b-refresh">⟳ Actualizar</button>
+      <button class="btn ghost" id="b-refresh"><span class="bi" data-ico="refresh"></span>Actualizar</button>
     </div>
     <div class="slbl">CONEXIÓN Y CONFIGURACIÓN</div>
     <div id="sys-info"></div>
-    <div class="slbl">🔑 CLAVES (API KEYS)</div>
+    <div class="slbl"><span class="bi" data-ico="key"></span>CLAVES (API KEYS)</div>
     <div id="sys-keys"></div>
-    <div class="slbl">📓 MEMORIA (OBSIDIAN)</div>
+    <div class="slbl"><span class="bi" data-ico="book"></span>MEMORIA (OBSIDIAN)</div>
     <div id="sys-vault"></div>
-    <div class="slbl">🧪 PROPUESTAS (CLAUDE DESKTOP · MCP)</div>
+    <div class="slbl"><span class="bi" data-ico="flask"></span>PROPUESTAS (CLAUDE DESKTOP · MCP)</div>
     <div id="sys-props"></div>
-    <div class="slbl">🏁 FLOTA DE ESTRATEGIAS</div>
+    <div class="slbl"><span class="bi" data-ico="flag"></span>FLOTA DE ESTRATEGIAS</div>
     <div id="sys-fleet"></div>
   </div>
 </div>
@@ -317,6 +332,13 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
       oninput="botFind(this.value)" style="text-transform:none"></div>
     <div id="bot-body"><div class="empty">&hellip;</div></div>
   </div>
+</div>
+
+<div id="calwin">
+  <div class="hd"><div class="e" id="cw-icon"></div>
+    <div><h2>CALENDARIO</h2><div class="role">Pr&oacute;ximos 7 d&iacute;as &middot; todas las divisas</div></div>
+    <div class="x" onclick="closeCalWin()">&#10005;</div></div>
+  <div class="cbody" id="cw-body"><div class="empty">&hellip;</div></div>
 </div>
 
 <div id="instwin" class="modalwin">
@@ -342,7 +364,7 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     <div class="hudhd"><span class="dot"></span>CALENDARIO<span class="tf" id="hud-imp"></span></div>
     <div class="hudbody" id="hud-news"><div class="empty" style="padding:8px;font-size:11px">…</div></div>
     <div class="hudfoot"><span id="hud-calses">SESIÓN ACTIVA</span>
-      <button class="btn ghost calfull" onclick="openCalendar()">&#128197; VERSI&Oacute;N EXTENDIDA &#9656;</button></div>
+      <button class="btn ghost calfull" onclick="openCalendar()"><span id="calbtn-ic"></span>VERSI&Oacute;N EXTENDIDA &#9656;</button></div>
   </div>
 </div>
 
@@ -371,8 +393,8 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
   <div id="hudA" class="hud">
     <div class="hudhd"><span class="dot"></span>CONFIGURACION<span class="tf" id="hud-tf"></span></div>
     <div class="sysact">
-      <button class="btn ghost" id="hud-halt" onclick="doHalt()">&#9208; HALT</button>
-      <button class="btn ghost" id="b-sistema" title="Voz, claves, instrumentos y flota">&#9881; SISTEMA</button>
+      <button class="btn ghost" id="hud-halt" onclick="doHalt()"><span class="bi" id="ic-halt"></span>HALT</button>
+      <button class="btn ghost" id="b-sistema" title="Voz, claves, instrumentos y flota"><span class="bi" id="ic-sys"></span>SISTEMA</button>
     </div>
   </div>
 </div>
@@ -405,7 +427,8 @@ function renderCore(c){
   $('#c-conn').innerHTML=c.connected?'conexión <b style="color:#34d399">viva</b>':(c.oauth_ok?'conexión <b style="color:#fbbf24">esperando</b>':'conexión <b style="color:#ff5d73">sin cTrader</b>');
   $('#c-bal').innerHTML='balance <b>'+(c.balance!=null?c.balance:'—')+'</b>';
   $('#c-pb').innerHTML='playbook <b>v'+c.playbook_version+'</b>';
-  $('#b-halt').textContent=c.halted?'▶ RESUME':'⏸ HALT';
+  $('#b-halt').innerHTML='<span class="bi">'+ICO(c.halted?'play':'pause',13)+'</span>'
+    +(c.halted?'RESUME':'HALT');
   {const bc=$('#b-cal'); if(bc) bc.style.display='';}
   {const bs=$('#b-sfx'); if(bs) bs.classList.toggle('on',sfxOn);}
   if(c.voice_enabled===false)['b-mic','b-wake','b-clap','b-speak'].forEach(id=>{const e=$('#'+id);if(e)e.style.display='none';});
@@ -517,7 +540,7 @@ async function renderBots(tgt){ const box=$(tgt||'#mb-work'); if(!box)return;
   // el seguimiento por etiqueta va al FINAL: sirve aunque no subas ningun .algo
   h+='<div class="slbl" style="margin:16px 0 4px">BOTS EN LA CUENTA (por etiqueta)</div>'
     +'<div class="phelp">Esto sale de tus operaciones reales, no del bot: funciona con <b>cualquier</b> bot sin tocarlo, aunque no lo hayas subido.</div>'
-    +'<button class="btn ghost" onclick="botsLive()">⟳ Ver qué opera cada bot</button><div id="bots-live"></div>';
+    +'<button class="btn ghost" onclick="botsLive()">'+ICO('refresh',12)+' Ver qué opera cada bot</button><div id="bots-live"></div>';
   box.innerHTML=h;
   algoDir();
   if(BOTSEL) botBody(); }
@@ -547,8 +570,8 @@ async function algoDir(){ const box=$('#algo-dir'); if(!box)return;
               :'❌ esa carpeta no existe')+'</div>';
   if(d.exists) h+='<div id="algo-pick"></div>'
     +'<div class="ssec" style="margin:6px 0">'
-    +'<button class="btn ghost" style="padding:5px 10px" onclick="mbScan()">⟳ Refrescar los míos</button>'
-    +'<button class="btn ghost" style="padding:5px 10px" onclick="botsLive()">📊 Qué opera cada bot</button>'
+    +'<button class="btn ghost" style="padding:5px 10px" onclick="mbScan()">'+ICO('refresh',12)+' Refrescar los míos</button>'
+    +'<button class="btn ghost" style="padding:5px 10px" onclick="botsLive()">'+ICO('bars',12)+' Qué opera cada bot</button>'
     +'</div>'
     +'<div class="phelp" style="opacity:.75">Los que elijas quedan guardados y se refrescan solos cada '
     +(d.watch_minutes||10)+' min al recompilarlos. Si de verdad los quieres TODOS: '
@@ -665,9 +688,9 @@ async function botOpen(f){ BOTSEL=f; BOTQ='';
         +'Hydra lo sigue igual por sus operaciones reales en la cuenta.')
     +'</div>'+chartNote(b);
   $('#bw-head').innerHTML=head;
-  $('#bw-acts').innerHTML='<button class="btn" onclick="botExplain(false)">🧠 Explícame la estrategia</button>'
-    +'<button class="btn ghost" onclick="botExplain(true)">↻ Rehacer</button>'
-    +'<button class="btn ghost" onclick="replicaRun()">⚖️ ¿La replica Hydra?</button>'
+  $('#bw-acts').innerHTML='<button class="btn" onclick="botExplain(false)">'+ICO('bolt',12)+' Explícame la estrategia</button>'
+    +'<button class="btn ghost" onclick="botExplain(true)">'+ICO('refresh',12)+' Rehacer</button>'
+    +'<button class="btn ghost" onclick="replicaRun()">'+ICO('bars',12)+' ¿La replica Hydra?</button>'
     +'<button class="btn ghost" onclick="botDel(\''+f+'\')">✕ Quitar de la lista</button>';
   botBody(); }
 function closeWins(){ document.querySelectorAll('.modalwin.open').forEach(w=>w.classList.remove('open'));
@@ -735,7 +758,7 @@ async function mbScan(){ const box=$('#algo-scan'); if(box) box.textContent=L('R
   if(box) box.textContent=n?(n+' actualizados'):'Ninguno había cambiado.';
   if(n) renderBots(); }
 async function openBots(){ selected=null;
-  panelIcon('__bots','🧩'); $('#d-name').textContent='BOTS · '+L('estrategias','strategies');
+  panelIcon('__bots',ICO('chip',26,'#78e8aa')); $('#d-name').textContent='BOTS · '+L('estrategias','strategies');
   $('#d-role').textContent=L('Tus cBots y los indicadores de Hydra','Your cBots and Hydra\'s indicators');
   $('#d-body').innerHTML='<div class="empty">'+L('Leyendo tus bots…','Reading your bots…')+'</div>';
   $('#drawer').classList.add('open');
@@ -754,9 +777,9 @@ async function renderBotsPanel(){ const seq=++MBSEQ;
   if(!box||seq!==MBSEQ||$('#d-name').textContent.indexOf('BOTS')!==0) return;
   const bs=live.bots||[];
   let h='<div class="ssec" style="margin:0 0 10px">'
-    +'<button class="btn ghost" style="padding:5px 10px" onclick="mbGo(\'#mb-live\')">▶ '+L('En marcha','Running')+'</button>'
-    +'<button class="btn ghost" style="padding:5px 10px" onclick="mbGo(\'#mb-work\')">🤖 '+L('Mis bots','My bots')+'</button>'
-    +'<button class="btn ghost" style="padding:5px 10px" onclick="mbGo(\'#mb-ind\')">📐 '+L('Indicadores','Indicators')+'</button>'
+    +'<button class="btn ghost" style="padding:5px 10px" onclick="mbGo(\'#mb-live\')">'+ICO('play',12)+' '+L('En marcha','Running')+'</button>'
+    +'<button class="btn ghost" style="padding:5px 10px" onclick="mbGo(\'#mb-work\')">'+ICO('chip',12)+' '+L('Mis bots','My bots')+'</button>'
+    +'<button class="btn ghost" style="padding:5px 10px" onclick="mbGo(\'#mb-ind\')">'+ICO('bars',12)+' '+L('Indicadores','Indicators')+'</button>'
     +'</div>';
   h+='<div id="mb-live"><div class="slbl" style="margin:2px 0 4px">'+L('EN MARCHA AHORA','RUNNING NOW')+'</div>';
   if(!bs.length) h+='<div class="empty">'+L('Ninguno operando ni analizando en los últimos 45 minutos.','None trading or analysing in the last 45 minutes.')+'</div>';
@@ -874,9 +897,12 @@ async function renderWatch(){ const box=$('#sys-watch'); if(!box)return;
       if(r.fixed){    // referencia fija: ni se quita ni se le asignan estrategias
         h+='<div class="wrow" style="opacity:.72"><span class="wsym">'+escapeHtml(r.symbol)+'</span>'
           +'<span class="phelp" style="margin:0;flex:1">'+escapeHtml(r.note||'referencia')+'</span>'
-          +'<span class="wx" title="Fijo: siempre vigilado" style="cursor:default">🔒</span></div>';
+          +'<span class="wx" title="Fijo: siempre vigilado" style="cursor:default">'+ICO('lock',12,'#8aa')+'</span></div>';
         return; }
-      h+='<div class="wrow"><span class="wsym">'+escapeHtml(r.symbol)+'</span>'
+      const pr=ccyPair(r.symbol);
+      h+='<div class="wrow"><span class="wsym">'
+        +(pr?'<span style="color:#7ff6ff;margin-right:5px">'+pr+'</span>':'')
+        +escapeHtml(r.symbol)+'</span>'
         +av.map(a=>'<span class="chip2'+(on.indexOf(a.id)>=0?' on':'')+'" title="'+escapeHtml(JSON.stringify(a.params))
           +'" onclick="wTog(\''+r.symbol+'\',\''+a.id+'\')">'+escapeHtml(a.label)+'</span>').join('')
         +'<span class="wx" title="Quitar" onclick="wDel(\''+r.symbol+'\')">✕</span></div>'; });
@@ -1036,7 +1062,7 @@ function renderSysInfo(){ if(!DATA){ $('#sys-info').innerHTML='<div class="empty
   if(!c.oauth_ok) h+='<a class="btn" href="/oauth/login" style="display:inline-block;margin:10px 0;text-decoration:none">🔌 Conectar mi cuenta de cTrader</a>';
   if(c.oauth_ok) h+='<a class="btn ghost" href="/oauth/login" style="display:inline-block;margin:8px 0;text-decoration:none">🔄 Reconectar cTrader (actualizar cuentas)</a>';
   if(c.oauth_ok) h+='<div id="sys-accounts" class="empty">Cargando cuentas…</div>';
-  h+='<button class="btn ghost" onclick="ctraderDiag()">🩺 Diagnóstico cTrader</button><div id="sys-diag"></div>';
+  h+='<button class="btn ghost" onclick="ctraderDiag()">'+ICO('stethos',12)+' Diagnóstico cTrader</button><div id="sys-diag"></div>';
   h+='<div class="cfg"><span>Modelo IA</span> <span>'+MODELS.map(m=>'<button class="btn ghost'+((c.model||'')===m.id?' on':'')+'" style="padding:5px 9px;margin-left:5px" title="'+m.hint+'" onclick="setModel(\''+m.id+'\')">'+m.label+'</button>').join('')+'</span></div>';
   h+='<div class="phelp" style="margin:-4px 0 8px">'+((MODELS.find(m=>m.id===(c.model||''))||{}).hint||'')+'. Menos capaz = más barato. El costo se reduce también subiendo <b>«analiza cada (min)»</b> del agente Analista.</div>';
   h+='<div id="sys-local"></div>';
@@ -1151,11 +1177,84 @@ async function doHalt(){ const halt=$('#b-halt').textContent.includes('HALT');
   await fetch(halt?'/halt':'/resume',{method:'POST'});
   toast(halt?'Sistema DETENIDO':'Sistema reanudado');
   speak(halt?'Sistema detenido, '+SIR+'.':'Sistema reanudado, '+SIR+'.'); load(); }
-async function openCalendar(){ selected=null;
-  $('#d-e').textContent='📅'; $('#d-name').textContent='Calendario económico'; $('#d-role').textContent='Próximos 7 días'; $('#d-body').innerHTML='<div class="empty">Cargando eventos…</div>'; $('#drawer').classList.add('open');
-  let d; try{ d=await (await fetch('/calendar')).json(); }catch(e){ $('#d-body').innerHTML='<div class="empty" style="color:#ff5d73">No se pudo cargar el calendario.</div>'; return; }
+function closeCalWin(){ $('#calwin').classList.remove('open'); }
+/* Rellena de una vez los huecos de icono del HTML: asi el markup no lleva SVG a
+   mano y cambiar un icono se hace en ICO_P y ya. */
+function paintIcons(){
+  document.querySelectorAll('.bi[data-ico]').forEach(el=>{
+    if(el.firstChild) return;                      // ya pintado
+    const n=el.getAttribute('data-ico');
+    el.innerHTML=(n==='cal')?svgCal(13):ICO(n,13);
+  });
+  const h=$('#ic-halt'); if(h&&!h.firstChild) h.innerHTML=ICO(halted?'play':'pause',13);
+  const g=$('#ic-sys'); if(g&&!g.firstChild) g.innerHTML=ICO('gear',13);
+}
+/* ------- ICONOS PROPIOS -------
+   Nada de emojis del sistema: en un Mac, en Windows y en el iPhone se dibujan
+   distintos y ninguno pega con la placa. Aqui van los nuestros, trazo fino de cian
+   como el resto, en un solo sitio para no repetir SVG por la pantalla. */
+const ICO_P={
+  chart:'<path d="M4 19h16" /><path d="M5.5 15l4-4.5 3 2.5L19 6"/><path d="M15 6h4v4"/>',
+  pause:'<path d="M9 5v14M15 5v14"/>',
+  play:'<path d="M7 4.5l12 7.5-12 7.5z"/>',
+  gear:'<circle cx="12" cy="12" r="3.1"/><path d="M12 3v2.4M12 18.6V21M3 12h2.4M18.6 12H21M5.6 5.6l1.7 1.7M16.7 16.7l1.7 1.7M18.4 5.6l-1.7 1.7M7.3 16.7l-1.7 1.7"/>',
+  mic:'<rect x="9.2" y="3" width="5.6" height="10" rx="2.8"/><path d="M6 11.5a6 6 0 0012 0M12 17.5V21M8.5 21h7"/>',
+  ear:'<path d="M8 20c0-3-3-4-3-9a7 7 0 0114 0c0 3-2 4-4 4.5-1.4.4-1.6 1.5-1.6 2.5 0 1.6-1.2 2.5-2.6 2.5"/><path d="M9.5 9a2.6 2.6 0 015 .6"/>',
+  mute:'<path d="M4 9v6h3l5 4V5L7 9z"/><path d="M16 9.5l4 5M20 9.5l-4 5"/>',
+  clap:'<path d="M8 13.5L5.5 11a2 2 0 013-2.6l4.5 4.6"/><path d="M11 6.5l5 5a4.5 4.5 0 01-6.4 6.4L6 14.3"/><path d="M17 4l1.6 1.6M20 8h-2.2M18 11.6l1.4 1.4"/>',
+  speaker:'<path d="M4 9.5v5h3.2L12 18.5v-13L7.2 9.5z"/><path d="M15.5 9a4.2 4.2 0 010 6M18 6.5a7.5 7.5 0 010 11"/>',
+  sliders:'<path d="M5 7h14M5 12h14M5 17h14"/><circle cx="9" cy="7" r="1.9"/><circle cx="15" cy="12" r="1.9"/><circle cx="8" cy="17" r="1.9"/>',
+  key:'<circle cx="8.5" cy="12" r="3.6"/><path d="M12 12h8M17 12v3.2M20 12v2.2"/>',
+  book:'<path d="M4.5 5.5A2 2 0 016.5 4H19v14H6.5a2 2 0 00-2 2z"/><path d="M4.5 5.5v14"/><path d="M8 8h7M8 11.5h7"/>',
+  flask:'<path d="M9 4h6M10.5 4v5L5.5 18a2 2 0 001.8 3h9.4a2 2 0 001.8-3l-5-9V4"/><path d="M7.6 14.5h8.8"/>',
+  flag:'<path d="M6 21V4M6 5h10l-1.6 3.5L16 12H6"/>',
+  archive:'<ellipse cx="12" cy="6.4" rx="7" ry="2.6"/><path d="M5 6.4v11.2c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6V6.4"/><path d="M5 12c0 1.4 3.1 2.6 7 2.6s7-1.2 7-2.6"/>',
+  chip:'<rect x="7" y="7" width="10" height="10" rx="1.6"/><path d="M10 4v3M14 4v3M10 17v3M14 17v3M4 10h3M4 14h3M17 10h3M17 14h3"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/>',
+  lock:'<rect x="5.5" y="10.5" width="13" height="9.5" rx="2"/><path d="M8.5 10.5V8a3.5 3.5 0 017 0v2.5"/>',
+  refresh:'<path d="M20 12a8 8 0 10-2.6 5.9"/><path d="M20 6.5V12h-5.2"/>',
+  info:'<circle cx="12" cy="12" r="8.5"/><path d="M12 10.5V17"/><circle cx="12" cy="7.6" r="1.1" fill="currentColor" stroke="none"/>',
+  warn:'<path d="M12 4.5L21 19.5H3z"/><path d="M12 9.5v4.6"/><circle cx="12" cy="16.8" r="1.05" fill="currentColor" stroke="none"/>',
+  stethos:'<path d="M6 4v5a4 4 0 008 0V4"/><path d="M6 4H4.5M8 4H6.5M14 4h1.5M12 4h1.5"/><path d="M10 13v2.5a4.5 4.5 0 009 0V13"/><circle cx="19" cy="11.2" r="1.9"/>',
+  bars:'<path d="M5 20V11M10 20V6M15 20v-7M20 20V9"/>',
+  bolt:'<path d="M13.5 3L6 13.5h4.5L10 21l7.5-10.5H13z"/>',
+};
+function ICO(name,size,col){ const s=size||14, c=col||'currentColor', d=ICO_P[name];
+  if(!d) return '';
+  return '<svg width="'+s+'" height="'+s+'" viewBox="0 0 24 24" fill="none" stroke="'+c
+    +'" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" '
+    +'style="display:inline-block;vertical-align:-'+Math.round(s*0.18)+'px">'+d+'</svg>'; }
+/* icono de la app (la vibora en su hexagono) para donde antes iba un emoji de dragon */
+const APP_ICON='/icon/4/mark.svg';
+function appIco(size){ const s=size||16;
+  return '<img src="'+APP_ICON+'" width="'+s+'" height="'+s+'" style="display:inline-block;vertical-align:-'+Math.round(s*0.18)+'px">'; }
+/* Icono de calendario DIBUJADO, al estilo de la placa: trazo fino de cian, rejilla
+   de dias y un punto encendido en "hoy". El emoji 📅 se veia prestado. */
+function svgCal(size,col){ const c=col||'#7ff6ff', s=size||22;
+  let dots=''; for(let r=0;r<2;r++) for(let k=0;k<4;k++){
+    const x=5.5+k*3.6, y=12.5+r*3.4, on=(r===0&&k===2);
+    dots+='<rect x="'+x+'" y="'+y+'" width="2.1" height="2.1" rx="0.5" fill="'+c+'" opacity="'+(on?1:0.42)+'"/>'; }
+  return '<svg width="'+s+'" height="'+s+'" viewBox="0 0 24 24" fill="none" style="display:block">'
+    +'<rect x="3.2" y="5" width="17.6" height="15.4" rx="2.4" stroke="'+c+'" stroke-width="1.3" opacity=".85"/>'
+    +'<path d="M3.2 9.4h17.6" stroke="'+c+'" stroke-width="1.3" opacity=".85"/>'
+    +'<path d="M8 3.2v3.4M16 3.2v3.4" stroke="'+c+'" stroke-width="1.5" stroke-linecap="round"/>'
+    +dots+'</svg>'; }
+/* Los pares se identifican por sus DOS monedas: EURJPY -> €¥. Mas rapido de leer
+   que seis letras, y es lo que se pidio. Si no conozco un signo, va el codigo. */
+const CCY_SIGN={USD:'$',EUR:'€',JPY:'¥',GBP:'£',CHF:'₣',AUD:'A$',NZD:'N$',CAD:'C$',
+  MXN:'M$',CNY:'¥',CNH:'¥',SEK:'kr',NOK:'kr',DKK:'kr',PLN:'zł',HUF:'Ft',CZK:'Kč',
+  TRY:'₺',ZAR:'R',RUB:'₽',INR:'₹',KRW:'₩',BRL:'R$',SGD:'S$',HKD:'HK$',THB:'฿',ILS:'₪'};
+function ccyPair(sym){ const s=String(sym||'').toUpperCase().replace(/[^A-Z]/g,'');
+  if(s.length<6) return '';
+  const a=CCY_SIGN[s.slice(0,3)], b=CCY_SIGN[s.slice(3,6)];
+  return (a&&b)?(a+b):''; }
+async function openCalendar(){
+  const box=$('#cw-body');
+  $('#cw-icon').innerHTML=svgCal(26);
+  box.innerHTML='<div class="empty">Cargando eventos…</div>';
+  $('#calwin').classList.add('open');
+  let d; try{ d=await (await fetch('/calendar')).json(); }catch(e){ box.innerHTML='<div class="empty" style="color:#ff5d73">No se pudo cargar el calendario.</div>'; return; }
   const ev=d.events||[];
-  if(!ev.length){ $('#d-body').innerHTML='<div class="empty">Sin eventos'+(d.error?': '+escapeHtml(d.error):' en la ventana.')+'</div>'; return; }
+  if(!ev.length){ box.innerHTML='<div class="empty">Sin eventos'+(d.error?': '+escapeHtml(d.error):' en la ventana.')+'</div>'; return; }
   const ic={high:'#ff5d73',medium:'#fbbf24',low:'#5ad1e6',holiday:'#8aa'};
   let last='', h='';
   ev.forEach(e=>{ const dt=new Date(e.ts*1000);
@@ -1168,20 +1267,22 @@ async function openCalendar(){ selected=null;
       +'<span class="cal-dot" style="background:'+col+'"></span>'
       +'<span class="cal-cur">'+escapeHtml(e.currency)+'</span>'
       +'<span class="cal-title">'+escapeHtml(e.title)+(det?'<span class="cal-det"> '+escapeHtml(det)+'</span>':'')+'</span></div>'; });
-  $('#d-body').innerHTML='<p class="role">🔴 alto · 🟡 medio · 🔵 bajo impacto. Resaltados = afectan tus símbolos.</p>'+h; }
+  box.innerHTML='<p class="role">🔴 alto · 🟡 medio · 🔵 bajo impacto. Resaltados = afectan tus símbolos.</p>'+h; }
 async function runDemo(){ toast('Corriendo demo…'); speak(L('Ejecutando análisis de demostración.','Running the demo analysis.'));
   let r; try{ r=await fetch('/demo',{method:'POST'}); }catch(e){ toast('Error de red'); return; }
   if(!r.ok){ const t=await r.text(); openInfo('▶ Modo demo','<p style="color:#ff5d73">No se pudo correr el demo.</p><p>'+escapeHtml(t)+'</p><p>Configura la key: <code>fly secrets set ANTHROPIC_API_KEY=sk-ant-...</code></p>'); speak('No pude correr el demo. Falta la clave de Anthropic.'); return; }
   const data=await r.json(); renderDemo(data.results); load();
   const props=data.results.filter(x=>x.proposal.action==='propose').length; speak('Análisis completo, '+SIR+'. '+props+' de '+data.results.length+' símbolos con oportunidad.'); }
-function openInfo(t,h){ selected=null; $('#d-e').textContent='ℹ️'; $('#d-name').textContent=t; $('#d-role').textContent=''; $('#d-body').innerHTML=h; $('#drawer').classList.add('open'); }
+function openInfo(t,h){ selected=null; $('#d-e').innerHTML=ICO('info',26,'#7ff6ff'); $('#d-name').textContent=t; $('#d-role').textContent=''; $('#d-body').innerHTML=h; $('#drawer').classList.add('open'); }
 /* La cabecera del panel lleva EL MISMO icono dibujado que el componente de la
    placa: al abrir un módulo se reconoce cuál se abrió, sin emojis prestados. */
 function panelIcon(key,fallback){ const de=$('#d-e'); if(!de)return; de.textContent='';
   try{ const ic=window.hydraIcon&&window.hydraIcon(key,36); if(ic){ de.appendChild(ic); return; } }catch(_){}
-  de.textContent=fallback||''; }
+  de.innerHTML=fallback||''; }        // el respaldo ya es SVG nuestro, no un emoji
 async function openMarket(sym,tf){ selected=null; tf=tf||(DATA&&DATA.core&&DATA.core.timeframe)||'M15';
-  const de=$('#d-e'); de.textContent=''; try{ const ic=window.marketCoin&&window.marketCoin(sym,38); if(ic)de.appendChild(ic); else de.textContent='📈'; }catch(_){ de.textContent='📈'; }
+  const de=$('#d-e'); de.textContent='';
+  try{ const ic=window.marketCoin&&window.marketCoin(sym,38); if(ic)de.appendChild(ic);
+       else de.innerHTML=ICO('chart',30,'#7ff6ff'); }catch(_){ de.innerHTML=ICO('chart',30,'#7ff6ff'); }
   $('#d-name').textContent=(sym==='DXY'?'DXY · '+L('Índice del dólar','Dollar Index'):sym); $('#d-role').textContent=L('Resumen técnico','Technical summary'); $('#d-body').innerHTML='<div class="empty">Cargando…</div>'; $('#drawer').classList.add('open');
   let d; try{ d=await (await fetch('/market/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf))).json(); }catch(e){ $('#d-body').innerHTML='<div class="empty" style="color:#ff5d73">Error de red.</div>'; return; }
   const TFS=['M5','M15','M30','H1','H4','D1'];
@@ -1232,8 +1333,10 @@ function renderHudInstr(d){ const box=$('#hud-instr'); if(!box)return;
       +L('Ninguno vigilado. Pulsa para añadir.','None watched. Click to add.')+'</div>'; return; }
   box.innerHTML=order.map(sym=>{ const r=by[sym]||{}, fx=pinned.indexOf(sym)>=0;
     const up=(r.change_pct||0)>=0, col=r.price==null?'#5f7387':(up?'#34d399':'#ff5d73');
+    const pr=ccyPair(sym);
     return '<div class="prow" style="border-left-color:'+col+'">'
-      +'<span class="sy">'+escapeHtml(sym)+(fx?' 🔒':'')+'</span>'
+      +'<span class="sy">'+(pr?'<span style="color:#7ff6ff;margin-right:5px">'+pr+'</span>':'')
+      +escapeHtml(sym)+(fx?' '+ICO('lock',11,'#8aa'):'')+'</span>'
       +'<span class="vl" style="color:'+col+'">'
       +(r.price==null?L('sin datos','no data')
         :(r.price+' · '+(up?'+':'')+Number(r.change_pct||0).toFixed(2)+'%'))+'</span></div>'; }).join('')
@@ -1407,6 +1510,8 @@ async function pollTape(){ const box=$('#tape-b'); if(!box)return;
 /* Nombre corto del agente para que quepa dentro del segmento del anillo. */
 function shortName(n){ const w=String(n||'').trim().split(/\s+/); return (w[0]||'').toUpperCase().slice(0,10); }
 function hudStart(){ document.querySelectorAll('.hudcol .hud').forEach((e,i)=>setTimeout(()=>e.classList.add('in'),180+i*110));
+  {const ci=$('#calbtn-ic'); if(ci){ ci.innerHTML=svgCal(13); ci.style.cssText='display:inline-block;vertical-align:-2px;margin-right:5px'; }}
+  paintIcons();
   // las pistas se rutean al borde de cada ventana: hay que esperar a que
   // terminen de entrar para medirlas donde de verdad se quedan.
   [900,1800].forEach(t=>setTimeout(()=>window.pcbRewire&&window.pcbRewire(),t));
@@ -1477,7 +1582,9 @@ function renderHudSys(){ const box=$('#hud-sys'); if(!box||!DATA)return; const c
     +row(L('Agentes','Agents'),(DATA.agents||[]).length)
     +row(L('Contexto','Context'),CTXCOUNT>0?CTXCOUNT:'0','#b096ff')
     +row(L('Estado','State'),c.halted?L('DETENIDO','HALTED'):L('en línea','online'),c.halted?'#ff5d73':'#34d399');
-  const b=$('#hud-halt'); if(b) b.textContent=c.halted?'▶ REANUDAR':'⏸ HALT'; }
+  const b=$('#hud-halt');
+  if(b) b.innerHTML='<span class="bi">'+ICO(c.halted?'play':'pause',13)+'</span>'
+        +(c.halted?'REANUDAR':'HALT'); }
 let CTXCOUNT=0;
 
 /* ---------- TRADE CONTEXT: memoria inmutable de como se veia el mundo al decidir ---------- */
@@ -1493,7 +1600,7 @@ function ctxAgo(ts){ if(!ts)return''; const s=Math.max(0,Date.now()/1000-ts);
   if(s<172800)return Math.round(s/3600)+'h'; return Math.round(s/86400)+'d'; }
 async function openTradeContext(sym,out){ selected=null;
   if(sym!==undefined) CTXF.symbol=sym; if(out!==undefined) CTXF.outcome=out;
-  panelIcon('__ctx','🗄'); $('#d-name').textContent='TRADE CONTEXT';
+  panelIcon('__ctx',ICO('archive',26,'#b09aff')); $('#d-name').textContent='TRADE CONTEXT';
   $('#d-role').textContent=L('Memoria inmutable · append-only','Immutable memory · append-only');
   $('#d-body').innerHTML='<div class="empty">Cargando…</div>'; $('#drawer').classList.add('open');
   let d; try{ d=await (await fetch('/trade-context?limit=40&symbol='+encodeURIComponent(CTXF.symbol)+'&outcome='+encodeURIComponent(CTXF.outcome))).json(); }
@@ -1792,7 +1899,7 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
   window.hydraIconURL=function(key){ if(_iconCache[key])return _iconCache[key]; try{ const c=window.hydraIcon(key,26); _iconCache[key]=c.toDataURL(); return _iconCache[key]; }catch(e){ return ''; } };
   // el mismo icono, en pequeño, para el globo del raton
   const tipIcon=(k,fb)=>{ const u=window.hydraIconURL?window.hydraIconURL(k):'';
-    return u?'<img src="'+u+'" style="width:16px;height:16px;vertical-align:-3px">':fb; };
+    return u?'<img src="'+u+'" style="width:16px;height:16px;vertical-align:-3px">':(fb||''); };
   // MONEDAS metálicas de cada instrumento (para el panel al hacer clic)
   const COIN={
     GOLD:{c:'196,148,20',c2:'255,226,132',dk:'74,50,8',sym:'ingots'},
@@ -1830,6 +1937,18 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
   window.marketCoin=function(sym,size){ const dpr=Math.min(window.devicePixelRatio||1,2);
     const cv2=document.createElement('canvas'); cv2.width=cv2.height=size*dpr; cv2.style.width=cv2.style.height=size+'px';
     const ct=cv2.getContext('2d'); ct.setTransform(dpr,0,0,dpr,0,0);
+    /* Un par de divisas NO es una moneda de metal: son DOS monedas. Se dibujan sus
+       dos signos (EURJPY -> €¥), que se leen antes que seis letras. Los metales y
+       los indices conservan su moneda, que ahi si significa algo. */
+    const pr=(typeof ccyPair==='function')?ccyPair(sym):'';
+    if(pr){ const cx0=size/2, cy0=size/2;
+      ct.font='700 '+(size*0.46)+'px system-ui,-apple-system,sans-serif';
+      ct.textAlign='center'; ct.textBaseline='middle';
+      ct.strokeStyle='rgba(56,230,255,0.30)'; ct.lineWidth=Math.max(1,size*0.035);
+      ct.beginPath(); ct.arc(cx0,cy0,size*0.44,0,7); ct.stroke();
+      ct.shadowColor='rgba(56,230,255,0.75)'; ct.shadowBlur=size*0.22;
+      ct.fillStyle='#dffaff'; ct.fillText(pr,cx0,cy0+size*0.02);
+      ct.shadowBlur=0; return cv2; }
     const m=coinMeta(sym), R=size*0.44, cx=size/2, cy=size/2;
     const gr=ct.createRadialGradient(cx-R*0.35,cy-R*0.35,R*0.1,cx,cy,R); gr.addColorStop(0,'rgba('+m.c2+',1)'); gr.addColorStop(1,'rgba('+m.c+',1)');
     ct.fillStyle=gr; ct.beginPath(); ct.arc(cx,cy,R,0,7); ct.fill();
@@ -2079,7 +2198,7 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
   cv.addEventListener('mousemove',e=>{ const r=cv.getBoundingClientRect(); mx=e.clientX-r.left; my=e.clientY-r.top; });
   cv.addEventListener('mouseleave',()=>{ mx=my=-9999; });
   function openHydra(){ const names=(DATA?DATA.agents:[]).map(a=>a.emoji+' '+a.name).join(' · ');
-    openInfo('🐉 HYDRA · orquestador','<p class="role">El núcleo que coordina a todos los agentes: recibe sus señales, decide y ejecuta como un solo cerebro.</p><div class="empty">Controla a: '+names+'</div>');
+    openInfo('HYDRA · orquestador','<p class="role">El núcleo que coordina a todos los agentes: recibe sus señales, decide y ejecuta como un solo cerebro.</p><div class="empty">Controla a: '+names+'</div>');
     speak('Hydra en línea, '+SIR+'. Coordino a los '+(DATA?DATA.agents.length:0)+' agentes.'); }
   cv.addEventListener('click',()=>{ if(!booted){ $('#activate').click(); return; }
     if(hoverI>=0&&RING3S[hoverI]) openMarket(RING3S[hoverI].symbol); else if(hoverC) openTradeContext(); else if(hoverKey==='__bots') openBots(); else if(hoverKey==='__hydra') openHydra(); else if(hoverKey) openAgent(hoverKey); else { speakStatus(); toast('HYDRA · '+(DATA?DATA.agents.length:0)+' agentes'); } });
@@ -2311,21 +2430,22 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       const bb=r.box||{x:r.x,y:r.y,w:0,h:0};
       tip.style.left=(bb.x+bb.w+12)+'px'; tip.style.top=(bb.y+bb.h/2)+'px';
       const nm=(window.mktName&&window.mktName(sym))||'';
-      tip.innerHTML='📈 <b>'+escapeHtml(sym)+'</b>'+(nm?' · '+escapeHtml(nm):'')
+      const pr=(typeof ccyPair==='function'&&ccyPair(sym))||'';
+      tip.innerHTML=(pr?'<b style="color:#7ff6ff">'+pr+'</b> ':ICO('chart',15,'#7ff6ff')+' ')+'<b>'+escapeHtml(sym)+'</b>'+(nm?' · '+escapeHtml(nm):'')
         +'<br><span>'+(r.price==null?L('esperando datos del broker','waiting for broker data')
           :r.price+' · '+(r.change_pct>=0?'+':'')+r.change_pct.toFixed(2)+'% · '+escapeHtml(String(r.verdict||'')))+'</span>'
         +(OPENSYMS.has(sym.toUpperCase())?'<br><span style="color:#34d399">'+L('con posición abierta','position open')+'</span>':'')
         +'<br><span style="opacity:.7">'+L('clic para ver precio y técnicos','click for price & technicals')+'</span>';
       tip.classList.add('show'); }
     else if(hoverC){ tip.style.left=(CTXO.sx+22)+'px'; tip.style.top=CTXO.sy+'px';
-      tip.innerHTML=tipIcon('__ctx','🗄')+' <b>TRADE CONTEXT</b> · '+L('memoria','memory')+'<br><span>'
+      tip.innerHTML=tipIcon('__ctx',ICO('archive',15,'#b09aff'))+' <b>TRADE CONTEXT</b> · '+L('memoria','memory')+'<br><span>'
         +(CTXO.n>0?CTXO.n+' '+L('capturas guardadas','captures stored'):L('esperando la primera captura','waiting for the first capture'))
         +'</span><br><span>↔ Reviewer, Architect</span>'
         +'<br><span style="opacity:.7">'+L('clic para ver todo lo que guarda','click to see everything it stores')+'</span>';
       tip.classList.add('show'); }
     else if(hoverKey==='__bots'){ tip.style.left=(BOTMOD.x+24)+'px'; tip.style.top=BOTMOD.y+'px';
       const bl=BOTLIVE.bots.slice(0,3).map(b=>String(b.label)).join(', ');
-      tip.innerHTML=tipIcon('__bots','🧩')+' <b>BOTS</b> · '+L('estrategias','strategies')+'<br><span>'
+      tip.innerHTML=tipIcon('__bots',ICO('chip',15,'#78e8aa'))+' <b>BOTS</b> · '+L('estrategias','strategies')+'<br><span>'
         +(BOTLIVE.n?(BOTLIVE.opera+' '+L('operando','trading')+' · '+BOTLIVE.analiza+' '+L('analizando','analysing'))
                    :L('ninguno activo ahora','none active right now'))+'</span>'
         +(bl?'<br><span style="opacity:.8">'+escapeHtml(bl)+'</span>':'')
@@ -2333,7 +2453,7 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
         +'<br><span style="opacity:.7">'+L('clic para verlos, explicarlos y medirlos','click to inspect, explain and measure them')+'</span>';
       tip.classList.add('show'); }
     else if(hoverKey==='__hydra'){ tip.style.left=(CX+30)+'px'; tip.style.top=CY+'px';
-      tip.innerHTML='🐉 <b>HYDRA</b> · orquestador<br><span>Coordina a todos los agentes como un solo cerebro.</span><br><span style="opacity:.7">clic para ver el conjunto</span>';
+      tip.innerHTML=appIco(16)+' <b>HYDRA</b> · orquestador<br><span>Coordina a todos los agentes como un solo cerebro.</span><br><span style="opacity:.7">clic para ver el conjunto</span>';
       tip.classList.add('show'); }
     else if(hoverKey){ const a=byKey[hoverKey];
       const nb=LINKS.filter(L=>L[0]===hoverKey||L[1]===hoverKey).map(L=>L[0]===hoverKey?L[1]:L[0]).map(k=>byKey[k]?byKey[k].name:k);
