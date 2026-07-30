@@ -558,7 +558,7 @@ async function mbScan(){ const box=$('#mb-scan'); if(box) box.textContent=L('Rel
   toast(n?(n+' bots actualizados'):'Sin cambios');
   renderBotsPanel(); }
 async function openBots(){ selected=null;
-  $('#d-e').textContent='🧩'; $('#d-name').textContent='BOTS · '+L('estrategias','strategies');
+  panelIcon('__bots','🧩'); $('#d-name').textContent='BOTS · '+L('estrategias','strategies');
   $('#d-role').textContent=L('Ejecución, análisis y prueba de tus cBots','Execution, analysis and testing of your cBots');
   $('#d-body').innerHTML='<div class="empty">'+L('Leyendo tus bots…','Reading your bots…')+'</div>';
   $('#drawer').classList.add('open');
@@ -975,6 +975,11 @@ async function runDemo(){ toast('Corriendo demo…'); speak(L('Ejecutando análi
   const data=await r.json(); renderDemo(data.results); load();
   const props=data.results.filter(x=>x.proposal.action==='propose').length; speak('Análisis completo, '+SIR+'. '+props+' de '+data.results.length+' símbolos con oportunidad.'); }
 function openInfo(t,h){ selected=null; $('#d-e').textContent='ℹ️'; $('#d-name').textContent=t; $('#d-role').textContent=''; $('#d-body').innerHTML=h; $('#drawer').classList.add('open'); }
+/* La cabecera del panel lleva EL MISMO icono dibujado que el componente de la
+   placa: al abrir un módulo se reconoce cuál se abrió, sin emojis prestados. */
+function panelIcon(key,fallback){ const de=$('#d-e'); if(!de)return; de.textContent='';
+  try{ const ic=window.hydraIcon&&window.hydraIcon(key,36); if(ic){ de.appendChild(ic); return; } }catch(_){}
+  de.textContent=fallback||''; }
 async function openMarket(sym,tf){ selected=null; tf=tf||(DATA&&DATA.core&&DATA.core.timeframe)||'M15';
   const de=$('#d-e'); de.textContent=''; try{ const ic=window.marketCoin&&window.marketCoin(sym,38); if(ic)de.appendChild(ic); else de.textContent='📈'; }catch(_){ de.textContent='📈'; }
   $('#d-name').textContent=(sym==='DXY'?'DXY · '+L('Índice del dólar','Dollar Index'):sym); $('#d-role').textContent=L('Resumen técnico','Technical summary'); $('#d-body').innerHTML='<div class="empty">Cargando…</div>'; $('#drawer').classList.add('open');
@@ -1249,7 +1254,7 @@ function ctxAgo(ts){ if(!ts)return''; const s=Math.max(0,Date.now()/1000-ts);
   if(s<172800)return Math.round(s/3600)+'h'; return Math.round(s/86400)+'d'; }
 async function openTradeContext(sym,out){ selected=null;
   if(sym!==undefined) CTXF.symbol=sym; if(out!==undefined) CTXF.outcome=out;
-  $('#d-e').textContent='🗄'; $('#d-name').textContent='TRADE CONTEXT';
+  panelIcon('__ctx','🗄'); $('#d-name').textContent='TRADE CONTEXT';
   $('#d-role').textContent=L('Memoria inmutable · append-only','Immutable memory · append-only');
   $('#d-body').innerHTML='<div class="empty">Cargando…</div>'; $('#drawer').classList.add('open');
   let d; try{ d=await (await fetch('/trade-context?limit=40&symbol='+encodeURIComponent(CTXF.symbol)+'&outcome='+encodeURIComponent(CTXF.outcome))).json(); }
@@ -1524,6 +1529,10 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       case 'tester': G.beginPath(); for(let t=-1;t<=1.001;t+=0.1){ const x=Math.sin(t*Math.PI*1.4)*s*0.55; t<=-1?G.moveTo(x,t*s):G.lineTo(x,t*s); } G.stroke();
         G.beginPath(); for(let t=-1;t<=1.001;t+=0.1){ const x=-Math.sin(t*Math.PI*1.4)*s*0.55; t<=-1?G.moveTo(x,t*s):G.lineTo(x,t*s); } G.stroke();
         G.beginPath(); for(let t=-0.7;t<=0.71;t+=0.35){ const x=Math.sin(t*Math.PI*1.4)*s*0.55; G.moveTo(x,t*s); G.lineTo(-x,t*s); } G.stroke(); break;
+      // CONTEXT: capas apiladas de memoria. Vive aquí para que el panel pueda
+      // pintar EL MISMO icono que lleva el componente en la placa.
+      case '__ctx': G.lineWidth=1.3;
+        for(let k=-1;k<=1;k++){ G.beginPath(); G.ellipse(0,k*s*0.5,s*0.62,s*0.24,0,0,6.283); G.stroke(); } break;
       // BOTS: un chip con patas. Es lo que son: código compilado que se enchufa.
       case '__bots': G.beginPath(); G.rect(-s*0.55,-s*0.55,s*1.1,s*1.1); G.stroke();
         G.beginPath(); for(let k=-1;k<=1;k++){ const q=k*s*0.3;
@@ -1542,6 +1551,9 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
   // ícono del agente como dataURL (para el tooltip) — cacheado
   const _iconCache={};
   window.hydraIconURL=function(key){ if(_iconCache[key])return _iconCache[key]; try{ const c=window.hydraIcon(key,26); _iconCache[key]=c.toDataURL(); return _iconCache[key]; }catch(e){ return ''; } };
+  // el mismo icono, en pequeño, para el globo del raton
+  const tipIcon=(k,fb)=>{ const u=window.hydraIconURL?window.hydraIconURL(k):'';
+    return u?'<img src="'+u+'" style="width:16px;height:16px;vertical-align:-3px">':fb; };
   // MONEDAS metálicas de cada instrumento (para el panel al hacer clic)
   const COIN={
     GOLD:{c:'196,148,20',c2:'255,226,132',dk:'74,50,8',sym:'ingots'},
@@ -1947,10 +1959,7 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       drawComp(b2,a.rgb,al,(on||h||o)?(o?14+grow*16:(h?18:9)):0);
       // contenido HORIZONTAL: en una placa la serigrafía no va girada
       const gr2=Math.min(8,gh*0.30), gx=b2.x+gh*0.52;
-      if(isctx){ g.strokeStyle='rgba('+a.rgb+','+(dim?0.5:0.98)+')'; g.lineWidth=1.2;
-        for(let k=-1;k<=1;k++){ g.beginPath();
-          g.ellipse(gx,a.y+k*gr2*0.5,gr2*0.62,gr2*0.24,0,0,7); g.stroke(); } }
-      else glyph(a.key,gx,a.y,gr2,a.rgb,dim?0.5:0.98);
+      glyph(a.key,gx,a.y,gr2,a.rgb,dim?0.5:0.98);
       g.font='700 '+Math.max(7.5,Math.min(9.5,gh*0.30))+'px system-ui,sans-serif';
       g.textAlign='left'; g.textBaseline='middle';
       g.fillStyle='rgba('+a.rgb+','+((h||o)?1:0.78)*al+')';
@@ -2070,14 +2079,14 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
         +'<br><span style="opacity:.7">'+L('clic para ver precio y técnicos','click for price & technicals')+'</span>';
       tip.classList.add('show'); }
     else if(hoverC){ tip.style.left=(CTXO.sx+22)+'px'; tip.style.top=CTXO.sy+'px';
-      tip.innerHTML='🗄 <b>TRADE CONTEXT</b> · '+L('memoria','memory')+'<br><span>'
+      tip.innerHTML=tipIcon('__ctx','🗄')+' <b>TRADE CONTEXT</b> · '+L('memoria','memory')+'<br><span>'
         +(CTXO.n>0?CTXO.n+' '+L('capturas guardadas','captures stored'):L('esperando la primera captura','waiting for the first capture'))
         +'</span><br><span>↔ Reviewer, Architect</span>'
         +'<br><span style="opacity:.7">'+L('clic para ver todo lo que guarda','click to see everything it stores')+'</span>';
       tip.classList.add('show'); }
     else if(hoverKey==='__bots'){ tip.style.left=(BOTMOD.x+24)+'px'; tip.style.top=BOTMOD.y+'px';
       const bl=BOTLIVE.bots.slice(0,3).map(b=>String(b.label)).join(', ');
-      tip.innerHTML='🧩 <b>BOTS</b> · '+L('estrategias','strategies')+'<br><span>'
+      tip.innerHTML=tipIcon('__bots','🧩')+' <b>BOTS</b> · '+L('estrategias','strategies')+'<br><span>'
         +(BOTLIVE.n?(BOTLIVE.opera+' '+L('operando','trading')+' · '+BOTLIVE.analiza+' '+L('analizando','analysing'))
                    :L('ninguno activo ahora','none active right now'))+'</span>'
         +(bl?'<br><span style="opacity:.8">'+escapeHtml(bl)+'</span>':'')
