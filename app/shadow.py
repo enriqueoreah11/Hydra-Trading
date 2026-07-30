@@ -20,6 +20,7 @@ import csv
 import io
 import json
 import logging
+import re
 from pathlib import Path
 
 log = logging.getLogger("shadow")
@@ -28,6 +29,30 @@ log = logging.getLogger("shadow")
 # escriben CSV con esa extensión.
 SUFFIXES = (".csv", ".txt")
 MAX_ROWS_PER_PASS = 4000        # tope por pasada: un CSV enorme no bloquea el arranque
+
+
+# cTrader guarda los datos de CADA INSTANCIA en una carpeta llamada
+# "<guid>-Default". Eso no es el nombre de un bot: tomarlo por tal llenaba la
+# pantalla de filas como "3b6638ac-4dbb-459a-b93f-c9bb57c00c8c-Default".
+_GUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                   re.I)
+
+
+def is_instance_dir(name: str) -> bool:
+    return bool(_GUID.match(str(name or "")))
+
+
+# Columnas donde un bot suele poner SU nombre. Si viene en la fila, manda sobre
+# cualquier cosa que se deduzca de la ruta.
+LABEL_KEYS = ("bot", "botname", "robot", "label", "instance", "strategy", "estrategia")
+
+
+def label_from_row(row: dict) -> str:
+    for k, v in (row or {}).items():
+        kl = "".join(c for c in str(k).lower() if c.isalnum())
+        if kl in LABEL_KEYS and v and not is_instance_dir(str(v)):
+            return str(v)[:60]
+    return ""
 
 
 def find_logs(folder: Path) -> list[Path]:

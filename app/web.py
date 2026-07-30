@@ -1682,6 +1682,145 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             b["state"] = "opera" if b["open"] else "analiza"
         return {"ok": True, "minutes": minutes, "bots": bots}
 
+    # --------------------- gestion de posiciones con la politica del propio bot
+
+    def _mgmt_file():
+        return settings.data_path / "manage.json"
+
+    def _mgmt_conf() -> dict:
+        try:
+            return json.loads(_mgmt_file().read_text()) or {}
+        except Exception:  # noqa: BLE001
+            return {}
+
+    def _bot_json(name: str) -> dict | None:
+        f = (_bots_dir() / (name + ".json")).resolve()
+        if _bots_dir().resolve() not in f.parents or not f.is_file():
+            return None
+        try:
+            return json.loads(f.read_text())
+        except Exception:  # noqa: BLE001
+            return None
+
+    @app.get("/manage/policy/{name}")
+    async def manage_policy(name: str):
+        """Qué gestión sabe hacer Hydra con ESE bot, leída de sus parámetros."""
+        from . import botpolicy, manage as mg
+        d = _bot_json(name)
+        if d is None:
+            return JSONResponse({"ok": False, "error": "no existe"}, status_code=404)
+        pol = botpolicy.from_params(d)
+        conf = _mgmt_conf().get(name) or {}
+        return {"ok": True, "bot": d.get("name"), "policy": pol,
+                "frases": mg.explain(pol), "enabled": bool(conf.get("enabled")),
+                "labels": conf.get("labels") or [],
+                "dry_run": settings.dry_run}
+
+    @app.post("/manage/policy/{name}")
+    async def manage_policy_set(name: str, request: Request):
+        """Activa o desactiva que Hydra gestione las posiciones de ese bot."""
+        if _bot_json(name) is None:
+            return JSONResponse({"ok": False, "error": "no existe"}, status_code=404)
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        conf = _mgmt_conf()
+        cur = dict(conf.get(name) or {})
+        if "enabled" in body:
+            cur["enabled"] = bool(body["enabled"])
+        if isinstance(body.get("labels"), list):
+            cur["labels"] = [str(x)[:60] for x in body["labels"]][:20]
+        conf[name] = cur
+        _mgmt_file().write_text(json.dumps(conf, ensure_ascii=False, indent=1))
+        store.log("system", "manage_conf",
+                  f"{name}: {'activada' if cur.get('enabled') else 'desactivada'}")
+        return {"ok": True, **cur}
+
+    async def _manage_run(apply: bool) -> dict:
+        """Recorre las posiciones y aplica la gestión del bot que las abrió.
+
+        Empareja por ETIQUETA: solo toca lo que abrió un bot con gestión activada. Lo
+        que no reconozca lo deja en paz — es dinero de alguien y no se adivina.
+        """
+        from . import botpolicy, manage as mg
+        if broker is None or not broker.client.account_authorized:
+            return {"ok": False, "error": "conecta cTrader"}
+        conf = {k: v for k, v in _mgmt_conf().items() if (v or {}).get("enabled")}
+        if not conf:
+            return {"ok": True, "planned": [], "note": "ningún bot con gestión activada"}
+        pols = {}
+        for name in conf:
+            d = _bot_json(name)
+            if d:
+                pols[name] = (d, botpolicy.from_params(d))
+        try:
+            pos = await asyncio.wait_for(broker.positions(), timeout=12)
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"no pude leer las posiciones: {exc}"}
+        state = _mgmt_conf().get("__done__") or {}
+        planned, applied = [], 0
+        for p in pos:
+            sym = await broker.symbol_name_by_id(p["symbol_id"])
+            p["symbol"] = sym
+            lbl = "".join(ch for ch in str(p.get("label") or "").lower() if ch.isalnum())
+            hit = None
+            for name, (d, pol) in pols.items():
+                keys = [d.get("name"), d.get("type_label"), name] + (conf[name].get("labels") or [])
+                for k in keys:
+                    kn = "".join(ch for ch in str(k or "").lower() if ch.isalnum())
+                    if kn and lbl and (kn == lbl or kn in lbl or lbl in kn):
+                        hit = (name, pol)
+                        break
+                if hit:
+                    break
+            if not hit:
+                continue
+            name, pol = hit
+            try:
+                cs = await asyncio.wait_for(broker.candles(sym, "M1", 2), timeout=12)
+                price = cs[-1].close if cs else 0
+            except Exception:  # noqa: BLE001
+                continue
+            done = set(state.get(str(p["position_id"])) or [])
+            for act in mg.plan(p, pol, price, done):
+                act.update({"bot": name, "symbol": sym, "position_id": p["position_id"]})
+                planned.append(act)
+                if not apply or settings.dry_run:
+                    continue
+                try:
+                    if act["action"] == "amend_sl":
+                        await broker.amend_position_sltp(p["position_id"],
+                                                         act["stop_loss"],
+                                                         p.get("take_profit"))
+                    elif act["action"] == "close_partial":
+                        await broker.close_position(p["position_id"], act["units"])
+                        done.add(act["step"])
+                        state[str(p["position_id"])] = sorted(done)
+                    applied += 1
+                    store.log("executor", "manage",
+                              f"{name} · {sym}: {act['action']} — {act['reason']}")
+                except Exception as exc:  # noqa: BLE001
+                    act["error"] = str(exc)[:140]
+        if applied:
+            conf_all = _mgmt_conf()
+            conf_all["__done__"] = state
+            _mgmt_file().write_text(json.dumps(conf_all, ensure_ascii=False, indent=1))
+        return {"ok": True, "planned": planned, "applied": applied,
+                "dry_run": settings.dry_run, "positions": len(pos)}
+
+    @app.post("/manage/run")
+    async def manage_run(apply: bool = False):
+        """Calcula la gestión. Con apply=false (por defecto) solo DICE qué haría.
+
+        En modo papel (DRY_RUN) nunca se envía nada al broker, aunque se pida aplicar:
+        el interruptor de papel manda sobre todo lo demás.
+        """
+        res = await _manage_run(apply)
+        if not res.get("ok"):
+            return JSONResponse(res, status_code=400)
+        return res
+
     # ------------------------------- registro «shadow»: los CSV que escribe el bot
 
     def _shadow_dir():
@@ -1729,7 +1868,10 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         def _is_mine(f: Path) -> bool:
             if not mine:
                 return False           # sin bots elegidos no se importa nada
-            for part in (f.parent.name, f.stem):
+            parts = [f.parent.name, f.stem]
+            if sh.is_instance_dir(f.parent.name):
+                parts = [f.stem]       # el guid no dice nada; queda el archivo
+            for part in parts:
                 k = "".join(ch for ch in part.lower() if ch.isalnum())
                 if not k:
                     continue
@@ -1753,10 +1895,13 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             # (Data/ConfluenceBot/log.csv), asi que la carpeta identifica mejor que
             # un nombre de archivo generico tipo "shadow_log".
             par = f.parent.name
-            label = par if par and par.lower() not in ("data", "logs", "log") else f.stem
+            if sh.is_instance_dir(par) or par.lower() in ("data", "logs", "log"):
+                par = ""          # "<guid>-Default" no es un nombre de bot
+            label = par or f.stem
             stored = 0
             for r in rows:
-                r.setdefault("bot_label", label)
+                # si la propia fila trae el nombre del bot, ese manda
+                r.setdefault("bot_label", sh.label_from_row(r) or label)
                 r.setdefault("source", "csv")
                 try:
                     _store_ctx(r)         # su instante sale de la propia fila
@@ -1830,6 +1975,11 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         if not res.get("ok"):
             return JSONResponse(res, status_code=400)
         return res
+
+    @app.get("/setups")
+    async def setups(days: float = 30, limit: int = 30):
+        """Los setups que se van acumulando, del bot y de Hydra, en un solo sitio."""
+        return {"ok": True, "days": days, "setups": store.setups(days, limit)}
 
     @app.get("/trades/recent")
     async def trades_recent(days: float = 3, limit: int = 12):

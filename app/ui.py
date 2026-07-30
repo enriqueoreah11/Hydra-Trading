@@ -713,7 +713,8 @@ async function botOpen(f){ BOTSEL=f; BOTQ='';
       : '✗ No tiene parámetros de reporte, y no se le pueden añadir sin tocar su código. '
         +'Hydra lo sigue igual por sus operaciones reales en la cuenta.')
     +'</div>'+chartNote(b);
-  $('#bw-head').innerHTML=head;
+  $('#bw-head').innerHTML=head+'<div id="bw-mgmt" class="phelp"></div>';
+  botMgmt(f);
   $('#bw-acts').innerHTML='<button class="btn" onclick="botExplain(false)">'+ICO('bolt',12)+' Explícame la estrategia</button>'
     +'<button class="btn ghost" onclick="botExplain(true)">'+ICO('refresh',12)+' Rehacer</button>'
     +'<button class="btn ghost" onclick="replicaRun()">'+ICO('bars',12)+' ¿La replica Hydra?</button>'
@@ -721,6 +722,48 @@ async function botOpen(f){ BOTSEL=f; BOTQ='';
   botBody(); }
 function closeWins(){ document.querySelectorAll('.modalwin.open').forEach(w=>w.classList.remove('open'));
   $('#modalshade').classList.remove('open'); }
+/* ------- GESTION DE POSICIONES -------
+   Hydra no puede arrancar el bot, pero SI puede gestionar lo que el bot abra: la
+   Open API permite mover el stop y cerrar. La politica se lee de SUS parametros
+   (break-even, trailing, parciales) y se dice cual es antes de dejarla suelta. */
+async function botMgmt(f){ const box=$('#bw-mgmt'); if(!box)return;
+  let d; try{ d=await (await fetch('/manage/policy/'+encodeURIComponent(f))).json(); }
+  catch(e){ box.innerHTML=''; return; }
+  if(!d.ok){ box.innerHTML=''; return; }
+  const pol=d.policy||{}, on=!!d.enabled;
+  let h='<div class="slbl" style="margin:10px 0 4px">'+L('GESTIÓN DE POSICIONES','POSITION MANAGEMENT')+'</div>';
+  h+='<div class="phelp">'+L('Hydra no arranca el bot, pero sí puede gestionar lo que el bot abra: mover el stop y cerrar. Esto es lo que entendí de <b>sus</b> parámetros:',
+                             'Hydra cannot start the bot, but it can manage what the bot opens: move the stop and close. This is what I read from <b>its</b> parameters:')+'</div>';
+  h+='<div style="margin:4px 0 6px">'+(d.frases||[]).map(x=>'· '+escapeHtml(x)).join('<br>')+'</div>';
+  if((pol.unmapped||[]).length) h+='<div class="phelp" style="color:#fbbf24">⚠ '
+    +L('no supe traducir estos parámetros de gestión, así que NO se respetan: ','could not map these management parameters, so they are NOT honoured: ')
+    +pol.unmapped.map(escapeHtml).join(', ')+'</div>';
+  h+='<div class="ssec" style="margin:6px 0">'
+    +'<button class="btn '+(on?'':'ghost')+'" onclick="botMgmtTog(\''+f+'\','+(on?'false':'true')+')">'
+    +(on?L('✔ gestión activada','✔ management on'):L('activar gestión','turn management on'))+'</button>'
+    +'<button class="btn ghost" onclick="botMgmtDry()">'+ICO('bars',12)+' '+L('¿Qué haría ahora?','What would it do now?')+'</button>'
+    +'</div>';
+  h+='<div class="phelp">'+(d.dry_run
+      ? L('Estás en <b>modo papel</b>: aunque esté activada, no se envía nada al broker.','You are in <b>paper mode</b>: even when on, nothing is sent to the broker.')
+      : L('Modo real: con la gestión activada, Hydra moverá el stop y cerrará parciales de las posiciones abiertas con la etiqueta de este bot. Nunca abre.','Live mode: with management on, Hydra will move stops and take partials on positions opened with this bot\'s label. It never opens.'))
+    +'</div><div id="bw-dry" class="phelp"></div>';
+  box.innerHTML=h; }
+async function botMgmtTog(f,on){
+  try{ await fetch('/manage/policy/'+encodeURIComponent(f),{method:'POST',
+        headers:{'content-type':'application/json'},body:JSON.stringify({enabled:on})}); }
+  catch(e){ toast('Error de red'); return; }
+  toast(on?'Gestión activada':'Gestión desactivada'); botMgmt(f); }
+async function botMgmtDry(){ const out=$('#bw-dry'); if(out) out.textContent=L('Calculando…','Working…');
+  let d; try{ d=await (await fetch('/manage/run?apply=false',{method:'POST'})).json(); }
+  catch(e){ if(out) out.textContent='Error de red.'; return; }
+  if(!d.ok){ if(out){ out.style.color='#fbbf24'; out.textContent=d.error||''; } return; }
+  const pl=d.planned||[];
+  if(out){ out.style.color='';
+    out.innerHTML=pl.length
+      ? pl.map(a=>'· <b>'+escapeHtml(a.symbol)+'</b> '+escapeHtml(a.action)
+          +(a.stop_loss?(' → '+a.stop_loss):'')+(a.units?(' ('+a.units+' u)'):'')
+          +'<br><span style="opacity:.75">'+escapeHtml(a.reason||'')+'</span>').join('<br>')
+      : (d.note?escapeHtml(d.note):L('Nada que hacer ahora mismo con las posiciones abiertas.','Nothing to do with the open positions right now.')); } }
 function closeBotWin(){ closeWins(); }
 function openWin(id){ closeWins(); $('#modalshade').classList.add('open'); $(id).classList.add('open'); }
 /* Los instrumentos se editan AQUI, no en Configuracion: estaban en los dos sitios y
@@ -869,12 +912,36 @@ async function renderShadow(){ const box=$('#mb-log'); if(!box)return;
         +'<span class="phelp" style="margin:0;display:block;text-transform:none">'
         +f.kb+' KB · '+ctxAgo(f.mtime)+' · '+f.read_rows+' '+L('filas leídas','rows read')+'</span></span></div>'; });
     if(fs.length>6) h+='<div class="phelp">'+L('y '+(fs.length-6)+' más','and '+(fs.length-6)+' more')+'</div>'; }
+  h+='<div id="mb-setups"></div>';
   h+='<div class="ssec" style="margin:6px 0">'
     +'<button class="btn ghost" onclick="shadowScan()">'+ICO('refresh',12)+' '+L('Leer ahora','Read now')+'</button>'
     +'<button class="btn ghost" onclick="openTradeContext()">'+ICO('archive',12)+' '+L('Ver lo guardado','See what is stored')+'</button>'
     +'</div><div id="sh-out" class="phelp">'
     +(d.last?(L('último repaso','last pass')+': '+ctxAgo(d.last)+' · '+(d.last_imported||0)+' '+L('nuevas','new')):'')
     +'</div>';
+  box.innerHTML=h;
+  renderSetups(); }
+/* SETUPS ACUMULADOS: el diario deja de ser una lista infinita y empieza a decir QUE
+   se repite. Se agrupa por instrumento + temporalidad + lado + nº de confluencias, y
+   se muestran las que pasaron a señal Y las bloqueadas: el aprendizaje esta ahi. */
+async function renderSetups(){ const box=$('#mb-setups'); if(!box)return;
+  let d; try{ d=await (await fetch('/setups?days=30&limit=12')).json(); }catch(e){ box.innerHTML=''; return; }
+  const st=d.setups||[];
+  if(!st.length){ box.innerHTML='<div class="phelp">'
+      +L('Todavía no hay setups acumulados. Aparecen solos en cuanto entren análisis.',
+         'No setups accumulated yet. They appear as analyses arrive.')+'</div>'; return; }
+  let h='<div class="slbl" style="margin:14px 0 4px">'+L('SETUPS ACUMULADOS (30 días)','ACCUMULATED SETUPS (30 days)')+'</div>';
+  st.forEach(x=>{ const pc=x.alerted_pct==null?null:x.alerted_pct;
+    const col=pc==null?'#9fd8ea':(pc>=60?'#34d399':(pc>=25?'#fbbf24':'#ff5d73'));
+    h+='<div class="wrow"><span class="wsym" style="min-width:0;flex:1">'
+      +escapeHtml(x.symbol)+' <span style="opacity:.7">'+escapeHtml(x.timeframe)+'</span>'
+      +' <span style="color:'+(String(x.bias).toLowerCase().indexOf('b')===0?'#34d399':'#ff5d73')+'">'+escapeHtml(x.bias)+'</span>'
+      +'<span class="phelp" style="margin:0;display:block;text-transform:none">'
+      +x.n_families+' '+L('confluencias','confluences')+(x.avg_score!=null?(' · score '+x.avg_score):'')
+      +(x.bots&&x.bots.length?(' · '+escapeHtml(x.bots.join(', '))):'')+'</span></span>'
+      +'<span class="phelp" style="margin:0;text-align:right">'+x.seen+' '+L('veces','times')
+      +'<br><b style="color:'+col+'">'+x.alerted+' '+L('señal','signal')+'</b>'
+      +' / '+x.blocked+' '+L('bloq.','blocked')+'</span></div>'; });
   box.innerHTML=h; }
 async function shadowSet(){ const el=$('#sh-d'); if(!el)return;
   let d; try{ d=await (await fetch('/shadow/dir',{method:'POST',headers:{'content-type':'application/json'},

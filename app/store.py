@@ -329,6 +329,38 @@ class Store:
                  "symbols": [s for s in (r[4] or "").split(",") if s][:6]}
                 for r in rows]
 
+    def setups(self, days: float = 30, limit: int = 40) -> list[dict]:
+        """Los SETUPS acumulados: cada combinación repetida, con cómo le fue.
+
+        Un setup no es una fila: es el patrón que se repite (instrumento +
+        temporalidad + lado + qué confluencias había). Agrupando así, el diario deja
+        de ser una lista infinita y empieza a decir QUÉ funciona.
+
+        `alerted` son las que el bot dejó pasar a señal; el resto se bloqueó. Se
+        muestran las dos, porque el aprendizaje está justo en las bloqueadas.
+        """
+        since = time.time() - max(0.1, days) * 86400
+        rows = self.db.execute(
+            "SELECT COALESCE(symbol,'?') s, COALESCE(timeframe,'?') tf, "
+            "COALESCE(bias,'?') b, COALESCE(n_families,0) nf, "
+            "COUNT(*) n, AVG(score) sc, MAX(ts) last, "
+            "SUM(CASE WHEN outcome LIKE 'alerted%' THEN 1 ELSE 0 END) ok, "
+            "GROUP_CONCAT(DISTINCT COALESCE(bot_label,'')) bots "
+            "FROM trade_context WHERE ts >= ? "
+            "GROUP BY s, tf, b, nf HAVING n >= 1 "
+            "ORDER BY n DESC, last DESC LIMIT ?",
+            (since, int(max(1, min(200, limit))))).fetchall()
+        out = []
+        for r in rows:
+            n, ok = int(r[4]), int(r[7] or 0)
+            out.append({"symbol": r[0], "timeframe": r[1], "bias": r[2],
+                        "n_families": int(r[3] or 0), "seen": n,
+                        "avg_score": round(r[5], 3) if r[5] is not None else None,
+                        "last_ts": r[6], "alerted": ok, "blocked": n - ok,
+                        "alerted_pct": round(ok / n * 100, 1) if n else None,
+                        "bots": [x for x in (r[8] or "").split(",") if x][:4]})
+        return out
+
     def trade_context_digest(self, hours: float = 24, symbol: str = "") -> dict:
         """Resumen digerible de lo que vio el bot, para meterlo en un prompt.
 

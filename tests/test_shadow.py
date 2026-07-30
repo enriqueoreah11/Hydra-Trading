@@ -89,3 +89,19 @@ def test_digest_counts_by_symbol_and_outcome():
     assert d["n"] == 3
     assert d["by_symbol"]["EURUSD"] == 2 and d["by_symbol"]["XAUUSD"] == 1
     assert d["by_outcome"]["alerted"] == 2
+
+
+def test_ctrader_instance_folders_are_not_bot_names():
+    """"3b6638ac-…-Default" es la carpeta de una instancia, no un bot."""
+    assert shadow.is_instance_dir("3b6638ac-4dbb-459a-b93f-c9bb57c00c8c-Default")
+    assert shadow.is_instance_dir("8EA483D3-2D26-48FF-9676-082C67AE7349-Default")
+    assert not shadow.is_instance_dir("Confluence Bot")
+    assert not shadow.is_instance_dir("GoldFibBot")
+
+
+def test_a_label_column_in_the_row_wins():
+    assert shadow.label_from_row({"bot": "Confluence Bot", "symbol": "EURUSD"}) == "Confluence Bot"
+    assert shadow.label_from_row({"Bot Name": "SRC"}) == "SRC"
+    # un guid dentro de la columna tampoco vale como nombre
+    assert shadow.label_from_row({"instance": "3b6638ac-4dbb-459a-b93f-c9bb57c00c8c"}) == ""
+    assert shadow.label_from_row({"symbol": "EURUSD"}) == ""
