@@ -61,6 +61,12 @@ class TokenStore:
         self._save()
 
     async def exchange_code(self, code: str) -> None:
+        """Canjea el código por tokens.
+
+        El endpoint de cTrader puede contestar 200 CON un cuerpo de error, así que
+        no vale con raise_for_status: hay que mirar el cuerpo. Y cuando falla, el
+        motivo tiene que llegar a la pantalla, no morir en el log como un 500.
+        """
         async with httpx.AsyncClient(timeout=30) as http:
             r = await http.post(TOKEN_URL, data={
                 "grant_type": "authorization_code",
@@ -69,8 +75,24 @@ class TokenStore:
                 "client_id": self.client_id,
                 "client_secret": self.client_secret,
             })
-            r.raise_for_status()
-            self._store_response(r.json())
+        try:
+            body = r.json()
+        except Exception:  # noqa: BLE001 - HTML o texto suelto
+            raise RuntimeError(
+                f"el endpoint de tokens respondió {r.status_code} y no era JSON: "
+                f"{r.text[:300]}") from None
+        if isinstance(body, dict) and isinstance(body.get("data"), dict):
+            body = {**body, **body["data"]}          # algunas versiones lo anidan
+        err = (body.get("errorCode") or body.get("error") or
+               body.get("error_description")) if isinstance(body, dict) else None
+        if err or r.status_code >= 400:
+            desc = (body.get("description") or body.get("error_description")
+                    or body.get("errorDescription") or "") if isinstance(body, dict) else ""
+            raise RuntimeError(
+                f"cTrader rechazó el canje ({r.status_code}): {err or 'sin código'}"
+                + (f" — {desc}" if desc else "")
+                + f". redirect_uri enviado: {self.redirect_uri}")
+        self._store_response(body)
 
     async def refresh(self) -> None:
         refresh_token = self._data.get("refresh_token")

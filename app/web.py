@@ -224,11 +224,44 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         return RedirectResponse(build_auth_url(settings.ctrader_client_id,
                                                settings.ctrader_redirect_uri))
 
+    def _oauth_error(msg: str, code_hint: str = "") -> HTMLResponse:
+        """Página de error legible: un 500 crudo no dice nada y aquí es donde más
+        se atasca la gente."""
+        return HTMLResponse(
+            "<div style=\"font-family:ui-monospace,Menlo,monospace;background:#04070e;"
+            "color:#cfe8f2;padding:28px;line-height:1.6\">"
+            "<h2 style='color:#ff5d73'>No pude completar la conexión</h2>"
+            f"<p style='color:#ffb4c0'>{html.escape(msg)}</p>"
+            "<h3 style='color:#7ff6ff;font-size:14px;margin-top:22px'>Qué revisar</h3>"
+            "<ol>"
+            "<li>La <b>URL de retorno</b> registrada en tu aplicación de cTrader "
+            "(openapi.ctrader.com → tu app → Redirect URIs) tiene que ser "
+            f"<code>{html.escape(settings.ctrader_redirect_uri)}</code>, "
+            "<b>igual letra por letra</b> — incluido http/https y el puerto.</li>"
+            "<li>El <b>Client Secret</b> del .env tiene que ser el de ESA misma "
+            "aplicación.</li>"
+            "<li>Un código de autorización <b>solo sirve una vez</b>: si recargaste "
+            "esta página, vuelve a empezar el permiso.</li>"
+            "</ol>"
+            f"<p style='margin-top:20px'><a style='color:#7ff6ff' href='/oauth/login'>"
+            "↻ intentar de nuevo</a> &nbsp;·&nbsp; "
+            "<a style='color:#7ff6ff' href='/health/ctrader'>ver diagnóstico</a> "
+            "&nbsp;·&nbsp; <a style='color:#7ff6ff' href='/'>← volver</a></p>"
+            f"{code_hint}</div>", status_code=400)
+
     @app.get("/oauth/callback")
-    async def oauth_callback(code: str = ""):
+    async def oauth_callback(code: str = "", error: str = "",
+                             error_description: str = ""):
+        if error or error_description:
+            return _oauth_error(f"cTrader devolvió un error: {error} {error_description}".strip())
         if not code:
-            raise HTTPException(400, "missing ?code=")
-        await tokens.exchange_code(code)
+            return _oauth_error("cTrader no devolvió ningún código de autorización. "
+                                "Casi siempre es la URL de retorno.")
+        try:
+            await tokens.exchange_code(code)
+        except Exception as exc:  # noqa: BLE001 - el motivo debe verse, no ser un 500
+            store.log("system", "oauth_error", str(exc)[:400])
+            return _oauth_error(str(exc))
         store.log("system", "oauth", "tokens obtained/renewed via OAuth")
         accounts: list[dict] = []
         try:
