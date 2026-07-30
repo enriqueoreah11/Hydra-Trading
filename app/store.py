@@ -243,17 +243,34 @@ class Store:
 
     # ---------------------------------------------------------- trade_context
 
-    def add_trade_context(self, row: dict, raw: dict) -> int:
+    def add_trade_context(self, row: dict, raw: dict, ts: float | None = None) -> int:
+        """Guarda una captura. `ts` es CUÁNDO PASÓ, no cuándo se leyó.
+
+        Importa para lo que se ve en pantalla: una fila de un CSV de hace tres días
+        no puede contar como "analizando ahora" solo porque se acabe de importar. Si
+        no llega un instante creíble, se usa el de ahora.
+        """
         cols = ("ts_bot", "signal_id", "broker_position_id", "symbol", "timeframe",
                 "bias", "outcome", "score", "raw_score", "learning_mult", "corr_bonus",
                 "zone_price", "zone_top", "zone_bottom", "zone_width_pips",
                 "n_confluences", "n_families", "dist_pips", "spread_pips",
                 "regime", "bot_label", "build_tag", "signals_json")
         vals = [row.get(c) for c in cols]
+        now = time.time()
+        when = now
+        try:
+            t = float(ts or 0)
+            if t > 1e11:                    # venía en milisegundos
+                t /= 1000.0
+            # creíble: de 2010 en adelante y no del futuro (mas de un dia)
+            if 1262304000 < t < now + 86400:
+                when = t
+        except (TypeError, ValueError):
+            pass
         cur = self.db.execute(
             f"INSERT INTO trade_context(ts,{','.join(cols)},raw_json) "
             f"VALUES(?,{','.join('?' * len(cols))},?)",
-            (time.time(), *vals, json.dumps(raw, ensure_ascii=False)))
+            (when, *vals, json.dumps(raw, ensure_ascii=False)))
         self.db.commit()
         return int(cur.lastrowid)
 

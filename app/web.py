@@ -1037,7 +1037,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             return JSONResponse({"ok": False, "error": "se esperaba un objeto"}, status_code=400)
         return {"ok": True, "id": _store_ctx(raw)}
 
-    def _store_ctx(raw: dict) -> int:
+    def _store_ctx(raw: dict, ts: float | None = None) -> int:
         signals = _pick(raw, "signals", "levels", "confluences") or []
         fams = set()
         for s in signals if isinstance(signals, list) else []:
@@ -1068,7 +1068,9 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             "build_tag": _pick(raw, "buildTag", "build"),
             "signals_json": json.dumps(signals, ensure_ascii=False) if signals else None,
         }
-        return store.add_trade_context(row, raw)
+        # el instante REAL de la captura: para lo que llega por HTTP es ahora, pero
+        # una fila de un CSV viejo tiene el suyo y no debe parecer actividad de ahora
+        return store.add_trade_context(row, raw, ts if ts is not None else row["ts_bot"])
 
     def _family(label: str) -> str:
         """Misma taxonomía que ClassifyFamily() del bot (orden importa: HTF e IKL
@@ -1709,7 +1711,34 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         if not d or not d.is_dir():
             return {"ok": False, "error": "no encuentro la carpeta de registros; fíjala"}
         state = sh.load_state(_shadow_state_file())
-        files = sh.find_logs(d)[:max(1, limit_files)]
+        # SOLO los bots elegidos. La carpeta Data de cTrader tiene una subcarpeta por
+        # cada cBot del espacio de trabajo: leerlas todas hacía aparecer 13 bots
+        # "analizando" cuando el usuario solo había elegido 3.
+        mine: set[str] = set()
+        for jf in _bots_dir().glob("*.json"):
+            try:
+                j = json.loads(jf.read_text())
+            except Exception:  # noqa: BLE001
+                continue
+            for cand in (j.get("name"), j.get("type_label"), jf.stem,
+                         Path(j.get("src_path") or "").stem):
+                k = "".join(ch for ch in str(cand or "").lower() if ch.isalnum())
+                if k:
+                    mine.add(k)
+
+        def _is_mine(f: Path) -> bool:
+            if not mine:
+                return False           # sin bots elegidos no se importa nada
+            for part in (f.parent.name, f.stem):
+                k = "".join(ch for ch in part.lower() if ch.isalnum())
+                if not k:
+                    continue
+                if any(k == m or k in m or m in k for m in mine):
+                    return True
+            return False
+
+        files = [f for f in sh.find_logs(d) if _is_mine(f)][:max(1, limit_files)]
+        skipped = len([f for f in sh.find_logs(d) if not _is_mine(f)])
         total, per_file, allrows = 0, [], []
         for f in files:
             try:
@@ -1730,7 +1759,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                 r.setdefault("bot_label", label)
                 r.setdefault("source", "csv")
                 try:
-                    _store_ctx(r)
+                    _store_ctx(r)         # su instante sale de la propia fila
                     stored += 1
                 except Exception:  # noqa: BLE001 - una fila mala no tira las demás
                     pass
@@ -1739,7 +1768,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             per_file.append({"file": f.name, "rows": stored, "total_rows": st.get("rows")})
         sh.save_state(_shadow_state_file(), state)
         _shadow_watch.update({"last": time.time(), "imported": total,
-                              "files": len(files), "error": ""})
+                              "files": len(files), "skipped": skipped, "error": ""})
         if total:
             store.log("system", "shadow_import",
                       f"{total} análisis leídos de {len([x for x in per_file if x.get('rows')])} CSV")
@@ -1757,7 +1786,8 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             except Exception:  # noqa: BLE001 - la nota es un extra
                 pass
         return {"ok": True, "dir": str(d), "imported": total,
-                "files": per_file[:20], "n_files": len(files)}
+                "files": per_file[:20], "n_files": len(files),
+                "skipped_not_mine": skipped, "my_bots": len(mine)}
 
     @app.get("/shadow/status")
     async def shadow_status():
@@ -1767,7 +1797,8 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         state = sh.load_state(_shadow_state_file())
         return {"ok": True, "dir": str(d) if d else "",
                 "exists": bool(d and d.is_dir()),
-                "watch_minutes": _SHADOW_WATCH_MIN,
+                "n_all": len(logs), "watch_minutes": _SHADOW_WATCH_MIN,
+                "skipped_not_mine": _shadow_watch.get("skipped") or 0,
                 "last": _shadow_watch.get("last"),
                 "last_imported": _shadow_watch.get("imported"),
                 "files": [{"file": str(f.relative_to(d)),

@@ -859,7 +859,11 @@ async function renderShadow(){ const box=$('#mb-log'); if(!box)return;
     +escapeHtml(String(d.dir||''))+'" style="text-transform:none">'
     +'<button class="btn" onclick="shadowSet()">'+L('Guardar','Save')+'</button></div>';
   if(d.dir) h+='<div class="phelp" style="color:'+(d.exists?'#34d399':'#ff5d73')+'">'
-    +(d.exists?('✔ '+fs.length+' '+L('archivos de registro','log files')):L('esa carpeta no existe','that folder does not exist'))+'</div>';
+    +(d.exists?('✔ '+fs.length+' '+L('archivos de registro','log files')
+        // se dice cuantos se DEJAN fuera: la carpeta Data de cTrader tiene una por
+        // cada bot del espacio de trabajo, y solo se leen los que elegiste
+        +(d.skipped_not_mine?(' · '+d.skipped_not_mine+' '+L('de otros bots, ignorados','from other bots, ignored')):''))
+      :L('esa carpeta no existe','that folder does not exist'))+'</div>';
   if(fs.length){ fs.slice(0,6).forEach(f=>{
       h+='<div class="wrow"><span class="wsym" style="min-width:0;flex:1">'+escapeHtml(f.file)
         +'<span class="phelp" style="margin:0;display:block;text-transform:none">'
