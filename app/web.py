@@ -5,6 +5,7 @@ import asyncio
 import datetime as dt
 import html
 import json
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
@@ -165,6 +166,9 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             settings.algo_dir = _ad
     except Exception:  # noqa: BLE001
         pass
+    # el vigilante de esa carpeta: cada cuánto vuelve a mirar y qué vio la última vez
+    _ALGO_WATCH_MIN = 10
+    _algo_watch: dict = {"last": None, "result": None}
     # instrumentos vigilados y su estrategia asignada, editados desde la UI
     _watch: dict = {"symbols": [], "assign": {}}
     try:
@@ -206,6 +210,51 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         except Exception:  # noqa: BLE001 - nunca debe tumbar el arranque
             import logging
             logging.getLogger("web").warning("ollama autostart falló", exc_info=True)
+
+    @app.on_event("startup")
+    async def _watch_algo_dir():
+        """Deja la carpeta de los cBots fija y la relee sola.
+
+        Objetivo: no volver a pulsar «escanear». Al arrancar se fija la carpeta
+        (si no lo estaba), se importa lo que haya, y luego se mira cada
+        _ALGO_WATCH_MIN minutos. Al recompilar un bot en cTrader —o al bajar uno
+        nuevo del repo sincronizado— aparece sin tocar nada.
+        """
+        import logging
+        lg = logging.getLogger("web")
+
+        async def loop():
+            first = True
+            while True:
+                try:
+                    if not (settings.algo_dir or "").strip():
+                        await asyncio.to_thread(_algo_autopin)
+                    res = await asyncio.to_thread(_algo_scan_once)
+                    _algo_watch["last"] = time.time()
+                    _algo_watch["result"] = {
+                        "ok": bool(res.get("ok")),
+                        "error": res.get("error"),
+                        "added": len(res.get("added") or []),
+                        "updated": len(res.get("updated") or []),
+                        "unchanged": res.get("unchanged") or 0,
+                        "failed": len(res.get("failed") or []),
+                    }
+                    n = (_algo_watch["result"]["added"]
+                         + _algo_watch["result"]["updated"])
+                    if n or first:      # en silencio si no cambió nada
+                        lg.info("cbots: %s en %s", _algo_watch["result"],
+                                settings.algo_dir or "(sin carpeta)")
+                    first = False
+                except asyncio.CancelledError:
+                    raise
+                except Exception:  # noqa: BLE001 - el vigilante nunca tumba la app
+                    lg.warning("vigilante de .algo falló", exc_info=True)
+                await asyncio.sleep(_ALGO_WATCH_MIN * 60)
+
+        try:
+            asyncio.create_task(loop(), name="algo-watch")
+        except Exception:  # noqa: BLE001
+            lg.warning("no se pudo arrancar el vigilante de .algo", exc_info=True)
 
     @app.on_event("startup")
     async def _start_brain():
@@ -974,28 +1023,63 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         d = (settings.algo_dir or "").strip()
         return Path(d).expanduser() if d else None
 
+    def _algo_guesses() -> list[Path]:
+        # Rutas donde cTrader deja los .algo según instalación. Se buscan de más
+        # concreta a más general: el escaneo es recursivo, así que apuntar a la
+        # raíz de cAlgo ya encuentra todo lo que haya debajo.
+        home = Path.home()
+        return [home / "cAlgo", home / "cAlgo" / "Sources" / "Robots",
+                home / "cAlgo" / "Robots",
+                home / "Documents" / "cAlgo",
+                home / "Documents" / "cAlgo" / "Sources" / "Robots",
+                home / "Documents" / "cAlgo" / "Robots"]
+
+    def _algo_autopin() -> str:
+        """Fija la carpeta de .algo sola, la primera vez, y la deja guardada.
+
+        La carpeta local gana a clonar el repo de GitHub: los `.algo` los compila
+        cTrader en esta máquina, y esa carpeta YA se sincroniza. Leyéndola nunca
+        se va por detrás de lo que de verdad está corriendo, y no hace falta red
+        ni permisos. Si un día se quiere leer el repo, basta apuntar aquí a la
+        copia local del repo: es la misma lectura.
+        """
+        if (settings.algo_dir or "").strip():
+            return settings.algo_dir
+        best = ""
+        for g in _algo_guesses():                 # la primera que tenga .algo
+            if g.is_dir() and any(g.rglob("*.algo")):
+                best = str(g)
+                break
+        if not best:                              # ninguna con bots: vale la raíz
+            for g in _algo_guesses():
+                if g.is_dir():
+                    best = str(g)
+                    break
+        if best:
+            settings.algo_dir = best
+            try:
+                (settings.data_path / "algo_dir.txt").write_text(best)
+            except Exception:  # noqa: BLE001
+                pass
+        return best
+
     @app.get("/algo/dir")
     async def algo_dir_get():
         d = _algo_dir()
         found = []
         if d and d.is_dir():
             found = [str(f.relative_to(d)) for f in sorted(d.rglob("*.algo"))][:200]
-        # Rutas donde cTrader deja los .algo según instalación. Se buscan de más
-        # concreta a más general: el escaneo es recursivo, así que apuntar a la
-        # raíz de cAlgo ya encuentra todo lo que haya debajo.
-        home = Path.home()
-        guesses = [home / "cAlgo", home / "cAlgo" / "Sources" / "Robots",
-                   home / "cAlgo" / "Robots",
-                   home / "Documents" / "cAlgo",
-                   home / "Documents" / "cAlgo" / "Sources" / "Robots",
-                   home / "Documents" / "cAlgo" / "Robots"]
-        real = [str(g) for g in guesses if g.is_dir()]
+        real = [str(g) for g in _algo_guesses() if g.is_dir()]
         # cuántos .algo hay en cada sugerencia: así se ve de un vistazo cuál sirve
         counts = {g: len(list(Path(g).rglob("*.algo"))) for g in real}
         return {"dir": str(d) if d else "", "exists": bool(d and d.is_dir()),
                 "found": found, "n_found": len(found),
-                "guesses": real or [str(g) for g in guesses],
-                "guess_counts": counts}
+                "guesses": real or [str(g) for g in _algo_guesses()],
+                "guess_counts": counts,
+                "auto": bool(d) and str(d) in real,
+                "watch_minutes": _ALGO_WATCH_MIN,
+                "last_scan": _algo_watch.get("last"),
+                "last_result": _algo_watch.get("result")}
 
     @app.post("/algo/dir")
     async def algo_dir_set(request: Request):
@@ -1015,19 +1099,18 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         (settings.data_path / "algo_dir.txt").write_text(d)
         return {"ok": True, "dir": d}
 
-    @app.post("/algo/scan")
-    async def algo_scan():
+    def _algo_scan_once() -> dict:
         """Importa todos los .algo de la carpeta. Reimporta los que cambiaron.
 
         Pensado para la carpeta que ya sincronizas con GitHub y el VPS: cuando
-        recompilas un bot allí, el siguiente escaneo lo recoge solo.
+        recompilas un bot allí, el siguiente escaneo lo recoge solo. Es E/S de
+        disco pura y bloqueante: desde el vigilante se llama en un hilo.
         """
         from . import algo as algo_mod
         import time as _t
         d = _algo_dir()
         if not d or not d.is_dir():
-            return JSONResponse({"ok": False, "error": "primero fija la carpeta"},
-                                status_code=400)
+            return {"ok": False, "error": "primero fija la carpeta"}
         # lo ya importado, para saber qué cambió
         known: dict = {}
         for f in _bots_dir().glob("*.json"):
@@ -1073,11 +1156,19 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                 {"name": parsed["name"], "params": parsed["n_params"],
                  "can_report": parsed["can_report"],
                  "chart_bound": len(parsed["chart_bound"])})
-        store.log("system", "algo_scan",
-                  f"{len(added)} nuevos, {len(updated)} actualizados, "
-                  f"{len(same)} sin cambios, {len(failed)} con error")
+        if added or updated or failed:      # sin cambios no se ensucia el registro
+            store.log("system", "algo_scan",
+                      f"{len(added)} nuevos, {len(updated)} actualizados, "
+                      f"{len(same)} sin cambios, {len(failed)} con error")
         return {"ok": True, "dir": str(d), "added": added, "updated": updated,
                 "unchanged": len(same), "failed": failed}
+
+    @app.post("/algo/scan")
+    async def algo_scan():
+        res = _algo_scan_once()
+        if not res.get("ok"):
+            return JSONResponse(res, status_code=400)
+        return res
 
     @app.post("/algo/import")
     async def algo_import(request: Request):
@@ -1220,7 +1311,9 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         except Exception:  # noqa: BLE001 - el panel no debe caerse por esto
             pass
 
-        if broker.client.account_authorized:
+        # esta ventana tiene que pintar SIEMPRE: sin broker aún, se muestra lo que
+        # se sabe por las capturas y ya está.
+        if broker is not None and broker.client.account_authorized:
             try:
                 pos = await asyncio.wait_for(broker.positions(), timeout=12)
                 for p in pos:

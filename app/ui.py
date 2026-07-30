@@ -508,7 +508,7 @@ function botOpen(f){ BOTSEL=(BOTSEL===f?'':f); BOTQ=''; renderBots(); }
 async function botDel(f){ await fetch('/algo/bots/'+encodeURIComponent(f),{method:'DELETE'});
   if(BOTSEL===f)BOTSEL=''; toast('Bot quitado'); renderBots(); }
 function botFind(v){ BOTQ=v; botBody(); }
-async function botBody(){ const box=$('#bot-body'); if(!box||!BOTSEL)return;
+async function botBody(tgt){ const box=$(tgt||'#bot-body'); if(!box||!BOTSEL)return;
   let d; try{ d=await (await fetch('/algo/bots/'+encodeURIComponent(BOTSEL)
         +'?q='+encodeURIComponent(BOTQ))).json(); }
   catch(e){ box.innerHTML='<div class="empty">Error de red.</div>'; return; }
@@ -523,7 +523,7 @@ async function botBody(){ const box=$('#bot-body'); if(!box||!BOTSEL)return;
         +'<b style="text-align:right">'+escapeHtml(String(p.enum?Object.keys(p.enum)[Number(p.default)]??p.default:p.default))
         +'<br><span class="phelp" style="margin:0">'+escapeHtml(String(p.type))+rng+'</span></b></div>'; }); });
   box.innerHTML=h; }
-async function botsLive(){ const box=$('#bots-live'); if(!box)return;
+async function botsLive(tgt){ const box=$(tgt||'#bots-live'); if(!box)return;
   box.innerHTML='<div class="empty">Leyendo posiciones e histórico de la cuenta…</div>';
   let d; try{ d=await (await fetch('/bots/live?days=7')).json(); }
   catch(e){ box.innerHTML='<div class="empty" style="color:#ff5d73">Error de red.</div>'; return; }
@@ -541,8 +541,89 @@ async function botsLive(){ const box=$('#bots-live'); if(!box)return;
       +'<span class="phelp" style="margin:0">'+escapeHtml((b.symbols||[]).slice(0,5).join(', '))+'</span>'
       +'</span></div>'; });
   box.innerHTML=h; }
+/* ------- MÓDULO «BOTS» DE LA PLACA -------
+   Los cBots no son un ajuste: son parte de la ejecución. Este panel es su puesto
+   de mando — quién está vivo, qué hace cada uno, qué entiende Hydra de él y si
+   sus señales coinciden. El trabajo fino (los 297 parámetros, importar a mano)
+   sigue en el taller de SISTEMA para no duplicar nada. */
+let MBSEL='', MBSEQ=0;
+function mbOpen(f){ MBSEL=(MBSEL===f?'':f); BOTSEL=MBSEL; renderBotsPanel(); }
+function openSysBots(){ const b=$('#b-sistema'); if(b) b.click();
+  setTimeout(()=>{ const el=$('#sys-bots'); if(el&&el.scrollIntoView) el.scrollIntoView({block:'start',behavior:'smooth'}); },280); }
+async function mbScan(){ const box=$('#mb-scan'); if(box) box.textContent=L('Releyendo la carpeta…','Re-reading the folder…');
+  let d; try{ d=await (await fetch('/algo/scan',{method:'POST'})).json(); }
+  catch(e){ if(box) box.textContent='Error de red.'; return; }
+  if(!d.ok){ if(box){ box.style.color='#fbbf24'; box.textContent=d.error||''; } return; }
+  const n=(d.added||[]).length+(d.updated||[]).length;
+  toast(n?(n+' bots actualizados'):'Sin cambios');
+  renderBotsPanel(); }
+async function openBots(){ selected=null;
+  $('#d-e').textContent='🧩'; $('#d-name').textContent='BOTS · '+L('estrategias','strategies');
+  $('#d-role').textContent=L('Ejecución, análisis y prueba de tus cBots','Execution, analysis and testing of your cBots');
+  $('#d-body').innerHTML='<div class="empty">'+L('Leyendo tus bots…','Reading your bots…')+'</div>';
+  $('#drawer').classList.add('open');
+  renderBotsPanel();
+  speak(BOTLIVE.n?L(BOTLIVE.n+' bots activos.',BOTLIVE.n+' bots active.')
+                 :L('Ningún bot activo ahora mismo.','No bots active right now.')); }
+async function renderBotsPanel(){ const seq=++MBSEQ;
+  let live={},bots={},dir={};
+  try{ live=await (await fetch('/bots/active?minutes=45')).json(); }catch(e){}
+  try{ bots=await (await fetch('/algo/bots')).json(); }catch(e){}
+  try{ dir=await (await fetch('/algo/dir')).json(); }catch(e){}
+  const box=$('#d-body');
+  // si mientras se pedían los datos se abrió OTRA cosa, no se pisa su panel
+  if(!box||seq!==MBSEQ||$('#d-name').textContent.indexOf('BOTS')!==0) return;
+  const bs=live.bots||[], list=bots.bots||[];
+  let h='';
+  // 1) QUIÉN ESTÁ VIVO AHORA
+  h+='<div class="slbl" style="margin:2px 0 4px">'+L('EN MARCHA AHORA','RUNNING NOW')+'</div>';
+  if(!bs.length) h+='<div class="empty">'+L('Ninguno operando ni analizando en los últimos 45 minutos.','None trading or analysing in the last 45 minutes.')+'</div>';
+  else bs.forEach(b=>{ const op=b.open>0, col=op?'#34d399':'#5ad1e6';
+    h+='<div class="wrow" style="border-left:2px solid '+col+';padding-left:8px">'
+      +'<span class="wsym" style="min-width:auto;max-width:50%">'+escapeHtml(String(b.label))+'</span>'
+      +'<span style="margin-left:auto;text-align:right;font-size:11px">'
+      +'<b style="color:'+col+';display:block">'+(op?L('OPERA','TRADING'):L('ANALIZA','ANALYSING'))+'</b>'
+      +'<span class="phelp" style="margin:0;display:block">'+(op?(b.open+' '+L('abiertas','open')):(b.seen+' '+L('señales','signals')))
+      +' · '+ctxAgo(b.last_ts)+'</span>'
+      +((b.symbols||[]).length?'<span class="phelp" style="margin:0;display:block">'+escapeHtml(b.symbols.slice(0,6).join(', '))+'</span>':'')
+      +'</span></div>'; });
+  // 2) LOS BOTS LEÍDOS DE LA CARPETA
+  h+='<div class="slbl" style="margin:14px 0 4px">'+L('TUS BOTS','YOUR BOTS')+' ('+list.length+')</div>';
+  if(!list.length) h+='<div class="empty">'+L('Todavía no he leído ningún .algo. Mira la carpeta, abajo.','No .algo read yet. Check the folder, below.')+'</div>';
+  list.forEach(b=>{ const on=MBSEL===b.file;
+    h+='<div class="wrow" style="cursor:pointer" onclick="mbOpen(\''+b.file+'\')">'
+      +'<span class="wsym" style="min-width:auto;max-width:56%">'+(on?'▾ ':'▸ ')+escapeHtml(String(b.name))+'</span>'
+      +'<span class="phelp" style="margin:0 0 0 auto;text-align:right">'+b.n_params+' '+L('parámetros','parameters')
+      +'<br>'+(b.can_report?'<span style="color:#34d399">'+L('puede reportar','can report')+'</span>'
+                          :'<span style="color:#8aa">'+L('se sigue por etiqueta','tracked by label')+'</span>')+'</span></div>';
+    if((b.chart_bound||[]).length) h+='<div class="phelp" style="color:#fbbf24;margin:-4px 0 4px 6px">⚠ '
+      +b.chart_bound.length+' '+L('parámetros leen dibujos hechos a mano en el gráfico: eso no existe fuera de cTrader.',
+                                  'parameters read hand-drawn chart objects: that does not exist outside cTrader.')+'</div>';
+    if(on) h+='<div class="ssec" style="margin:6px 0 2px">'
+      +'<button class="btn" onclick="botExplain(false,\'#mb-expl\')">🧠 '+L('Explícame la estrategia','Explain the strategy')+'</button>'
+      +'<button class="btn ghost" onclick="botExplain(true,\'#mb-expl\')">↻ '+L('Rehacer','Redo')+'</button>'
+      +'<button class="btn ghost" onclick="replicaRun(\'#mb-repl\')">⚖️ '+L('¿La replica Hydra?','Does Hydra replicate it?')+'</button>'
+      +'<button class="btn ghost" onclick="openSysBots()">🔧 '+L('Ver los parámetros','See the parameters')+'</button>'
+      +'</div><div id="mb-expl"></div><div id="mb-repl"></div>'; });
+  // 3) DE DÓNDE SALEN: la carpeta fija
+  h+='<div class="slbl" style="margin:14px 0 4px">'+L('CARPETA FIJA','PINNED FOLDER')+'</div>';
+  h+='<div class="phelp"><code>'+escapeHtml(String(dir.dir||'—'))+'</code>'
+    +(dir.exists?(' · '+dir.n_found+' .algo'):' · <span style="color:#ff5d73">'+L('no existe','missing')+'</span>')+'</div>';
+  h+='<div class="phelp">'+L('Se relee sola cada '+(dir.watch_minutes||10)+' minutos: si recompilas un bot o el repo baja uno nuevo, aparece sin tocar nada.',
+                             'Re-read on its own every '+(dir.watch_minutes||10)+' minutes: recompile a bot or pull a new one and it shows up by itself.')+'</div>';
+  if(dir.last_result) h+='<div class="phelp">'+L('Último repaso','Last pass')+': '
+    +dir.last_result.added+' '+L('nuevos','new')+' · '+dir.last_result.updated+' '+L('actualizados','updated')
+    +' · '+dir.last_result.unchanged+' '+L('sin cambios','unchanged')
+    +(dir.last_result.failed?' · <span style="color:#ff5d73">'+dir.last_result.failed+' '+L('con error','failed')+'</span>':'')
+    +(dir.last_scan?' · '+ctxAgo(dir.last_scan):'')+'</div>';
+  h+='<div class="ssec" style="margin:6px 0">'
+    +'<button class="btn ghost" onclick="mbScan()">⟳ '+L('Releer ahora','Re-read now')+'</button>'
+    +'<button class="btn ghost" onclick="botsLive(\'#mb-acct\')">📊 '+L('Qué opera cada bot en la cuenta','What each bot trades in the account')+'</button>'
+    +'<button class="btn ghost" onclick="openSysBots()">🔧 '+L('Taller completo','Full workshop')+'</button>'
+    +'</div><div id="mb-scan" class="phelp"></div><div id="mb-acct"></div>';
+  box.innerHTML=h; }
 /* Explicación de la estrategia: sirve para comprobar si el sistema la entendió. */
-async function botExplain(redo){ const box=$('#bot-expl'); if(!box||!BOTSEL)return;
+async function botExplain(redo,tgt){ const box=$(tgt||'#bot-expl'); if(!box||!BOTSEL)return;
   box.innerHTML='<div class="empty">Leyendo los parámetros y redactando… (una vez, luego queda guardado)</div>';
   let d; try{ d=await (await fetch('/algo/bots/'+encodeURIComponent(BOTSEL)+'/explain',
         {method:'POST',headers:{'content-type':'application/json'},
@@ -556,7 +637,7 @@ async function botExplain(redo){ const box=$('#bot-expl'); if(!box||!BOTSEL)retu
     +'word-break:break-word;color:#bcd6e6">'+escapeHtml(d.explanation||'')+'</div>';
   speak(L('Listo. Revisa si entendí tu estrategia.','Done. Check whether I understood your strategy.')); }
 /* Medición: ¿coinciden las señales de Hydra con las decisiones reales del bot? */
-async function replicaRun(){ const box=$('#bot-repl'); if(!box)return;
+async function replicaRun(tgt){ const box=$(tgt||'#bot-repl'); if(!box)return;
   box.innerHTML='<div class="empty">Comparando capturas del bot contra las estrategias…</div>';
   let d; try{ d=await (await fetch('/replica/compare',{method:'POST',
         headers:{'content-type':'application/json'},
@@ -1094,9 +1175,15 @@ function hudStart(){ document.querySelectorAll('.hudcol .hud').forEach((e,i)=>se
 /* Ventana BOTS: solo los que están HACIENDO algo — operando o analizando.
    "Analiza" sale de trade_context (el bot mira aunque no abra), "opera" de las
    posiciones abiertas. El que no reporta y no tiene posiciones, no aparece. */
-async function pollBots(){ const box=$('#hud-bots'); if(!box)return;
+let BOTLIVE={n:0,opera:0,analiza:0,bots:[]};
+async function pollBots(){
   let d; try{ d=await (await fetch('/bots/active?minutes=45')).json(); }catch(e){ return; }
   const bs=(d.bots||[]);
+  /* El COMPONENTE «BOTS» de la placa se alimenta de aquí: una sola llamada sirve
+     a la ventana y al módulo, así los dos dicen siempre lo mismo. */
+  BOTLIVE.n=bs.length; BOTLIVE.opera=bs.filter(b=>b.open>0).length;
+  BOTLIVE.analiza=BOTLIVE.n-BOTLIVE.opera; BOTLIVE.bots=bs;
+  const box=$('#hud-bots'); if(!box)return;
   const n=$('#hud-bots-n');
   if(n) n.textContent=bs.length?(bs.filter(b=>b.open).length+' OPERAN'):'EN REPOSO';
   if(!bs.length){ box.innerHTML='<div class="empty" style="padding:4px 2px;font-size:10.5px">'
@@ -1416,7 +1503,10 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     ['tester','analyst'],['tester','executor'],
     // el contexto de decision alimenta la revision diaria, y de ahi la
     // evolucion del playbook. Solo esos dos: el Analyst NO lo lee.
-    ['__ctx','reviewer'],['__ctx','architect']];
+    ['__ctx','reviewer'],['__ctx','architect'],
+    // los cBots ejecutan (Executor), se comparan contra las estrategias (Tester)
+    // y sus decisiones quedan guardadas en el contexto.
+    ['__bots','executor'],['__bots','tester'],['__bots','__ctx']];
   // símbolo vectorial propio de cada agente (dibujado, no un emoji genérico)
   function glyph(k,x,y,s,rgb,al,G){ G=G||g; G.save(); G.translate(x,y); G.strokeStyle='rgba('+rgb+','+al+')'; G.fillStyle='rgba('+rgb+','+al+')'; G.lineWidth=1.7; G.lineJoin='round'; G.lineCap='round';
     switch(k){
@@ -1434,6 +1524,12 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       case 'tester': G.beginPath(); for(let t=-1;t<=1.001;t+=0.1){ const x=Math.sin(t*Math.PI*1.4)*s*0.55; t<=-1?G.moveTo(x,t*s):G.lineTo(x,t*s); } G.stroke();
         G.beginPath(); for(let t=-1;t<=1.001;t+=0.1){ const x=-Math.sin(t*Math.PI*1.4)*s*0.55; t<=-1?G.moveTo(x,t*s):G.lineTo(x,t*s); } G.stroke();
         G.beginPath(); for(let t=-0.7;t<=0.71;t+=0.35){ const x=Math.sin(t*Math.PI*1.4)*s*0.55; G.moveTo(x,t*s); G.lineTo(-x,t*s); } G.stroke(); break;
+      // BOTS: un chip con patas. Es lo que son: código compilado que se enchufa.
+      case '__bots': G.beginPath(); G.rect(-s*0.55,-s*0.55,s*1.1,s*1.1); G.stroke();
+        G.beginPath(); for(let k=-1;k<=1;k++){ const q=k*s*0.3;
+          G.moveTo(-s*0.55,q); G.lineTo(-s*0.95,q); G.moveTo(s*0.55,q); G.lineTo(s*0.95,q);
+          G.moveTo(q,-s*0.55); G.lineTo(q,-s*0.95); G.moveTo(q,s*0.55); G.lineTo(q,s*0.95); }
+        G.stroke(); G.beginPath(); G.arc(0,0,s*0.16,0,6.283); G.fill(); break;
       default: G.beginPath(); G.arc(0,0,s*0.6,0,6.283); G.stroke();
     }
     G.restore(); }
@@ -1698,6 +1794,11 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
      recreara cada frame, el cursor nunca lo encontraría (y no hacía nada). */
   const CTXMOD={key:'__ctx',name:'CONTEXT',rgb:'176,150,255',ctx:true,
                 role:'Memoria de decisiones',x:0,y:0,ang:0};
+  /* BOTS: los cBots también son un componente de la placa, no un ajuste. Son
+     parte de la ejecución — se leen, se explican, se miden y se corrigen —, así
+     que se enciende con actividad real y se abre igual que un agente. */
+  const BOTMOD={key:'__bots',name:'BOTS',rgb:'120,232,170',mod:true,
+                role:'Estrategias: ejecución, análisis y prueba',x:0,y:0,ang:0};
   async function pollCtx(){ try{ const d=await (await fetch('/trade-context?limit=1')).json();
       const t=(d.stats&&d.stats.total)|0; if(CTXO.n>=0&&t>CTXO.n) CTXO.pulse=performance.now(); CTXO.n=t;
       CTXCOUNT=t; renderHudSys();
@@ -1730,7 +1831,7 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     openInfo('🐉 HYDRA · orquestador','<p class="role">El núcleo que coordina a todos los agentes: recibe sus señales, decide y ejecuta como un solo cerebro.</p><div class="empty">Controla a: '+names+'</div>');
     speak('Hydra en línea, '+SIR+'. Coordino a los '+(DATA?DATA.agents.length:0)+' agentes.'); }
   cv.addEventListener('click',()=>{ if(!booted){ $('#activate').click(); return; }
-    if(hoverI>=0&&RING3S[hoverI]) openMarket(RING3S[hoverI].symbol); else if(hoverC) openTradeContext(); else if(hoverKey==='__hydra') openHydra(); else if(hoverKey) openAgent(hoverKey); else { speakStatus(); toast('HYDRA · '+(DATA?DATA.agents.length:0)+' agentes'); } });
+    if(hoverI>=0&&RING3S[hoverI]) openMarket(RING3S[hoverI].symbol); else if(hoverC) openTradeContext(); else if(hoverKey==='__bots') openBots(); else if(hoverKey==='__hydra') openHydra(); else if(hoverKey) openAgent(hoverKey); else { speakStatus(); toast('HYDRA · '+(DATA?DATA.agents.length:0)+' agentes'); } });
   function frame(now){
     if(!DATA){ requestAnimationFrame(frame); return; }
     if(dirty||A.length!==(DATA.agents||[]).length) build();
@@ -1738,15 +1839,14 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     // COMPONENTES FIJOS: van soldados a la placa. La elipse (más ancha que alta)
     // aprovecha el hueco entre la cinta de arriba y el aviso de abajo, y deja los
     // laterales para las ventanas.
-    const NA=A.length+1, arx=S*0.34, ary=S*0.195;
-    for(let i=0;i<A.length;i++){ const a=A[i];
-      a.ang=-Math.PI/2+(i+0.5)*Math.PI*2/NA;       // FIJO: sin el término del giro
-      a.x=CX+Math.cos(a.ang)*arx; a.y=CY+Math.sin(a.ang)*ary; }
-    CTXMOD.ang=-Math.PI/2+(A.length+0.5)*Math.PI*2/NA;
-    CTXMOD.x=CX+Math.cos(CTXMOD.ang)*arx; CTXMOD.y=CY+Math.sin(CTXMOD.ang)*ary;
+    const NA=A.length+2, arx=S*0.34, ary=S*0.195;   // +2: contexto y bots
+    const place=(o,i)=>{ o.ang=-Math.PI/2+(i+0.5)*Math.PI*2/NA;
+      o.x=CX+Math.cos(o.ang)*arx; o.y=CY+Math.sin(o.ang)*ary; };
+    for(let i=0;i<A.length;i++) place(A[i],i);      // FIJOS: sin término de giro
+    place(CTXMOD,A.length); place(BOTMOD,A.length+1);
     CTXO.sx=CTXMOD.x; CTXO.sy=CTXMOD.y; CTXO.ang=CTXMOD.ang;
-    byKey['__ctx']=CTXMOD;                       // para que LINKS lo encuentre
-    const RING=A.concat([CTXMOD]);
+    byKey['__ctx']=CTXMOD; byKey['__bots']=BOTMOD;   // para que LINKS los encuentre
+    const RING=A.concat([CTXMOD,BOTMOD]);
     // Los componentes son cajas fijas: el cursor se prueba contra la caja de cada
     // uno (las cajas se guardan al dibujarlas en el cuadro anterior).
     hoverKey=null; hoverC=false;
@@ -1827,11 +1927,14 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     // y una pista que llega hasta ellos, igual que las ventanas.
     const CW=Math.max(62,Math.min(96,S*0.115)), CH=Math.max(24,Math.min(34,S*0.040));
     const RCORE=Math.max(22,S*0.055)*1.75;         // borde del circulo que gira
-    for(let ai=0;ai<RING.length;ai++){ const a=RING[ai], isctx=!!a.ctx;
-      const st=isctx?'idle':stateOf(a.key), h=isctx?hoverC:(a.key===hoverKey);
-      const o=!isctx&&a.key===sel, on=st==='active'||st==='alert';
+    for(let ai=0;ai<RING.length;ai++){ const a=RING[ai], isctx=!!a.ctx, ismod=!!a.mod;
+      // el de BOTS se enciende si hay bots vivos: es estado real, no decoración
+      const st=isctx?'idle':(ismod?(BOTLIVE.n?'active':'idle'):stateOf(a.key));
+      const h=isctx?hoverC:(a.key===hoverKey);
+      const o=!isctx&&!ismod&&a.key===sel, on=st==='active'||st==='alert';
       const dim=((hoverKey||hoverC)&&!h&&!o), al=dim?0.45:1;
-      const load=isctx?Math.min(1,CTXO.n/40):Math.min(1,entriesOf(a.key)/8);
+      const load=isctx?Math.min(1,CTXO.n/40)
+                 :(ismod?Math.min(1,BOTLIVE.n/4):Math.min(1,entriesOf(a.key)/8));
       const gw=o?CW*(1+grow*0.22):CW, gh=o?CH*(1+grow*0.16):CH;
       const b2=compBox(a,gw,gh); a.box=b2;
       const entry=compEntry(b2);
@@ -1851,7 +1954,8 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       g.font='700 '+Math.max(7.5,Math.min(9.5,gh*0.30))+'px system-ui,sans-serif';
       g.textAlign='left'; g.textBaseline='middle';
       g.fillStyle='rgba('+a.rgb+','+((h||o)?1:0.78)*al+')';
-      g.fillText(isctx?('CTX'+(CTXO.n>0?' '+CTXO.n:'')):shortName(a.name),
+      g.fillText(isctx?('CTX'+(CTXO.n>0?' '+CTXO.n:''))
+                 :(ismod?('BOTS'+(BOTLIVE.n?' '+BOTLIVE.n:'')):shortName(a.name)),
                  gx+gr2+5, a.y-(load>0.02?2:0));
       // barra de actividad: una traza fina bajo la serigrafía
       if(load>0.02){ g.strokeStyle='rgba('+a.rgb+','+(0.8*al)+')'; g.lineWidth=1.6;
@@ -1970,6 +2074,15 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
         +(CTXO.n>0?CTXO.n+' '+L('capturas guardadas','captures stored'):L('esperando la primera captura','waiting for the first capture'))
         +'</span><br><span>↔ Reviewer, Architect</span>'
         +'<br><span style="opacity:.7">'+L('clic para ver todo lo que guarda','click to see everything it stores')+'</span>';
+      tip.classList.add('show'); }
+    else if(hoverKey==='__bots'){ tip.style.left=(BOTMOD.x+24)+'px'; tip.style.top=BOTMOD.y+'px';
+      const bl=BOTLIVE.bots.slice(0,3).map(b=>String(b.label)).join(', ');
+      tip.innerHTML='🧩 <b>BOTS</b> · '+L('estrategias','strategies')+'<br><span>'
+        +(BOTLIVE.n?(BOTLIVE.opera+' '+L('operando','trading')+' · '+BOTLIVE.analiza+' '+L('analizando','analysing'))
+                   :L('ninguno activo ahora','none active right now'))+'</span>'
+        +(bl?'<br><span style="opacity:.8">'+escapeHtml(bl)+'</span>':'')
+        +'<br><span>↔ Executor, Tester, Context</span>'
+        +'<br><span style="opacity:.7">'+L('clic para verlos, explicarlos y medirlos','click to inspect, explain and measure them')+'</span>';
       tip.classList.add('show'); }
     else if(hoverKey==='__hydra'){ tip.style.left=(CX+30)+'px'; tip.style.top=CY+'px';
       tip.innerHTML='🐉 <b>HYDRA</b> · orquestador<br><span>Coordina a todos los agentes como un solo cerebro.</span><br><span style="opacity:.7">clic para ver el conjunto</span>';
