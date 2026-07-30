@@ -366,6 +366,16 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     <div class="hudfoot"><span id="hud-calses">SESIÓN ACTIVA</span>
       <button class="btn ghost calfull" onclick="openCalendar()"><span id="calbtn-ic"></span>VERSI&Oacute;N EXTENDIDA &#9656;</button></div>
   </div>
+  <div class="spacer-v"></div>
+  <!-- CONFIGURACION abajo a la IZQUIERDA: la columna derecha se va llenando de bots
+       e instrumentos, y ahi acabaria apretujada. -->
+  <div id="hudA" class="hud">
+    <div class="hudhd"><span class="dot"></span>CONFIGURACION<span class="tf" id="hud-tf"></span></div>
+    <div class="sysact">
+      <button class="btn ghost" id="hud-halt" onclick="doHalt()"><span class="bi" id="ic-halt"></span>HALT</button>
+      <button class="btn ghost" id="b-sistema" title="Voz, claves, instrumentos y flota"><span class="bi" id="ic-sys"></span>SISTEMA</button>
+    </div>
+  </div>
 </div>
 
 <div id="colR" class="hudcol">
@@ -390,13 +400,6 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     <div class="posbox" id="hud-instr"><div class="empty" style="padding:4px 2px;font-size:10.5px">…</div></div>
   </div>
   <div class="spacer-v"></div>
-  <div id="hudA" class="hud">
-    <div class="hudhd"><span class="dot"></span>CONFIGURACION<span class="tf" id="hud-tf"></span></div>
-    <div class="sysact">
-      <button class="btn ghost" id="hud-halt" onclick="doHalt()"><span class="bi" id="ic-halt"></span>HALT</button>
-      <button class="btn ghost" id="b-sistema" title="Voz, claves, instrumentos y flota"><span class="bi" id="ic-sys"></span>SISTEMA</button>
-    </div>
-  </div>
 </div>
 
 <div id="drawer">
@@ -1899,6 +1902,14 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     const ct=cv2.getContext('2d'); ct.setTransform(dpr,0,0,dpr,0,0);
     const a=byKey[key], rgb=a?a.rgb:'127,246,255';
     glyph(key,size/2,size/2,size*0.30,rgb,1,ct); return cv2; };
+  /* La moneda del instrumento tambien como dataURL, para el globo del raton: asi el
+     globo y la ficha muestran EXACTAMENTE el mismo icono. Cacheada, que dibujar una
+     moneda en cada cuadro seria absurdo. */
+  const _mktCache={};
+  window.mktIconURL=function(sym){ const k=String(sym||'').toUpperCase();
+    if(_mktCache[k]!==undefined) return _mktCache[k];
+    try{ _mktCache[k]=window.marketCoin(k,26).toDataURL(); }catch(e){ _mktCache[k]=''; }
+    return _mktCache[k]; };
   // ícono del agente como dataURL (para el tooltip) — cacheado
   const _iconCache={};
   window.hydraIconURL=function(key){ if(_iconCache[key])return _iconCache[key]; try{ const c=window.hydraIcon(key,26); _iconCache[key]=c.toDataURL(); return _iconCache[key]; }catch(e){ return ''; } };
@@ -1912,7 +1923,8 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     PLATINUM:{c:'176,182,190',c2:'242,246,250',dk:'70,74,80',sym:'pt'},
     OIL:{c:'52,46,40',c2:'150,110,60',dk:'18,14,10',sym:'drop'},
     BRENT:{c:'44,46,52',c2:'120,96,64',dk:'16,16,20',sym:'barrel'},
-    'S&P 500':{c:'36,120,66',c2:'132,222,152',dk:'8,42,20',sym:'spider'},
+    // "500" se lee al instante; la araña que habia no se entendia a este tamaño
+    'S&P 500':{c:'36,120,66',c2:'132,222,152',dk:'8,42,20',sym:'500'},
     NASDAQ:{c:'34,116,176',c2:'132,216,255',dk:'8,38,62',sym:'chip'},
     DOW:{c:'74,90,168',c2:'156,176,255',dk:'22,28,66',sym:'bull'},
     DXY:{c:'36,138,90',c2:'134,232,178',dk:'8,46,28',sym:'dollar'},
@@ -1925,7 +1937,15 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     US500:'S&P 500',SPX500:'S&P 500',DE40:'DAX',GER40:'DAX',UK100:'FTSE',JPN225:'NIKKEI',JP225:'NIKKEI'};
   window.mktName=s=>MKT_NAMES[(s||'').toUpperCase()]||'';
   function coinMeta(sym){ const nm=(sym==='DXY')?'DXY':(MKT_NAMES[(sym||'').toUpperCase()]||(sym||'').toUpperCase());
-    return COIN[nm]||{c:'110,132,156',c2:'205,222,240',dk:'18,28,44',sym:'ticker',t:nm}; }
+    // el texto de respaldo SIEMPRE va puesto: sin el, los que no tienen dibujo
+    // propio (DAX, FTSE, NIKKEI…) salian con un "?" que no dice nada
+    if(COIN[nm]) return Object.assign({t:nm},COIN[nm]);
+    // FOREX: mismo icono para todos los cruces, en azul de la placa
+    if(typeof ccyPair==='function'&&ccyPair(nm))
+      return {c:'30,96,132',c2:'150,232,255',dk:'6,26,38',sym:'forex',t:nm};
+    // BTCUSD -> BTC: el "USD" sobra cuando el otro lado es lo que se opera
+    const short=nm.length>4&&/USD$/.test(nm)?nm.slice(0,-3):nm;
+    return {c:'110,132,156',c2:'205,222,240',dk:'18,28,44',sym:'ticker',t:short}; }
   function coinSym(ct,kind,s,txt){ ct.lineWidth=Math.max(1.4,s*0.14);
     switch(kind){
       case 'ingots': for(let k=0;k<3;k++){ const oy=(k-1)*s*0.44; ct.beginPath(); ct.moveTo(-s*0.62,oy+s*0.13); ct.lineTo(s*0.48,oy+s*0.13); ct.lineTo(s*0.64,oy-s*0.13); ct.lineTo(-s*0.46,oy-s*0.13); ct.closePath(); ct.fill(); } break;
@@ -1933,27 +1953,30 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       case 'drop': ct.beginPath(); ct.moveTo(0,-s*0.85); ct.bezierCurveTo(s*0.75,-s*0.1,s*0.58,s*0.75,0,s*0.75); ct.bezierCurveTo(-s*0.58,s*0.75,-s*0.75,-s*0.1,0,-s*0.85); ct.closePath(); ct.fill(); break;
       case 'barrel': ct.beginPath(); ct.moveTo(-s*0.5,-s*0.7); ct.lineTo(s*0.5,-s*0.7); ct.lineTo(s*0.5,s*0.7); ct.lineTo(-s*0.5,s*0.7); ct.closePath(); ct.stroke(); ct.beginPath(); ct.moveTo(-s*0.5,-s*0.25); ct.lineTo(s*0.5,-s*0.25); ct.moveTo(-s*0.5,s*0.25); ct.lineTo(s*0.5,s*0.25); ct.stroke(); break;
       case 'chip': ct.beginPath(); ct.rect(-s*0.5,-s*0.5,s,s); ct.stroke(); for(let k=-1;k<=1;k++){ ct.beginPath(); ct.moveTo(-s*0.72,k*s*0.34); ct.lineTo(-s*0.5,k*s*0.34); ct.moveTo(s*0.5,k*s*0.34); ct.lineTo(s*0.72,k*s*0.34); ct.moveTo(k*s*0.34,-s*0.72); ct.lineTo(k*s*0.34,-s*0.5); ct.moveTo(k*s*0.34,s*0.5); ct.lineTo(k*s*0.34,s*0.72); ct.stroke(); } ct.beginPath(); ct.arc(0,0,s*0.16,0,7); ct.fill(); break;
+      case 'forex': coinForex(ct,s); break;
+      case '500': ct.font='800 '+(s*0.86)+'px system-ui,sans-serif'; ct.textAlign='center';
+        ct.textBaseline='middle'; ct.fillText('500',0,s*0.06); break;
       case 'spider': ct.beginPath(); ct.ellipse(0,s*0.18,s*0.26,s*0.34,0,0,7); ct.fill(); ct.beginPath(); ct.arc(0,-s*0.26,s*0.19,0,7); ct.fill(); for(const sg of [-1,1]){ for(let k=0;k<4;k++){ ct.beginPath(); ct.moveTo(sg*s*0.14,s*0.05); ct.quadraticCurveTo(sg*s*0.62,-s*0.15+k*s*0.22,sg*s*0.82,s*0.1+k*s*0.2); ct.stroke(); } } break;
       case 'bull': ct.beginPath(); ct.moveTo(-s*0.72,-s*0.45); ct.quadraticCurveTo(-s*0.45,-s*0.8,-s*0.22,-s*0.42); ct.moveTo(s*0.72,-s*0.45); ct.quadraticCurveTo(s*0.45,-s*0.8,s*0.22,-s*0.42); ct.stroke(); ct.beginPath(); ct.moveTo(-s*0.36,-s*0.35); ct.lineTo(-s*0.3,s*0.42); ct.quadraticCurveTo(0,s*0.78,s*0.3,s*0.42); ct.lineTo(s*0.36,-s*0.35); ct.closePath(); ct.stroke(); break;
       case 'dollar': ct.font='700 '+(s*1.6)+'px system-ui,sans-serif'; ct.textAlign='center'; ct.textBaseline='middle'; ct.fillText('$',0,s*0.06); break;
       case 'pt': ct.font='700 '+(s*1.15)+'px system-ui,sans-serif'; ct.textAlign='center'; ct.textBaseline='middle'; ct.fillText('Pt',0,s*0.06); break;
       default: ct.font='700 '+(s*0.72)+'px system-ui,sans-serif'; ct.textAlign='center'; ct.textBaseline='middle'; ct.fillText((txt||'?').slice(0,4),0,s*0.05); }
   }
+  // Todos los cruces de divisas comparten icono: da igual el par, la idea es la
+  // misma (cambiar una moneda por otra). Dos flechas girando, con las barras del
+  // cambio en medio.
+  function coinForex(ct,s){
+    ct.lineWidth=Math.max(1.5,s*0.17); ct.lineCap='round';
+    ct.beginPath(); ct.arc(0,0,s*0.62,Math.PI*0.15,Math.PI*0.95); ct.stroke();
+    ct.beginPath(); ct.moveTo(-s*0.62,-s*0.06); ct.lineTo(-s*0.62,s*0.30); ct.lineTo(-s*0.30,s*0.20); ct.closePath(); ct.fill();
+    ct.beginPath(); ct.arc(0,0,s*0.62,Math.PI*1.15,Math.PI*1.95); ct.stroke();
+    ct.beginPath(); ct.moveTo(s*0.62,s*0.06); ct.lineTo(s*0.62,-s*0.30); ct.lineTo(s*0.30,-s*0.20); ct.closePath(); ct.fill();
+    ct.beginPath(); ct.moveTo(-s*0.26,-s*0.12); ct.lineTo(s*0.26,-s*0.12);
+    ct.moveTo(-s*0.26,s*0.12); ct.lineTo(s*0.26,s*0.12); ct.stroke();
+  }
   window.marketCoin=function(sym,size){ const dpr=Math.min(window.devicePixelRatio||1,2);
     const cv2=document.createElement('canvas'); cv2.width=cv2.height=size*dpr; cv2.style.width=cv2.style.height=size+'px';
     const ct=cv2.getContext('2d'); ct.setTransform(dpr,0,0,dpr,0,0);
-    /* Un par de divisas NO es una moneda de metal: son DOS monedas. Se dibujan sus
-       dos signos (EURJPY -> €¥), que se leen antes que seis letras. Los metales y
-       los indices conservan su moneda, que ahi si significa algo. */
-    const pr=(typeof ccyPair==='function')?ccyPair(sym):'';
-    if(pr){ const cx0=size/2, cy0=size/2;
-      ct.font='700 '+(size*0.46)+'px system-ui,-apple-system,sans-serif';
-      ct.textAlign='center'; ct.textBaseline='middle';
-      ct.strokeStyle='rgba(56,230,255,0.30)'; ct.lineWidth=Math.max(1,size*0.035);
-      ct.beginPath(); ct.arc(cx0,cy0,size*0.44,0,7); ct.stroke();
-      ct.shadowColor='rgba(56,230,255,0.75)'; ct.shadowBlur=size*0.22;
-      ct.fillStyle='#dffaff'; ct.fillText(pr,cx0,cy0+size*0.02);
-      ct.shadowBlur=0; return cv2; }
     const m=coinMeta(sym), R=size*0.44, cx=size/2, cy=size/2;
     const gr=ct.createRadialGradient(cx-R*0.35,cy-R*0.35,R*0.1,cx,cy,R); gr.addColorStop(0,'rgba('+m.c2+',1)'); gr.addColorStop(1,'rgba('+m.c+',1)');
     ct.fillStyle=gr; ct.beginPath(); ct.arc(cx,cy,R,0,7); ct.fill();
@@ -2435,8 +2458,9 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       const bb=r.box||{x:r.x,y:r.y,w:0,h:0};
       tip.style.left=(bb.x+bb.w+12)+'px'; tip.style.top=(bb.y+bb.h/2)+'px';
       const nm=(window.mktName&&window.mktName(sym))||'';
-      const pr=(typeof ccyPair==='function'&&ccyPair(sym))||'';
-      tip.innerHTML=(pr?'<b style="color:#7ff6ff">'+pr+'</b> ':ICO('chart',15,'#7ff6ff')+' ')+'<b>'+escapeHtml(sym)+'</b>'+(nm?' · '+escapeHtml(nm):'')
+      const mu=window.mktIconURL?window.mktIconURL(sym):'';
+      tip.innerHTML=(mu?'<img src="'+mu+'" style="width:17px;height:17px;vertical-align:-4px;margin-right:4px">'
+                       :ICO('chart',15,'#7ff6ff')+' ')+'<b>'+escapeHtml(sym)+'</b>'+(nm?' · '+escapeHtml(nm):'')
         +'<br><span>'+(r.price==null?L('esperando datos del broker','waiting for broker data')
           :r.price+' · '+(r.change_pct>=0?'+':'')+r.change_pct.toFixed(2)+'% · '+escapeHtml(String(r.verdict||'')))+'</span>'
         +(OPENSYMS.has(sym.toUpperCase())?'<br><span style="color:#34d399">'+L('con posición abierta','position open')+'</span>':'')
