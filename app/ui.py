@@ -407,6 +407,20 @@ function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('sho
 
 $('#b-refresh').onclick=()=>{ toast('Datos actualizados'); load(); }; $('#b-halt').onclick=doHalt; $('#b-demo').onclick=runDemo; $('#b-cal').onclick=openCalendar;
 $('#b-sistema').onclick=()=>{ renderSysInfo(); renderWatch(); renderSecrets(); renderVault(); renderProps(); renderFleet(); $('#sistema').classList.add('open'); };
+/* Diagnóstico de la conexión: recorre la cadena y se para en el eslabón roto. */
+async function ctraderDiag(){ const box=$('#sys-diag'); if(!box)return;
+  box.innerHTML='<div class="empty">Revisando la cadena… (puede tardar unos segundos)</div>';
+  let d; try{ d=await (await fetch('/health/ctrader')).json(); }
+  catch(e){ box.innerHTML='<div class="empty" style="color:#ff5d73">No pude ejecutarlo. ¿Falta reiniciar la app?</div>'; return; }
+  if(!d.steps){ box.innerHTML='<div class="empty" style="color:#ff5d73">Respuesta inesperada.</div>'; return; }
+  let h='<div class="phelp" style="color:'+(d.ok?'#34d399':'#fbbf24')+'">'+escapeHtml(d.resumen||'')+'</div>';
+  d.steps.forEach(s=>{
+    h+='<div class="cfg" style="align-items:flex-start"><span>'+(s.ok?'✅':'❌')+' '+escapeHtml(s.paso)+'</span>'
+      +'<b style="text-align:right;max-width:62%;font-weight:400;color:'+(s.ok?'#a9bcd0':'#ffb4c0')+'">'
+      +escapeHtml(String(s.detalle||''))+'</b></div>';
+    if(!s.ok&&s.arreglo) h+='<div class="phelp" style="color:#fbbf24;margin:-2px 0 8px">↳ '+escapeHtml(s.arreglo)+'</div>';
+  });
+  box.innerHTML=h; }
 /* ------- INSTRUMENTOS Y ESTRATEGIAS: añadir, quitar y asignar en los dos sentidos ------- */
 let WATCH=null, WVIEW='sym';
 async function renderWatch(){ const box=$('#sys-watch'); if(!box)return;
@@ -577,6 +591,7 @@ function renderSysInfo(){ if(!DATA){ $('#sys-info').innerHTML='<div class="empty
   if(!c.oauth_ok) h+='<a class="btn" href="/oauth/login" style="display:inline-block;margin:10px 0;text-decoration:none">🔌 Conectar mi cuenta de cTrader</a>';
   if(c.oauth_ok) h+='<a class="btn ghost" href="/oauth/login" style="display:inline-block;margin:8px 0;text-decoration:none">🔄 Reconectar cTrader (actualizar cuentas)</a>';
   if(c.oauth_ok) h+='<div id="sys-accounts" class="empty">Cargando cuentas…</div>';
+  h+='<button class="btn ghost" onclick="ctraderDiag()">🩺 Diagnóstico cTrader</button><div id="sys-diag"></div>';
   h+='<div class="cfg"><span>Modelo IA</span> <span>'+MODELS.map(m=>'<button class="btn ghost'+((c.model||'')===m.id?' on':'')+'" style="padding:5px 9px;margin-left:5px" title="'+m.hint+'" onclick="setModel(\''+m.id+'\')">'+m.label+'</button>').join('')+'</span></div>';
   h+='<div class="phelp" style="margin:-4px 0 8px">'+((MODELS.find(m=>m.id===(c.model||''))||{}).hint||'')+'. Menos capaz = más barato. El costo se reduce también subiendo <b>«analiza cada (min)»</b> del agente Analista.</div>';
   h+='<div id="sys-local"></div>';

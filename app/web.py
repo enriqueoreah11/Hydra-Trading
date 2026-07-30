@@ -1202,6 +1202,123 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             raise HTTPException(400, str(exc))
         return {"ok": True}
 
+    @app.get("/health/ctrader")
+    async def ctrader_health(request: Request):
+        """Diagnóstico de la cadena completa hasta los datos del broker.
+
+        Revisa en orden: credenciales, URL de retorno, tokens, cuentas, cuenta
+        elegida, conexión, resolución de símbolos y una petición real de velas.
+        Se para en el primer eslabón roto y dice qué hacer.
+        """
+        out: dict = {"steps": [], "ok": False}
+
+        def step(name, ok, detail="", fix=""):
+            out["steps"].append({"paso": name, "ok": bool(ok),
+                                 "detalle": detail, "arreglo": fix})
+            return ok
+
+        # 1) credenciales de la aplicación
+        if not step("Credenciales de la app", bool(settings.ctrader_client_id
+                                                  and settings.ctrader_client_secret),
+                    f"client_id {'puesto' if settings.ctrader_client_id else 'FALTA'}, "
+                    f"secret {'puesto' if settings.ctrader_client_secret else 'FALTA'}",
+                    "añade CTRADER_CLIENT_ID y CTRADER_CLIENT_SECRET a tu .env y reinicia"):
+            return out
+
+        # 2) URL de retorno: la causa más común de que el OAuth no deje tokens.
+        #    La que usa la app tiene que estar registrada TAL CUAL en cTrader.
+        origin = str(request.base_url).rstrip("/")
+        expected = origin + "/oauth/callback"
+        same = settings.ctrader_redirect_uri.rstrip("/") == expected
+        step("URL de retorno", same,
+             f"la app usa {settings.ctrader_redirect_uri} y estás entrando por {origin}",
+             "" if same else
+             f"pon CTRADER_REDIRECT_URI={expected} en tu .env, y registra ESA MISMA "
+             f"URL en tu aplicación de cTrader (openapi.ctrader.com → tu app → "
+             f"Redirect URIs). Si no coinciden letra por letra, cTrader nunca "
+             f"devuelve el código y te quedas sin tokens.")
+
+        # 3) tokens
+        if not step("Tokens de OAuth", tokens.has_tokens,
+                    "guardados en data/tokens.json" if tokens.has_tokens else "no hay",
+                    "" if tokens.has_tokens else
+                    f"abre {origin}/oauth/login y completa el permiso. Si vuelves a "
+                    f"esta pantalla sin tokens, el fallo es la URL de retorno (paso 2)"):
+            return out
+
+        # 4) cuentas autorizadas
+        try:
+            token = await tokens.get_access_token()
+            await broker.client.start()
+            await broker.client.wait_connected(timeout=12)
+            accs = await asyncio.wait_for(broker.list_accounts(token), timeout=15)
+        except Exception as exc:  # noqa: BLE001
+            step("Cuentas autorizadas", False, str(exc)[:200],
+                 "revisa que el entorno (demo/live) del paso 5 coincida con tu cuenta")
+            return out
+        listed = [{"id": a.get("ctidTraderAccountId"), "live": bool(a.get("isLive")),
+                   "login": a.get("traderLogin")} for a in accs]
+        if not step("Cuentas autorizadas", bool(listed), f"{len(listed)}: {listed}",
+                    "en cTrader autoriza al menos una cuenta para esta aplicación"):
+            return out
+
+        # 5) cuenta elegida y entorno
+        aid = settings.ctrader_account_id
+        match = next((a for a in listed if a["id"] == aid), None)
+        if not step("Cuenta elegida", bool(match),
+                    f"CTRADER_ACCOUNT_ID={aid or '(sin elegir)'}, entorno={settings.ctrader_env}",
+                    "elige la cuenta en Sistema → CONEXIÓN, o pon su id en "
+                    "CTRADER_ACCOUNT_ID. Debe ser una de las de arriba"):
+            return out
+        env_ok = (settings.ctrader_env == "live") == match["live"]
+        if not step("Entorno demo/live", env_ok,
+                    f"la cuenta {aid} es {'LIVE' if match['live'] else 'DEMO'} y "
+                    f"la app apunta a {settings.ctrader_env.upper()} ({settings.ws_url})",
+                    f"cambia a {'live' if match['live'] else 'demo'}: son servidores "
+                    f"distintos y con el equivocado la autorización se rechaza"):
+            return out
+
+        # 6) autorización de la cuenta en el websocket
+        if not step("Cuenta autorizada", broker.client.account_authorized,
+                    getattr(broker.client, "last_error", "") or "sin error reportado",
+                    "reinicia la app; si persiste, vuelve a hacer /oauth/login"):
+            return out
+
+        # 7) los símbolos vigilados existen en ESTE broker
+        names = broker.symbol_names()
+        bad = []
+        for sym in settings.symbol_list:
+            try:
+                await asyncio.wait_for(broker.symbol_id(sym), timeout=10)
+            except Exception as exc:  # noqa: BLE001
+                bad.append(f"{sym}: {str(exc)[:60]}")
+        step("Símbolos vigilados", not bad,
+             f"{len(settings.symbol_list) - len(bad)}/{len(settings.symbol_list)} resueltos"
+             + (f" — fallan {bad}" if bad else ""),
+             "en Sistema → INSTRUMENTOS quita los que fallen y añade el nombre que "
+             "usa tu broker (el campo sugiere los reales)" if bad else "")
+
+        # 8) una petición de velas de verdad: es lo que alimenta los paneles
+        probe = settings.symbol_list[0] if settings.symbol_list else "EURUSD"
+        try:
+            cs = await asyncio.wait_for(
+                broker.candles(probe, settings.timeframe, 60), timeout=20)
+            step("Velas reales", len(cs) >= 30,
+                 f"{probe} {settings.timeframe}: {len(cs)} velas, "
+                 f"último cierre {cs[-1].close if cs else '—'}",
+                 "" if len(cs) >= 30 else "el broker responde pero manda poco "
+                 "histórico: prueba otra temporalidad")
+        except Exception as exc:  # noqa: BLE001
+            step("Velas reales", False, f"{probe}: {str(exc)[:200]}",
+                 "si aquí falla con la cuenta autorizada, suele ser que el símbolo "
+                 "no cotiza a esta hora o que el broker lo tiene con otro nombre")
+
+        out["ok"] = all(x["ok"] for x in out["steps"])
+        out["resumen"] = ("todo en orden" if out["ok"] else
+                          "falla: " + ", ".join(x["paso"] for x in out["steps"] if not x["ok"]))
+        out["symbols_del_broker"] = len(names)
+        return out
+
     @app.get("/tts/health")
     async def tts_health():
         """Diagnóstico de la voz neural: dice si está configurada y prueba una síntesis real."""
