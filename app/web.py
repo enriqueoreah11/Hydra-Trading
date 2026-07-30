@@ -956,6 +956,87 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             return JSONResponse({"error": "no existe"}, status_code=404)
         return row
 
+    # -------------------------------------------------- bots de cTrader (.algo)
+
+    def _bots_dir():
+        d = settings.data_path / "bots"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    @app.post("/algo/import")
+    async def algo_import(request: Request):
+        """Recibe un .algo en crudo y guarda sus parámetros.
+
+        Del .algo solo se puede sacar la CONFIGURACIÓN: nombres, tipos, valores por
+        defecto y rangos. La lógica va en una DLL de .NET que solo ejecuta el host
+        de cTrader — eso no se puede correr aquí, y conviene decirlo claro.
+        """
+        from . import algo as algo_mod
+        raw = await request.body()
+        if not raw:
+            return JSONResponse({"ok": False, "error": "no llegó ningún archivo"},
+                                status_code=400)
+        if len(raw) > 20 * 1024 * 1024:
+            return JSONResponse({"ok": False, "error": "archivo demasiado grande"},
+                                status_code=400)
+        try:
+            parsed = algo_mod.parse(raw)
+        except algo_mod.AlgoError as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        parsed["imported_ts"] = __import__("time").time()
+        parsed["file_bytes"] = len(raw)
+        safe = "".join(c for c in str(parsed["name"]) if c.isalnum() or c in "-_")[:60] or "bot"
+        (_bots_dir() / f"{safe}.json").write_text(
+            json.dumps(parsed, ensure_ascii=False, indent=1))
+        store.log("system", "algo_import",
+                  f"{parsed['name']}: {parsed['n_params']} parámetros en "
+                  f"{parsed['n_groups']} grupos")
+        return {"ok": True, "bot": safe, **{k: parsed[k] for k in
+                ("name", "kind", "api_version", "n_params", "n_groups", "chart_bound")}}
+
+    @app.get("/algo/bots")
+    async def algo_bots():
+        out = []
+        for f in sorted(_bots_dir().glob("*.json")):
+            try:
+                d = json.loads(f.read_text())
+            except Exception:  # noqa: BLE001
+                continue
+            out.append({"file": f.stem, "name": d.get("name"), "kind": d.get("kind"),
+                        "n_params": d.get("n_params"), "n_groups": d.get("n_groups"),
+                        "api_version": d.get("api_version"),
+                        "built_at": d.get("built_at"),
+                        "chart_bound": d.get("chart_bound") or [],
+                        "imported_ts": d.get("imported_ts")})
+        return {"bots": out}
+
+    @app.get("/algo/bots/{name}")
+    async def algo_bot(name: str, group: str = "", q: str = ""):
+        f = (_bots_dir() / (name + ".json")).resolve()
+        if _bots_dir().resolve() not in f.parents or not f.is_file():
+            return JSONResponse({"error": "no existe"}, status_code=404)
+        d = json.loads(f.read_text())
+        if group or q:
+            ql = q.lower()
+            gs = []
+            for g in d.get("groups") or []:
+                if group and g["group"] != group:
+                    continue
+                ps = [p for p in g["params"]
+                      if not ql or ql in p["name"].lower() or ql in str(p["label"]).lower()]
+                if ps:
+                    gs.append({"group": g["group"], "params": ps})
+            d["groups"] = gs
+        return d
+
+    @app.delete("/algo/bots/{name}")
+    async def algo_bot_del(name: str):
+        f = (_bots_dir() / (name + ".json")).resolve()
+        if _bots_dir().resolve() in f.parents and f.is_file():
+            f.unlink()
+            return {"ok": True}
+        return JSONResponse({"ok": False, "error": "no existe"}, status_code=404)
+
     # ------------------------------------------ instrumentos y sus estrategias
 
     def _save_watch() -> None:

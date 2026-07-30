@@ -265,6 +265,8 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     </div>
     <div class="slbl">CONEXIÓN Y CONFIGURACIÓN</div>
     <div id="sys-info"></div>
+    <div class="slbl">🤖 MIS BOTS DE CTRADER (.algo)</div>
+    <div id="sys-bots"></div>
     <div class="slbl">📈 INSTRUMENTOS Y ESTRATEGIAS</div>
     <div id="sys-watch"></div>
     <div class="slbl">🔑 CLAVES (API KEYS)</div>
@@ -406,7 +408,60 @@ function banner(c){ const b=$('#banner'); let m='';
 function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('show'); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),3800); }
 
 $('#b-refresh').onclick=()=>{ toast('Datos actualizados'); load(); }; $('#b-halt').onclick=doHalt; $('#b-demo').onclick=runDemo; $('#b-cal').onclick=openCalendar;
-$('#b-sistema').onclick=()=>{ renderSysInfo(); renderWatch(); renderSecrets(); renderVault(); renderProps(); renderFleet(); $('#sistema').classList.add('open'); };
+$('#b-sistema').onclick=()=>{ renderSysInfo(); renderBots(); renderWatch(); renderSecrets(); renderVault(); renderProps(); renderFleet(); $('#sistema').classList.add('open'); };
+/* ------- BOTS DE CTRADER: se importan sus parametros del .algo ------- */
+let BOTSEL='', BOTQ='';
+async function renderBots(){ const box=$('#sys-bots'); if(!box)return;
+  let d; try{ d=await (await fetch('/algo/bots')).json(); }
+  catch(e){ box.innerHTML='<div class="empty">No disponible. ¿Falta reiniciar?</div>'; return; }
+  const bots=d.bots||[];
+  let h='<div class="phelp">Sube tu <code>.algo</code> y Hydra lee sus <b>parámetros</b>: nombres, tipos, valores por defecto y rangos. La <b>lógica</b> vive en una DLL de .NET que solo ejecuta cTrader — eso no corre aquí.</div>';
+  h+='<div class="wadd"><input type="file" id="algo-f" accept=".algo" '
+    +'style="flex:1;background:#08131d;color:#9fe6ff;border:1px solid #17495d;border-radius:8px;padding:6px 8px;font-size:11.5px">'
+    +'<button class="btn" onclick="algoUp()">Importar</button></div><div id="algo-out" class="phelp"></div>';
+  if(!bots.length){ box.innerHTML=h+'<div class="empty">Ningún bot importado todavía.</div>'; return; }
+  bots.forEach(b=>{ const on=BOTSEL===b.file;
+    h+='<div class="wrow" style="cursor:pointer" onclick="botOpen(\''+b.file+'\')">'
+      +'<span class="wsym" style="min-width:auto">'+(on?'▾ ':'▸ ')+escapeHtml(String(b.name))+'</span>'
+      +'<span class="phelp" style="margin:0;flex:1">'+b.n_params+' parámetros · '+b.n_groups+' grupos · API '+escapeHtml(String(b.api_version||'?'))+'</span>'
+      +'<span class="wx" title="Quitar" onclick="event.stopPropagation();botDel(\''+b.file+'\')">✕</span></div>';
+    if((b.chart_bound||[]).length) h+='<div class="phelp" style="color:#fbbf24;margin:-4px 0 6px">'
+      +'⚠ '+b.chart_bound.length+' parámetros leen dibujos que haces A MANO en el gráfico ('
+      +b.chart_bound.map(escapeHtml).join(', ')+'). Eso no existe fuera de cTrader: una réplica solo puede igualar la parte automática.</div>';
+    if(on) h+='<div id="bot-body"><div class="empty">Cargando…</div></div>';
+  });
+  box.innerHTML=h;
+  if(BOTSEL) botBody(); }
+async function algoUp(){ const el=$('#algo-f'), out=$('#algo-out');
+  if(!el||!el.files||!el.files[0]){ if(out)out.textContent='Elige el archivo .algo primero.'; return; }
+  const f=el.files[0];
+  if(out){ out.style.color='#5f7387'; out.textContent='Leyendo '+f.name+'…'; }
+  let d; try{ d=await (await fetch('/algo/import',{method:'POST',body:f,
+        headers:{'content-type':'application/octet-stream'}})).json(); }
+  catch(e){ if(out){out.style.color='#ff5d73';out.textContent='Error de red.';} return; }
+  if(!d.ok){ if(out){out.style.color='#ff5d73';out.textContent=d.error||'No pude leerlo.';} return; }
+  toast(d.name+': '+d.n_params+' parámetros importados');
+  speak(L('Importé '+d.n_params+' parámetros de '+d.name+'.','Imported '+d.n_params+' parameters from '+d.name+'.'));
+  BOTSEL=d.bot; renderBots(); }
+function botOpen(f){ BOTSEL=(BOTSEL===f?'':f); BOTQ=''; renderBots(); }
+async function botDel(f){ await fetch('/algo/bots/'+encodeURIComponent(f),{method:'DELETE'});
+  if(BOTSEL===f)BOTSEL=''; toast('Bot quitado'); renderBots(); }
+function botFind(v){ BOTQ=v; botBody(); }
+async function botBody(){ const box=$('#bot-body'); if(!box||!BOTSEL)return;
+  let d; try{ d=await (await fetch('/algo/bots/'+encodeURIComponent(BOTSEL)
+        +'?q='+encodeURIComponent(BOTQ))).json(); }
+  catch(e){ box.innerHTML='<div class="empty">Error de red.</div>'; return; }
+  let h='<div class="wadd"><input placeholder="BUSCAR PARÁMETRO (p. ej. SL, fib, sesion)" '
+    +'value="'+escapeHtml(BOTQ)+'" oninput="botFind(this.value)"></div>';
+  const gs=d.groups||[];
+  if(!gs.length){ box.innerHTML=h+'<div class="empty">Sin coincidencias.</div>'; return; }
+  gs.forEach(g=>{ h+='<div class="slbl" style="margin:12px 0 4px">'+escapeHtml(g.group)+'</div>';
+    g.params.forEach(p=>{ const rng=(p.min!=null&&p.max!=null&&p.max<1e300)?(' · '+p.min+'…'+p.max):'';
+      h+='<div class="cfg" style="padding:5px 2px"><span style="max-width:58%">'+escapeHtml(String(p.label))
+        +'<br><code style="font-size:10px">'+escapeHtml(p.name)+'</code></span>'
+        +'<b style="text-align:right">'+escapeHtml(String(p.enum?Object.keys(p.enum)[Number(p.default)]??p.default:p.default))
+        +'<br><span class="phelp" style="margin:0">'+escapeHtml(String(p.type))+rng+'</span></b></div>'; }); });
+  box.innerHTML=h; }
 /* Diagnóstico de la conexión: recorre la cadena y se para en el eslabón roto. */
 async function ctraderDiag(){ const box=$('#sys-diag'); if(!box)return;
   box.innerHTML='<div class="empty">Revisando la cadena… (puede tardar unos segundos)</div>';
