@@ -59,8 +59,8 @@ class CTraderClient:
         access_token_provider: Callable[[], Awaitable[str]],
     ):
         self.ws_url = ws_url
-        self.client_id = client_id
-        self.client_secret = client_secret
+        self._client_id = client_id
+        self._client_secret = client_secret
         self.account_id = account_id
         self.access_token_provider = access_token_provider
 
@@ -78,6 +78,21 @@ class CTraderClient:
 
     def on_event(self, handler: Callable[[int, dict], Awaitable[None]]) -> None:
         self._event_handlers.append(handler)
+
+    # EN CALIENTE, no copiadas al construir: este objeto se crea en run.py antes
+    # de que secrets_store.load() aplique las claves guardadas desde el panel. Con
+    # la copia, el websocket mandaba las viejas (o vacias) y cTrader contestaba
+    # CH_CLIENT_AUTH_FAILURE "clientId or clientSecret is incorrect" aunque el
+    # OAuth con esas mismas credenciales hubiera funcionado.
+    @property
+    def client_id(self) -> str:
+        from .config import settings
+        return (settings.ctrader_client_id or self._client_id or "").strip()
+
+    @property
+    def client_secret(self) -> str:
+        from .config import settings
+        return (settings.ctrader_client_secret or self._client_secret or "").strip()
 
     async def start(self) -> None:
         """Connect and keep the connection alive forever (until stop()). Idempotente."""

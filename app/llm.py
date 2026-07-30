@@ -12,12 +12,21 @@ from .config import settings
 log = logging.getLogger("llm")
 
 _client: AsyncAnthropic | None = None
+_client_key: str = ""
 
 
 def client() -> AsyncAnthropic:
-    global _client
-    if _client is None:
-        _client = AsyncAnthropic(api_key=settings.anthropic_api_key or None)
+    """Cliente de Anthropic, recreado si la clave cambia.
+
+    Se guarda con qué clave se construyó: si la pones desde el panel después del
+    primer uso, el cliente cacheado seguiría con la vieja (o sin ninguna) y todo
+    fallaría con un error de autenticación que no lleva a ninguna parte.
+    """
+    global _client, _client_key
+    key = (settings.anthropic_api_key or "").strip()
+    if _client is None or _client_key != key:
+        _client = AsyncAnthropic(api_key=key or None)
+        _client_key = key
     return _client
 
 

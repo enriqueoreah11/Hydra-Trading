@@ -17,10 +17,28 @@ log = logging.getLogger("notifier")
 
 
 class Notifier:
-    def __init__(self, token: str, chat_id: str):
-        self.token = token
-        self.chat_id = chat_id
-        self.enabled = bool(token and chat_id)
+    """Lee el token EN CALIENTE de settings.
+
+    Antes se copiaba al importar el módulo, que ocurre antes de aplicar las claves
+    guardadas desde el panel: si el token se ponía ahí, las notificaciones se
+    quedaban desactivadas para siempre sin decir nada.
+    """
+
+    def __init__(self, token: str = "", chat_id: str = ""):
+        self._token = token
+        self._chat_id = chat_id
+
+    @property
+    def token(self) -> str:
+        return (settings.telegram_bot_token or self._token or "").strip()
+
+    @property
+    def chat_id(self) -> str:
+        return str(settings.telegram_chat_id or self._chat_id or "").strip()
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.token and self.chat_id)
 
     async def send(self, text: str) -> None:
         if not self.enabled:
@@ -38,4 +56,4 @@ class Notifier:
             log.warning("telegram notification failed", exc_info=True)
 
 
-notifier = Notifier(settings.telegram_bot_token, settings.telegram_chat_id)
+notifier = Notifier()
