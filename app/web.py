@@ -2024,6 +2024,112 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             return JSONResponse(res, status_code=400)
         return res
 
+    # ---------------------------------------- abrir y cerrar A MANO desde la app
+    # Es lo que la Open API SÍ permite (junto con mover el stop). Aquí va con freno:
+    # confirmación explícita, stop obligatorio, y el modo papel y el HALT por delante.
+
+    @app.post("/positions/{position_id}/close")
+    async def position_close(position_id: int, request: Request):
+        """Cierra una posición, entera o en parte."""
+        if broker is None or not broker.client.account_authorized:
+            return JSONResponse({"ok": False, "error": "conecta cTrader"}, status_code=400)
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        try:
+            pos = await asyncio.wait_for(broker.positions(), timeout=12)
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": str(exc)[:140]}, status_code=400)
+        p = next((x for x in pos if int(x["position_id"]) == int(position_id)), None)
+        if p is None:
+            return JSONResponse({"ok": False, "error": "esa posición ya no está abierta"},
+                                status_code=404)
+        total = float(p.get("volume_units") or 0)
+        pct = float(body.get("pct") or 100)
+        units = total if pct >= 100 else round(total * max(1.0, min(99.0, pct)) / 100, 2)
+        sym = await broker.symbol_name_by_id(p["symbol_id"])
+        if settings.dry_run:
+            store.log("executor", "close_simulated",
+                      f"{sym}: {units} unidades de {total} (modo papel)", symbol=sym)
+            return {"ok": True, "simulated": True, "symbol": sym, "units": units,
+                    "note": "modo papel: no se envió nada al broker"}
+        try:
+            await broker.close_position(int(position_id), units)
+        except Exception as exc:  # noqa: BLE001
+            store.log("executor", "close_error", f"{sym}: {exc}", symbol=sym)
+            return JSONResponse({"ok": False, "error": str(exc)[:140]}, status_code=400)
+        store.log("executor", "closed", f"{sym}: {units} unidades (a mano desde la app)",
+                  symbol=sym)
+        return {"ok": True, "symbol": sym, "units": units, "of": total}
+
+    @app.post("/order")
+    async def place_order(request: Request):
+        """Abre a mercado, con stop obligatorio y confirmación explícita.
+
+        Frenos, por orden: HALT, modo papel, stop presente, tope de posiciones
+        abiertas. Nada de esto es opcional — es dinero real y el que pulsa no debería
+        poder saltárselos por accidente.
+        """
+        if broker is None or not broker.client.account_authorized:
+            return JSONResponse({"ok": False, "error": "conecta cTrader"}, status_code=400)
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        if not body.get("confirm"):
+            return JSONResponse({"ok": False, "error": "falta la confirmación"},
+                                status_code=400)
+        if store.halted:
+            return JSONResponse({"ok": False, "error": "el sistema está en HALT"},
+                                status_code=400)
+        sym = str(body.get("symbol") or "").upper()
+        side = "BUY" if str(body.get("side", "")).upper().startswith("B") else "SELL"
+        lots = float(body.get("lots") or 0)
+        sl_pips = float(body.get("sl_pips") or 0)
+        tp_pips = float(body.get("tp_pips") or 0)
+        if not sym or lots <= 0:
+            return JSONResponse({"ok": False, "error": "falta símbolo o lotaje"},
+                                status_code=400)
+        if sl_pips <= 0:
+            return JSONResponse({"ok": False, "error": "el stop es obligatorio: sin "
+                                                       "stop la pérdida no tiene fondo"},
+                                status_code=400)
+        try:
+            pos = await asyncio.wait_for(broker.positions(), timeout=12)
+            if len(pos) >= int(settings.max_open_positions):
+                return JSONResponse({"ok": False, "error": f"ya hay {len(pos)} posiciones "
+                                     f"abiertas (tope {settings.max_open_positions})"},
+                                    status_code=400)
+            cs = await asyncio.wait_for(broker.candles(sym, "M1", 2), timeout=12)
+            price = cs[-1].close if cs else 0
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": str(exc)[:140]}, status_code=400)
+        if not price:
+            return JSONResponse({"ok": False, "error": "sin precio para ese símbolo"},
+                                status_code=400)
+        from . import manage as mg
+        pip = mg.pip_size(sym)
+        units = lots * 100000
+        sl = price - sl_pips * pip if side == "BUY" else price + sl_pips * pip
+        tp = (price + tp_pips * pip if side == "BUY" else price - tp_pips * pip) if tp_pips else None
+        order = {"symbol": sym, "side": side, "lots": lots, "units": units,
+                 "price": price, "stop_loss": round(sl, 5),
+                 "take_profit": round(tp, 5) if tp else None}
+        if settings.dry_run:
+            store.log("executor", "order_simulated", {**order, "manual": True}, symbol=sym)
+            return {"ok": True, "simulated": True, **order,
+                    "note": "modo papel: no se envió nada al broker"}
+        try:
+            await broker.place_market_order(symbol=sym, side=side, volume_units=units,
+                                           stop_loss=sl, take_profit=tp,
+                                           entry_ref=price, label="hydra-manual")
+        except Exception as exc:  # noqa: BLE001
+            store.log("executor", "order_error", {**order, "error": str(exc)}, symbol=sym)
+            return JSONResponse({"ok": False, "error": str(exc)[:140]}, status_code=400)
+        store.log("executor", "order_placed", {**order, "manual": True}, symbol=sym)
+        return {"ok": True, **order}
+
     @app.get("/setups")
     async def setups(days: float = 30, limit: int = 30):
         """Los setups que se van acumulando, del bot y de Hydra, en un solo sitio."""

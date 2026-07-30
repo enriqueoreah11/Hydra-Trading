@@ -1477,8 +1477,39 @@ async function openMarket(sym,tf){ selected=null; tf=tf||(DATA&&DATA.core&&DATA.
   if(!rs.length&&!sp.length) h+='<div class="empty">—</div>';
   rs.forEach(r=> h+='<div class="cfg"><span>'+L('Resistencia','Resistance')+'</span> <b style="color:#ff5d73">'+r+'</b></div>');
   sp.forEach(r=> h+='<div class="cfg"><span>'+L('Soporte','Support')+'</span> <b style="color:#34d399">'+r+'</b></div>');
-  if(sym==='DXY') h+='<div class="empty" style="margin-top:10px">DXY sintético, calculado de la canasta EUR, JPY, GBP, CAD, SEK, CHF.</div>';
+  if(sym==='DXY') h+='<div class="empty" style="margin-top:10px">DXY sintético, calculado de la canasta EUR, JPY, GBP, CAD, SEK, CHF. No se opera: es referencia.</div>';
+  /* ABRIR A MANO. El stop es obligatorio a proposito: sin stop la perdida no tiene
+     fondo, y una app que deja abrir sin el no te esta ayudando. El DXY no se opera. */
+  else h+='<div class="slbl" style="margin:14px 0 4px">'+L('OPERAR A MANO','MANUAL ORDER')+'</div>'
+    +'<div class="phelp">'+L('Hydra abre a mercado con el stop que pongas. Se registra como <code>hydra-manual</code>, así se distingue de lo que hacen tus bots.',
+                             'Hydra opens at market with the stop you set. It is labelled <code>hydra-manual</code> so it stays apart from your bots.')+'</div>'
+    +'<div class="prm"><label>'+L('Lotes','Lots')+'</label><input id="o-lots" value="0.01" style="text-transform:none"></div>'
+    +'<div class="prm"><label>'+L('Stop (pips) — obligatorio','Stop (pips) — required')+'</label><input id="o-sl" value="30" style="text-transform:none"></div>'
+    +'<div class="prm"><label>'+L('Objetivo (pips, 0 = sin objetivo)','Target (pips, 0 = none)')+'</label><input id="o-tp" value="60" style="text-transform:none"></div>'
+    +'<div class="ssec" style="margin:8px 0">'
+    +'<button class="btn" style="background:#0d3a2a;border-color:#1c6b4a;color:#7ff0c0" onclick="sendOrder(\''+sym+'\',\'BUY\')">▲ '+L('COMPRAR','BUY')+'</button>'
+    +'<button class="btn" style="background:#3a0d18;border-color:#6b1c2c;color:#ffb4c0" onclick="sendOrder(\''+sym+'\',\'SELL\')">▼ '+L('VENDER','SELL')+'</button>'
+    +'</div><div id="o-out" class="phelp"></div>';
   $('#d-body').innerHTML=h; }
+async function sendOrder(sym,side){
+  const lots=parseFloat(($('#o-lots')||{}).value||'0'), sl=parseFloat(($('#o-sl')||{}).value||'0'),
+        tp=parseFloat(($('#o-tp')||{}).value||'0'), out=$('#o-out');
+  if(!(lots>0)){ if(out) out.textContent=L('Pon el lotaje.','Set the lot size.'); return; }
+  if(!(sl>0)){ if(out) out.textContent=L('El stop es obligatorio.','The stop is required.'); return; }
+  if(!confirm((side==='BUY'?L('¿COMPRAR ','¿BUY '):L('¿VENDER ','¿SELL '))+lots+' lotes de '+sym
+      +'\n'+L('stop','stop')+': '+sl+' pips'+(tp>0?(' · '+L('objetivo','target')+': '+tp+' pips'):'')+'?')) return;
+  if(out){ out.style.color=''; out.textContent=L('Enviando…','Sending…'); }
+  let d; try{ d=await (await fetch('/order',{method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({symbol:sym,side:side,lots:lots,sl_pips:sl,tp_pips:tp,confirm:true})})).json(); }
+  catch(e){ if(out) out.textContent='Error de red.'; return; }
+  if(!d.ok){ if(out){ out.style.color='#ff5d73'; out.textContent=d.error||'No se pudo abrir.'; } return; }
+  if(out){ out.style.color=d.simulated?'#fbbf24':'#34d399';
+    out.textContent=(d.simulated?L('Simulado (modo papel). ','Simulated (paper mode). '):'')
+      +side+' '+d.lots+' '+sym+' · '+L('stop','stop')+' '+d.stop_loss+(d.take_profit?(' · obj '+d.take_profit):''); }
+  toast(d.simulated?L('Simulado: modo papel','Simulated: paper mode'):(side+' '+sym+' enviada'));
+  speak(d.simulated?L('Modo papel, no envié nada.','Paper mode, nothing sent.')
+                   :L('Orden enviada.','Order sent.'));
+  pollPositions(); pollTrades(); }
 /* ---------- PANTALLAS LATERALES: instrumentos (izq) y noticias (der) ---------- */
 function spark(vals,col){ if(!vals||vals.length<2)return'';
   const n=vals.length, lo=Math.min.apply(null,vals), hi=Math.max.apply(null,vals), rng=(hi-lo)||1;
@@ -1622,11 +1653,26 @@ async function pollPositions(){ const box=$('#hud-pos'); if(!box)return;
       +L('Ninguna posición abierta.','No open positions.')+'</div>'; return; }
   box.innerHTML=rows.map(p=>{ const buy=String(p.side||'').toUpperCase().indexOf('BUY')>=0;
     const col=buy?'#34d399':'#ff5d73', lots=(p.volume_units/100000);
-    return'<div class="prow" style="border-left-color:'+col+'" onclick="openMarket(\''+String(p.symbol||'')+'\')">'
-      +'<span class="sd" style="color:#02141b;background:'+col+'">'+(buy?'BUY':'SELL')+'</span>'
-      +'<span class="sy">'+escapeHtml(String(p.symbol||'—'))+'</span>'
+    return'<div class="prow" style="border-left-color:'+col+'">'
+      +'<span class="sd" style="color:#02141b;background:'+col+'" onclick="openMarket(\''+String(p.symbol||'')+'\')">'+(buy?'BUY':'SELL')+'</span>'
+      +'<span class="sy" style="cursor:pointer" onclick="openMarket(\''+String(p.symbol||'')+'\')">'+escapeHtml(String(p.symbol||'—'))+'</span>'
       +'<span class="vl">'+(lots>=0.01?lots.toFixed(2)+' lot':p.volume_units+' u')+' · '+ctxAgo(p.open_ts)+'</span>'
+      // cerrar desde aqui: es la accion que se necesita con la posicion delante
+      +'<span class="wx" title="Cerrar esta posición" style="margin-left:6px"'
+      +' onclick="event.stopPropagation();posClose('+p.position_id+',\''+String(p.symbol||'')+'\',100)">✕</span>'
       +'</div>'; }).join(''); }
+/* Cerrar una posicion desde la app. Pregunta antes: es dinero, y un ✕ mal pulsado no
+   se deshace. En modo papel no se envia nada y se dice. */
+async function posClose(id,sym,pct){
+  if(!confirm((pct>=100?'¿Cerrar toda la posición de ':'¿Cerrar el '+pct+'% de ')+sym+'?')) return;
+  let d; try{ d=await (await fetch('/positions/'+id+'/close',{method:'POST',
+        headers:{'content-type':'application/json'},body:JSON.stringify({pct:pct})})).json(); }
+  catch(e){ toast('Error de red'); return; }
+  if(!d.ok){ toast(d.error||'No se pudo cerrar'); return; }
+  toast(d.simulated?('Simulado (modo papel): '+sym):(sym+' cerrada'));
+  speak(d.simulated?L('Modo papel: no envié nada.','Paper mode: nothing sent.')
+                   :L(sym+' cerrada.',sym+' closed.'));
+  pollPositions(); pollTrades(); }
 /* CINTA DE OPERACIONES: estrategia (la etiqueta del bot), instrumento con su icono,
    lotaje y resultado. Las CERRADAS traen dinero real; las ABIERTAS se marcan como
    abiertas y sin cifra — la Open API no manda el flotante y calcularlo a ojo daria
