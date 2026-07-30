@@ -171,6 +171,13 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 .irow .sp{grid-column:1/-1;height:22px;margin-top:2px}
 .irow .sp svg{display:block;width:100%;height:22px;overflow:visible}
 .impbar{display:flex;gap:5px;padding:2px 1px 7px}
+/* Paginacion del calendario: diez por pagina para que la ventana mida SIEMPRE lo
+   mismo y quede sitio debajo para otra. */
+.newspg{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 2px;
+  font-size:9.5px;letter-spacing:1.4px;color:#4d6b7d}
+.newspg .pgb{cursor:pointer;padding:2px 9px;border:1px solid #17495d;border-radius:7px;color:#9fe6ff;
+  background:#08131d;font-size:12px;line-height:1.1}
+.newspg .pgb.off{opacity:.3;pointer-events:none}
 .impc{flex:1;text-align:center;cursor:pointer;font-size:8.5px;letter-spacing:1.2px;padding:3px 0;border-radius:2px;
   border:1px solid #17323f;color:#3d5a6b;transition:color .15s ease,border-color .15s ease,background .15s ease}
 .impc.on{color:var(--c);border-color:var(--c);background:color-mix(in srgb,var(--c) 12%,transparent);
@@ -331,7 +338,7 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     <div class="hudhd"><span class="dot"></span>SESIONES<span class="tf" id="hud-ses-n"></span></div>
     <div class="sesbox" id="hud-ses"></div>
   </div>
-  <div id="hudCal" class="hud grow">
+  <div id="hudCal" class="hud">
     <div class="hudhd"><span class="dot"></span>CALENDARIO<span class="tf" id="hud-imp"></span></div>
     <div class="hudbody" id="hud-news"><div class="empty" style="padding:8px;font-size:11px">…</div></div>
     <div class="hudfoot"><span id="hud-calses">SESIÓN ACTIVA</span>
@@ -365,7 +372,6 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     <div class="hudhd"><span class="dot"></span>CONFIGURACION<span class="tf" id="hud-tf"></span></div>
     <div class="sysact">
       <button class="btn ghost" id="hud-halt" onclick="doHalt()">&#9208; HALT</button>
-      <button class="btn ghost" onclick="openTradeContext()">&#128452; CONTEXT</button>
       <button class="btn ghost" id="b-sistema" title="Voz, claves, instrumentos y flota">&#9881; SISTEMA</button>
     </div>
   </div>
@@ -1255,13 +1261,14 @@ async function pollInstruments(){
 let IMPF={high:true,medium:true,low:false};
 try{ const sv=JSON.parse(localStorage.getItem('hydra_impf')||'null'); if(sv)IMPF=sv; }catch(e){}
 const IMPC={high:'#ff5d73',medium:'#fbbf24',low:'#5ad1e6',holiday:'#8aa'};
-function toggleImp(k){ IMPF[k]=!IMPF[k];
+function toggleImp(k){ IMPF[k]=!IMPF[k]; NEWSP=0;
   try{ localStorage.setItem('hydra_impf',JSON.stringify(IMPF)); }catch(e){}
   pollNews(); }
 function impChips(){ return ['high','medium','low'].map(k=>
   '<span class="impc'+(IMPF[k]?' on':'')+'" style="--c:'+IMPC[k]+'" onclick="toggleImp(\''+k+'\')">'
   +{high:L('ALTO','HIGH'),medium:L('MEDIO','MED'),low:L('BAJO','LOW')}[k]+'</span>').join(''); }
-let NEWS_RAW=null;
+let NEWS_RAW=null, NEWSP=0;
+const NEWS_PP=10;      // diez por pagina: lo que cabe sin que la ventana crezca
 async function pollNews(){ const box=$('#hud-news'); if(!box)return;
   if(!NEWS_RAW){ try{ NEWS_RAW=await (await fetch('/calendar')).json(); }catch(e){ return; } }
   const d=NEWS_RAW;
@@ -1277,14 +1284,20 @@ async function pollNews(){ const box=$('#hud-news'); if(!box)return;
   const ev=(d.events||[]).filter(e=>cur.has(String(e.currency||'').toUpperCase()))
                          .filter(e=>IMPF[String(e.impact||'low').toLowerCase()]!==false
                                     &&IMPF[String(e.impact||'low').toLowerCase()])
-                         .slice(0,30);
+                         .slice(0,120);
   const hi=ev.filter(e=>String(e.impact||'').toLowerCase()==='high').length;
   const imp=$('#hud-imp'); if(imp) imp.textContent=hi?hi+' ALTO':'';
   if(!ev.length){ box.innerHTML=chips+'<div class="empty" style="padding:8px;font-size:11px">'
       +escapeHtml(d.error||L('Sin eventos de '+[...cur].join('/')+' con esos filtros.',
                              'No '+[...cur].join('/')+' events with those filters.'))+'</div>'; return; }
+  /* DE 10 EN 10. La ventana ya no crece con la semana: mide siempre lo mismo y
+     deja hueco debajo. La pagina se recorta si al cambiar los filtros quedan
+     menos eventos, para no quedarse mirando una pagina vacia. */
+  const pages=Math.max(1,Math.ceil(ev.length/NEWS_PP));
+  if(NEWSP>=pages) NEWSP=pages-1;
+  const page=ev.slice(NEWSP*NEWS_PP,(NEWSP+1)*NEWS_PP);
   let last='',h=chips;
-  ev.forEach(e=>{ const dt=new Date(e.ts*1000);
+  page.forEach(e=>{ const dt=new Date(e.ts*1000);
     const day=dt.toLocaleDateString(LANG==='en'?'en':'es',{weekday:'short',day:'numeric',month:'short'});
     if(day!==last){ h+='<div style="color:#3d5a6b;font-size:9px;letter-spacing:2px;margin:9px 0 4px;text-transform:uppercase">'+escapeHtml(day)+'</div>'; last=day; }
     const col=IMPC[(e.impact||'low').toLowerCase()]||'#5ad1e6';
@@ -1292,8 +1305,14 @@ async function pollNews(){ const box=$('#hud-news'); if(!box)return;
       +'<span class="d" style="background:'+col+';color:'+col+'"></span>'
       +'<span class="c">'+escapeHtml(String(e.currency||''))+'</span>'
       +'<span class="n">'+escapeHtml(String(e.title||''))+'</span></div>'; });
+  if(pages>1){ const from=NEWSP*NEWS_PP+1, to=NEWSP*NEWS_PP+page.length;
+    h+='<div class="newspg">'
+      +'<span class="pgb'+(NEWSP?'':' off')+'" onclick="newsPage(-1)">‹</span>'
+      +'<span>'+from+'–'+to+' '+L('de','of')+' '+ev.length+'</span>'
+      +'<span class="pgb'+(NEWSP<pages-1?'':' off')+'" onclick="newsPage(1)">›</span></div>'; }
   box.innerHTML=h; }
-async function refreshNews(){ NEWS_RAW=null; await pollNews(); }
+function newsPage(d){ NEWSP=Math.max(0,NEWSP+d); pollNews(); }
+async function refreshNews(){ NEWS_RAW=null; NEWSP=0; await pollNews(); }
 /* Sesiones: se calculan con la hora LOCAL de cada plaza (Intl ya aplica el horario
    de verano), así no hay que tocar nada dos veces al año. */
 const SESSIONS=[{n:'SÍDNEY',tz:'Australia/Sydney',o:8,c:17},
