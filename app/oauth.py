@@ -30,20 +30,29 @@ def build_auth_url(client_id: str, redirect_uri: str, scope: str = "trading") ->
 async def _token_call(http: httpx.AsyncClient, payload: dict) -> dict:
     """Pide tokens a cTrader.
 
-    Su endpoint espera las credenciales en la QUERY STRING. Si se mandan en el
-    cuerpo del formulario no las ve y contesta 200 con
-    "INVALID_REQUEST — Malformed client_id parameter", que despista mucho porque
-    el client_id es correcto. Se intenta primero por query y, si aun asi se
-    queja, se reintenta por cuerpo (versiones antiguas lo aceptaban).
+    Su endpoint es un GET con los parametros en la QUERY. Documentado asi:
+
+        curl -X GET "https://openapi.ctrader.com/apps/token?grant_type=...&code=...
+             &redirect_uri=...&client_id=...&client_secret=..."
+             -H "Accept: application/json"
+
+    Con un POST contesta 200 y "INVALID_REQUEST — Malformed client_id parameter",
+    que despista muchisimo porque el client_id es correcto: simplemente no lo lee
+    de donde se lo mandas. Se prueban las tres formas por si cambia.
     """
-    attempts = [("query", {"params": payload}), ("cuerpo", {"data": payload})]
-    last = ""
-    for how, kw in attempts:
-        r = await http.post(TOKEN_URL, **kw)
+    hdr = {"Accept": "application/json", "Content-Type": "application/json"}
+    attempts = (
+        ("GET query", lambda: http.get(TOKEN_URL, params=payload, headers=hdr)),
+        ("POST query", lambda: http.post(TOKEN_URL, params=payload, headers=hdr)),
+        ("POST cuerpo", lambda: http.post(TOKEN_URL, data=payload)),
+    )
+    fails = []
+    for how, call in attempts:
+        r = await call()
         try:
             body = r.json()
         except Exception:  # noqa: BLE001 - HTML de error o respuesta de un proxy
-            last = f"respondio {r.status_code} y no era JSON: {r.text[:200]}"
+            fails.append(f"({how}) {r.status_code}, no era JSON: {r.text[:120]}")
             continue
         if isinstance(body, dict) and isinstance(body.get("data"), dict):
             body = {**body, **body["data"]}          # algunas versiones lo anidan
@@ -54,8 +63,9 @@ async def _token_call(http: httpx.AsyncClient, payload: dict) -> dict:
         if isinstance(body, dict):
             desc = (body.get("description") or body.get("error_description")
                     or body.get("errorDescription") or "")
-        last = f"({how}) {r.status_code}: {err or 'sin codigo'}" + (f" — {desc}" if desc else "")
-    raise RuntimeError("cTrader rechazo la peticion de tokens. " + last)
+        fails.append(f"({how}) {r.status_code}: {err or 'sin codigo'}"
+                     + (f" — {desc}" if desc else ""))
+    raise RuntimeError("cTrader rechazo la peticion de tokens. " + " | ".join(fails))
 
 
 class TokenStore:
