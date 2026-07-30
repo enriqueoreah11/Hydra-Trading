@@ -158,6 +158,13 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             settings.ollama_model = str(_llm["ollama_model"])
     except Exception:  # noqa: BLE001
         pass
+    # carpeta de .algo elegida desde la UI
+    try:
+        _ad = (settings.data_path / "algo_dir.txt").read_text().strip()
+        if _ad:
+            settings.algo_dir = _ad
+    except Exception:  # noqa: BLE001
+        pass
     # instrumentos vigilados y su estrategia asignada, editados desde la UI
     _watch: dict = {"symbols": [], "assign": {}}
     try:
@@ -962,6 +969,105 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         d = settings.data_path / "bots"
         d.mkdir(parents=True, exist_ok=True)
         return d
+
+    def _algo_dir():
+        d = (settings.algo_dir or "").strip()
+        return Path(d).expanduser() if d else None
+
+    @app.get("/algo/dir")
+    async def algo_dir_get():
+        d = _algo_dir()
+        found = []
+        if d and d.is_dir():
+            found = [str(f.relative_to(d)) for f in sorted(d.rglob("*.algo"))][:200]
+        # rutas donde cTrader suele dejarlos, para sugerirlas
+        guesses = [str(Path.home() / "Documents" / "cAlgo" / "Sources" / "Robots"),
+                   str(Path.home() / "Documents" / "cAlgo" / "Robots")]
+        return {"dir": str(d) if d else "", "exists": bool(d and d.is_dir()),
+                "found": found, "n_found": len(found),
+                "guesses": [g for g in guesses if Path(g).is_dir()] or guesses}
+
+    @app.post("/algo/dir")
+    async def algo_dir_set(request: Request):
+        """Fija la carpeta de .algo y la guarda para los próximos arranques."""
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        d = str(body.get("dir") or "").strip()
+        if d:
+            p = Path(d).expanduser()
+            if not p.is_dir():
+                return JSONResponse({"ok": False, "error": f"no existe la carpeta {p}"},
+                                    status_code=400)
+            d = str(p)
+        settings.algo_dir = d
+        (settings.data_path / "algo_dir.txt").write_text(d)
+        return {"ok": True, "dir": d}
+
+    @app.post("/algo/scan")
+    async def algo_scan():
+        """Importa todos los .algo de la carpeta. Reimporta los que cambiaron.
+
+        Pensado para la carpeta que ya sincronizas con GitHub y el VPS: cuando
+        recompilas un bot allí, el siguiente escaneo lo recoge solo.
+        """
+        from . import algo as algo_mod
+        import time as _t
+        d = _algo_dir()
+        if not d or not d.is_dir():
+            return JSONResponse({"ok": False, "error": "primero fija la carpeta"},
+                                status_code=400)
+        # lo ya importado, para saber qué cambió
+        known: dict = {}
+        for f in _bots_dir().glob("*.json"):
+            try:
+                j = json.loads(f.read_text())
+                if j.get("src_path"):
+                    known[j["src_path"]] = (j.get("src_mtime"), j.get("file_bytes"))
+            except Exception:  # noqa: BLE001
+                pass
+
+        added, updated, same, failed = [], [], [], []
+        for f in sorted(d.rglob("*.algo")):
+            st = f.stat()
+            sig = (int(st.st_mtime), st.st_size)
+            prev = known.get(str(f))
+            if prev and tuple(prev) == sig:
+                same.append(f.name)
+                continue
+            try:
+                parsed = algo_mod.parse(f.read_bytes())
+            except Exception as exc:  # noqa: BLE001 - un .algo roto no corta el escaneo
+                failed.append({"file": f.name, "error": str(exc)[:120]})
+                continue
+            parsed.update({"imported_ts": _t.time(), "file_bytes": st.st_size,
+                           "src_path": str(f), "src_mtime": int(st.st_mtime)})
+            safe = "".join(c for c in str(parsed["name"])
+                           if c.isalnum() or c in "-_")[:60] or f.stem
+            # Dos bots distintos pueden declarar el MISMO nombre interno. Si el
+            # hueco ya lo ocupa otro archivo, se desambigua con el nombre del
+            # fichero: si no, uno pisaría al otro sin avisar.
+            dest = _bots_dir() / f"{safe}.json"
+            if dest.exists():
+                try:
+                    other = json.loads(dest.read_text()).get("src_path")
+                except Exception:  # noqa: BLE001
+                    other = None
+                if other and other != str(f):
+                    stem = "".join(c for c in f.stem if c.isalnum() or c in "-_")[:30]
+                    dest = _bots_dir() / f"{safe}__{stem}.json"
+                    parsed["name"] = f"{parsed['name']} ({f.stem})"
+            dest.write_text(json.dumps(parsed, ensure_ascii=False, indent=1))
+            (updated if prev else added).append(
+                {"name": parsed["name"], "params": parsed["n_params"],
+                 "can_report": parsed["can_report"],
+                 "chart_bound": len(parsed["chart_bound"])})
+        store.log("system", "algo_scan",
+                  f"{len(added)} nuevos, {len(updated)} actualizados, "
+                  f"{len(same)} sin cambios, {len(failed)} con error")
+        return {"ok": True, "dir": str(d), "added": added, "updated": updated,
+                "unchanged": len(same), "failed": failed}
 
     @app.post("/algo/import")
     async def algo_import(request: Request):

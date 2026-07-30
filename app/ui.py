@@ -416,9 +416,11 @@ async function renderBots(){ const box=$('#sys-bots'); if(!box)return;
   catch(e){ box.innerHTML='<div class="empty">No disponible. ¿Falta reiniciar?</div>'; return; }
   const bots=d.bots||[];
   let h='<div class="phelp">Sube tu <code>.algo</code> y Hydra lee sus <b>parámetros</b>: nombres, tipos, valores por defecto y rangos. La <b>lógica</b> vive en una DLL de .NET que solo ejecuta cTrader — eso no corre aquí.</div>';
-  h+='<div class="wadd"><input type="file" id="algo-f" accept=".algo" '
+  h+='<div id="algo-dir"></div>'
+    +'<div class="phelp" style="margin-top:10px">…o sube uno a mano:</div>'
+    +'<div class="wadd"><input type="file" id="algo-f" accept=".algo" '
     +'style="flex:1;background:#08131d;color:#9fe6ff;border:1px solid #17495d;border-radius:8px;padding:6px 8px;font-size:11.5px">'
-    +'<button class="btn" onclick="algoUp()">Importar</button></div><div id="algo-out" class="phelp"></div>';
+    +'<button class="btn ghost" onclick="algoUp()">Importar</button></div><div id="algo-out" class="phelp"></div>';
   h+='<div class="slbl" style="margin:14px 0 4px">BOTS EN LA CUENTA (por etiqueta)</div>'
     +'<div class="phelp">Esto sale de tus operaciones reales, no del bot: funciona con <b>cualquier</b> bot sin tocarlo.</div>'
     +'<button class="btn ghost" onclick="botsLive()">⟳ Ver qué opera cada bot</button><div id="bots-live"></div>';
@@ -448,7 +450,40 @@ async function renderBots(){ const box=$('#sys-bots'); if(!box)return;
       +'<div id="bot-body"><div class="empty">Cargando…</div></div>';
   });
   box.innerHTML=h;
+  algoDir();
   if(BOTSEL) botBody(); }
+/* La carpeta de .algo: la que ya sincronizas con GitHub, tu Mac y el VPS.
+   Leerla de ahi evita subir nada y recoge sola los bots que recompiles. */
+async function algoDir(){ const box=$('#algo-dir'); if(!box)return;
+  let d; try{ d=await (await fetch('/algo/dir')).json(); }catch(e){ return; }
+  let h='<div class="phelp" style="margin-top:8px"><b>Carpeta de tus .algo</b> — la que sincronizas con GitHub y el VPS. Hydra la lee sola.</div>'
+    +'<div class="wadd"><input id="algo-d" placeholder="/Users/tu/…/cAlgo/Sources/Robots" value="'
+    +escapeHtml(String(d.dir||''))+'" style="text-transform:none">'
+    +'<button class="btn" onclick="algoDirSet()">Guardar</button></div>';
+  if(!d.dir&&(d.guesses||[]).length) h+='<div class="phelp">Prueba con: '
+    +d.guesses.map(g=>'<code style="cursor:pointer" onclick="document.querySelector(\'#algo-d\').value=this.textContent">'+escapeHtml(g)+'</code>').join(' &nbsp; ')+'</div>';
+  if(d.dir) h+='<div class="phelp" style="color:'+(d.exists?'#34d399':'#ff5d73')+'">'
+    +(d.exists?('✅ '+d.n_found+' archivos .algo encontrados'):'❌ esa carpeta no existe')+'</div>';
+  if(d.exists) h+='<button class="btn" onclick="algoScan()">⟳ Escanear e importar todos</button><div id="algo-scan" class="phelp"></div>';
+  box.innerHTML=h; }
+async function algoDirSet(){ const el=$('#algo-d'); if(!el)return;
+  const r=await fetch('/algo/dir',{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({dir:el.value})});
+  const d=await r.json();
+  if(!d.ok){ toast(d.error||'No pude usar esa carpeta'); return; }
+  toast('Carpeta guardada'); algoDir(); }
+async function algoScan(){ const box=$('#algo-scan'); if(box) box.textContent='Escaneando…';
+  let d; try{ d=await (await fetch('/algo/scan',{method:'POST'})).json(); }
+  catch(e){ if(box)box.textContent='Error de red.'; return; }
+  if(!d.ok){ if(box){box.style.color='#ff5d73';box.textContent=d.error||'';} return; }
+  const n=(d.added||[]).length+(d.updated||[]).length;
+  toast(n?(n+' bots importados'):'Sin cambios');
+  if(n) speak(L('Importé '+n+' bots de tu carpeta.','Imported '+n+' bots from your folder.'));
+  let h='<div style="color:#34d399">'+(d.added||[]).length+' nuevos · '
+    +(d.updated||[]).length+' actualizados · '+d.unchanged+' sin cambios</div>';
+  (d.failed||[]).forEach(f=>{ h+='<div style="color:#ff5d73">✗ '+escapeHtml(f.file)+': '+escapeHtml(f.error)+'</div>'; });
+  if(box){ box.style.color=''; box.innerHTML=h; }
+  renderBots(); }
 async function algoUp(){ const el=$('#algo-f'), out=$('#algo-out');
   if(!el||!el.files||!el.files[0]){ if(out)out.textContent='Elige el archivo .algo primero.'; return; }
   const f=el.files[0];

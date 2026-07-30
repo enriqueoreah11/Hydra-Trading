@@ -8,6 +8,10 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # --- cTrader Open API ---
+    # Carpeta donde viven tus .algo (la que sincronizas con GitHub y el VPS).
+    # Si se pone, Hydra la escanea y no hay que subir nada a mano.
+    algo_dir: str = ""
+
     ctrader_client_id: str = ""
     ctrader_client_secret: str = ""
     ctrader_redirect_uri: str = "http://localhost:8000/oauth/callback"
