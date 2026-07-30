@@ -73,12 +73,31 @@ class TokenStore:
 
     def __init__(self, path: Path, client_id: str, client_secret: str, redirect_uri: str):
         self.path = path
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.redirect_uri = redirect_uri
+        self._client_id = client_id
+        self._client_secret = client_secret
+        self._redirect_uri = redirect_uri
         self._data: dict = {}
         if path.exists():
             self._data = json.loads(path.read_text())
+
+    # Las credenciales se leen EN CALIENTE de settings, no se copian al arrancar.
+    # Antes se copiaban en el constructor, que corre ANTES de cargar las claves
+    # guardadas desde el panel: el diagnostico veia el valor bueno y el canje
+    # enviaba el viejo (o vacio), y cTrader contestaba "Malformed client_id".
+    @property
+    def client_id(self) -> str:
+        from .config import settings
+        return (settings.ctrader_client_id or self._client_id or "").strip()
+
+    @property
+    def client_secret(self) -> str:
+        from .config import settings
+        return (settings.ctrader_client_secret or self._client_secret or "").strip()
+
+    @property
+    def redirect_uri(self) -> str:
+        from .config import settings
+        return (settings.ctrader_redirect_uri or self._redirect_uri or "").strip()
 
     @property
     def has_tokens(self) -> bool:

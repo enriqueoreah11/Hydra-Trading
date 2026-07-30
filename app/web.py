@@ -1281,6 +1281,15 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                 problems.append("tiene una barra invertida")
             return problems, v
 
+        # Lo que de verdad se envia sale de tokens.*: si no coincide con settings,
+        # el canje va con otras credenciales que las que ves configuradas.
+        sent_ok = (tokens.client_id == settings.ctrader_client_id.strip()
+                   and tokens.client_secret == settings.ctrader_client_secret.strip())
+        step("Credenciales que se envian", sent_ok,
+             f"client_id enviado: {len(tokens.client_id)} caracteres"
+             + (" (COINCIDE)" if sent_ok else " — DISTINTO del configurado"),
+             "" if sent_ok else "reinicia la app para que tome las claves guardadas")
+
         cid_probs, cid = shape(settings.ctrader_client_id)
         sec_probs, sec = shape(settings.ctrader_client_secret)
         if not _re.fullmatch(r"\d+_[A-Za-z0-9]+", cid):
