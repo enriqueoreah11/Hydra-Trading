@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     # Carpeta donde viven tus .algo (la que sincronizas con GitHub y el VPS).
     # Si se pone, Hydra la escanea y no hay que subir nada a mano.
     algo_dir: str = ""
+    # carpeta donde tus bots escriben sus CSV de análisis (registro "shadow")
+    shadow_dir: str = ""
 
     ctrader_client_id: str = ""
     ctrader_client_secret: str = ""

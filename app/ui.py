@@ -837,10 +837,55 @@ async function renderBotsPanel(){ const seq=++MBSEQ;
   h+='</div>';
   // la carpeta y tus bots: los pinta renderBots, que es quien sabe de esto
   h+='<div id="mb-work"><div class="empty">'+L('Cargando…','Loading…')+'</div></div>';
+  h+='<div id="mb-log"></div>';
   h+='<div id="mb-ind"></div>';
   box.innerHTML=h;
   renderBots('#mb-work');
+  renderShadow();
   renderInd(); }
+/* ------- REGISTRO DEL BOT (los CSV) -------
+   El bot anota cada analisis en un CSV que nadie mira porque hay que ir a buscarlo.
+   Hydra lo lee sola cada pocos minutos, solo lo nuevo, y lo guarda en el contexto
+   (inmutable) mas un resumen en Obsidian. */
+async function renderShadow(){ const box=$('#mb-log'); if(!box)return;
+  let d; try{ d=await (await fetch('/shadow/status')).json(); }catch(e){ box.innerHTML=''; return; }
+  const fs=d.files||[];
+  let h='<div class="slbl" style="margin:16px 0 4px">'+L('REGISTRO DEL BOT (CSV)','BOT LOG (CSV)')+'</div>'
+    +'<div class="phelp">'+L('Lo que tu bot escribe en su CSV se lee aquí solo, cada '+(d.watch_minutes||2)
+      +' min y solo lo nuevo. Queda en el contexto de decisión y con un resumen en Obsidian, así no hay que abrir el archivo.',
+      'What your bot writes to its CSV is read here on its own, every '+(d.watch_minutes||2)
+      +' min and only the new part. It lands in the decision context plus a summary in Obsidian.')+'</div>';
+  h+='<div class="wadd"><input id="sh-d" placeholder="/Users/tu/cAlgo/Data" value="'
+    +escapeHtml(String(d.dir||''))+'" style="text-transform:none">'
+    +'<button class="btn" onclick="shadowSet()">'+L('Guardar','Save')+'</button></div>';
+  if(d.dir) h+='<div class="phelp" style="color:'+(d.exists?'#34d399':'#ff5d73')+'">'
+    +(d.exists?('✔ '+fs.length+' '+L('archivos de registro','log files')):L('esa carpeta no existe','that folder does not exist'))+'</div>';
+  if(fs.length){ fs.slice(0,6).forEach(f=>{
+      h+='<div class="wrow"><span class="wsym" style="min-width:0;flex:1">'+escapeHtml(f.file)
+        +'<span class="phelp" style="margin:0;display:block;text-transform:none">'
+        +f.kb+' KB · '+ctxAgo(f.mtime)+' · '+f.read_rows+' '+L('filas leídas','rows read')+'</span></span></div>'; });
+    if(fs.length>6) h+='<div class="phelp">'+L('y '+(fs.length-6)+' más','and '+(fs.length-6)+' more')+'</div>'; }
+  h+='<div class="ssec" style="margin:6px 0">'
+    +'<button class="btn ghost" onclick="shadowScan()">'+ICO('refresh',12)+' '+L('Leer ahora','Read now')+'</button>'
+    +'<button class="btn ghost" onclick="openTradeContext()">'+ICO('archive',12)+' '+L('Ver lo guardado','See what is stored')+'</button>'
+    +'</div><div id="sh-out" class="phelp">'
+    +(d.last?(L('último repaso','last pass')+': '+ctxAgo(d.last)+' · '+(d.last_imported||0)+' '+L('nuevas','new')):'')
+    +'</div>';
+  box.innerHTML=h; }
+async function shadowSet(){ const el=$('#sh-d'); if(!el)return;
+  let d; try{ d=await (await fetch('/shadow/dir',{method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({dir:el.value})})).json(); }
+  catch(e){ toast('Error de red'); return; }
+  if(!d.ok){ toast(d.error||'No pude usar esa carpeta'); return; }
+  toast('Carpeta de registros guardada'); shadowScan(); }
+async function shadowScan(){ const out=$('#sh-out');
+  if(out){ out.style.color=''; out.textContent=L('Leyendo lo nuevo…','Reading what is new…'); }
+  let d; try{ d=await (await fetch('/shadow/scan',{method:'POST'})).json(); }
+  catch(e){ if(out) out.textContent='Error de red.'; return; }
+  if(!d.ok){ if(out){ out.style.color='#fbbf24'; out.textContent=d.error||''; } return; }
+  toast(d.imported?(d.imported+' análisis nuevos'):'Sin filas nuevas');
+  if(d.imported) speak(L('Leí '+d.imported+' análisis de tu bot.','Read '+d.imported+' analyses from your bot.'));
+  renderShadow(); if(window.ctxCaptured) window.ctxCaptured(); }
 /* ------- INDICADORES DE HYDRA: EMA, SMA, RSI, ATR y el R:R -------
    Son los de SUS estrategias, no los del cBot: por eso van aqui, al lado de los
    bots, y se dice claramente en que manda cada cosa. */

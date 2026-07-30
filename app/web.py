@@ -169,6 +169,15 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
     # el vigilante de esa carpeta: cada cuánto vuelve a mirar y qué vio la última vez
     _ALGO_WATCH_MIN = 10
     _algo_watch: dict = {"last": None, "result": None}
+    # los CSV que escriben los bots (el registro «shadow»)
+    _SHADOW_WATCH_MIN = 2
+    _shadow_watch: dict = {"last": None, "imported": 0, "files": 0, "error": ""}
+    try:
+        _sd = (settings.data_path / "shadow_dir.txt").read_text().strip()
+        if _sd:
+            settings.shadow_dir = _sd
+    except Exception:  # noqa: BLE001
+        pass
     # parámetros de los indicadores de Hydra (EMA, SMA, RSI, ATR, R:R…), editados
     # desde la ventana de BOTS. Se meten DENTRO de strategies.DEFAULTS para que los
     # lean todos los que ya lo consultan (flota, réplica, panel) sin tocar nada más.
@@ -242,6 +251,37 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             lg.info("voicebox autostart: %s", msg)
         except Exception:  # noqa: BLE001 - nunca debe tumbar el arranque
             lg.warning("voicebox autostart falló", exc_info=True)
+
+    @app.on_event("startup")
+    async def _watch_shadow_logs():
+        """Recoge los CSV de los bots cada pocos minutos, sin que nadie los abra.
+
+        Cada dos minutos es agresivo a propósito: el bot escribe una fila por vela y
+        la gracia es verlas casi en vivo. Solo se lee lo NUEVO de cada archivo, así
+        que la pasada cuesta lo mismo con un CSV de 2 KB que con uno de 200 MB.
+        """
+        import logging
+        lg = logging.getLogger("web")
+
+        async def loop():
+            while True:
+                try:
+                    res = await asyncio.to_thread(_shadow_scan_once)
+                    if not res.get("ok"):
+                        _shadow_watch["error"] = str(res.get("error") or "")
+                    elif res.get("imported"):
+                        lg.info("shadow: %s filas nuevas de %s",
+                                res["imported"], res.get("dir"))
+                except asyncio.CancelledError:
+                    raise
+                except Exception:  # noqa: BLE001 - nunca debe tumbar la app
+                    lg.warning("vigilante de CSV falló", exc_info=True)
+                await asyncio.sleep(_SHADOW_WATCH_MIN * 60)
+
+        try:
+            asyncio.create_task(loop(), name="shadow-watch")
+        except Exception:  # noqa: BLE001
+            lg.warning("no se pudo arrancar el vigilante de CSV", exc_info=True)
 
     @app.on_event("startup")
     async def _watch_algo_dir():
@@ -1639,6 +1679,126 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         for b in bots:
             b["state"] = "opera" if b["open"] else "analiza"
         return {"ok": True, "minutes": minutes, "bots": bots}
+
+    # ------------------------------- registro «shadow»: los CSV que escribe el bot
+
+    def _shadow_dir():
+        d = (settings.shadow_dir or "").strip()
+        if d:
+            return Path(d).expanduser()
+        # por defecto, donde cTrader deja los datos de los cBots
+        for g in (Path.home() / "cAlgo" / "Data", Path.home() / "Documents" / "cAlgo" / "Data",
+                  Path.home() / "cAlgo", Path.home() / "Documents" / "cAlgo"):
+            if g.is_dir():
+                return g
+        return None
+
+    def _shadow_state_file():
+        return settings.data_path / "shadow_state.json"
+
+    def _shadow_scan_once(limit_files: int = 40) -> dict:
+        """Lee lo NUEVO de cada CSV y lo guarda en trade_context.
+
+        No interpreta el formato: cada fila se convierte en {columna: valor} y la
+        mapea el mismo código que ya recibe los envíos del bot por HTTP. Lo que no
+        reconoce se guarda igual en raw_json, así que nada se pierde por no haber
+        acertado con el nombre de una columna.
+        """
+        from . import shadow as sh
+        d = _shadow_dir()
+        if not d or not d.is_dir():
+            return {"ok": False, "error": "no encuentro la carpeta de registros; fíjala"}
+        state = sh.load_state(_shadow_state_file())
+        files = sh.find_logs(d)[:max(1, limit_files)]
+        total, per_file, allrows = 0, [], []
+        for f in files:
+            try:
+                rows, st = sh.read_new(f, state.get(str(f), {}))
+            except Exception as exc:  # noqa: BLE001 - un archivo raro no corta el resto
+                per_file.append({"file": f.name, "error": str(exc)[:100]})
+                continue
+            state[str(f)] = st
+            if not rows:
+                continue
+            # cTrader guarda los datos de cada cBot en una carpeta con SU nombre
+            # (Data/ConfluenceBot/log.csv), asi que la carpeta identifica mejor que
+            # un nombre de archivo generico tipo "shadow_log".
+            par = f.parent.name
+            label = par if par and par.lower() not in ("data", "logs", "log") else f.stem
+            stored = 0
+            for r in rows:
+                r.setdefault("bot_label", label)
+                r.setdefault("source", "csv")
+                try:
+                    _store_ctx(r)
+                    stored += 1
+                except Exception:  # noqa: BLE001 - una fila mala no tira las demás
+                    pass
+            total += stored
+            allrows.extend(rows)
+            per_file.append({"file": f.name, "rows": stored, "total_rows": st.get("rows")})
+        sh.save_state(_shadow_state_file(), state)
+        _shadow_watch.update({"last": time.time(), "imported": total,
+                              "files": len(files), "error": ""})
+        if total:
+            store.log("system", "shadow_import",
+                      f"{total} análisis leídos de {len([x for x in per_file if x.get('rows')])} CSV")
+            # y una nota en Obsidian: el resumen del día, no una copia de cada fila
+            try:
+                dg = sh.digest(allrows)
+                vault.note("Bots", f"Analisis del bot ({dg['n']} nuevos)",
+                           "## Lo que leyó Hydra de tus CSV\n\n"
+                           f"- filas nuevas: **{dg['n']}**\n"
+                           f"- por instrumento: {dg['by_symbol'] or '—'}\n"
+                           f"- por resultado: {dg['by_outcome'] or '—'}\n\n"
+                           "Cada fila queda además en el contexto de decisión "
+                           "(inmutable), consultable desde el módulo CONTEXT.",
+                           tags=["bots", "shadow"])
+            except Exception:  # noqa: BLE001 - la nota es un extra
+                pass
+        return {"ok": True, "dir": str(d), "imported": total,
+                "files": per_file[:20], "n_files": len(files)}
+
+    @app.get("/shadow/status")
+    async def shadow_status():
+        from . import shadow as sh
+        d = _shadow_dir()
+        logs = sh.find_logs(d)[:20] if d else []
+        state = sh.load_state(_shadow_state_file())
+        return {"ok": True, "dir": str(d) if d else "",
+                "exists": bool(d and d.is_dir()),
+                "watch_minutes": _SHADOW_WATCH_MIN,
+                "last": _shadow_watch.get("last"),
+                "last_imported": _shadow_watch.get("imported"),
+                "files": [{"file": str(f.relative_to(d)),
+                           "kb": round(f.stat().st_size / 1024, 1),
+                           "mtime": int(f.stat().st_mtime),
+                           "read_rows": (state.get(str(f)) or {}).get("rows") or 0}
+                          for f in logs]}
+
+    @app.post("/shadow/dir")
+    async def shadow_dir_set(request: Request):
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        d = str(body.get("dir") or "").strip()
+        if d:
+            p2 = Path(d).expanduser()
+            if not p2.is_dir():
+                return JSONResponse({"ok": False, "error": f"no existe la carpeta {p2}"},
+                                    status_code=400)
+            d = str(p2)
+        settings.shadow_dir = d
+        (settings.data_path / "shadow_dir.txt").write_text(d)
+        return {"ok": True, "dir": d}
+
+    @app.post("/shadow/scan")
+    async def shadow_scan():
+        res = await asyncio.to_thread(_shadow_scan_once)
+        if not res.get("ok"):
+            return JSONResponse(res, status_code=400)
+        return res
 
     @app.get("/trades/recent")
     async def trades_recent(days: float = 3, limit: int = 12):
