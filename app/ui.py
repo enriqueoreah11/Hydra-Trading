@@ -916,7 +916,7 @@ function hudStart(){ document.querySelectorAll('.hudcol .hud').forEach((e,i)=>se
   setTimeout(()=>{const t=$('#tape');if(t)t.classList.add('in');},140);
   renderSessions(); pollPositions(); pollInstruments(); pollNews(); renderHudSys(); pollBrain(); pollTape();
   setInterval(renderSessions,30000); setInterval(pollPositions,20000);
-  setInterval(pollInstruments,30000); setInterval(refreshNews,300000);
+  setInterval(pollInstruments,30000); setInterval(refreshNews,1800000);
   setInterval(pollBrain,60000); setInterval(pollTape,6000); }
 /* Pantalla CEREBRO Y VOZ: qué modelo piensa y qué voz habla, sin abrir nada. */
 async function pollBrain(){ const box=$('#hud-brain'); if(!box)return;

@@ -686,6 +686,13 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
     _STRAT_LABEL = {"donchian": "Ruptura Donchian", "rsi_fade": "Reversión RSI",
                     "momentum_burst": "Impulso", "ema_trend": "Tendencia EMA"}
 
+    def now_ts() -> float:
+        import time as _t
+        return _t.time()
+
+    # calendario: el feed es semanal, así que se cachea de verdad
+    _cal_cache: dict = {"raw": None, "ts": 0.0, "retry_after": 0.0}
+
     _instr_cache: dict = {"ts": 0.0, "data": None}
     _dxy_cache: dict = {"ts": 0.0, "row": None}
 
@@ -1603,13 +1610,54 @@ Conecta tu cuenta en <a href="/oauth/login">/oauth/login</a> para operar de verd
 
         events: list[dict] = []
         error = None
-        try:
-            async with _httpx.AsyncClient(timeout=20, follow_redirects=True) as http:
-                r = await http.get(src, headers={"User-Agent": "hydra-trading/1.0"})
+        raw = None
+        # El feed es SEMANAL: bajarlo en cada visita solo sirve para que nos corten
+        # con un 429. Se cachea en memoria, se comparte el fichero del Sentinel (que
+        # ya lo baja para los bloqueos) y ante un fallo se sirve lo último bueno.
+        cache_file = settings.data_path / "calendar.json"
+        cached = _cal_cache["raw"]
+        fresh = cached is not None and now_ts() - _cal_cache["ts"] < 1800
+        cooling = now_ts() < _cal_cache["retry_after"]
+        if fresh or (cooling and cached is not None):
+            raw = cached
+            if cooling and not fresh:
+                error = ("la fuente nos limitó (429); mostrando lo último "
+                         f"descargado hace {int((now_ts() - _cal_cache['ts']) / 60)} min")
+        else:
+            try:
+                async with _httpx.AsyncClient(timeout=20, follow_redirects=True) as http:
+                    r = await http.get(src, headers={"User-Agent": "hydra-trading/1.0"})
+                if r.status_code == 429:
+                    # respetamos Retry-After; si no viene, 30 min de descanso
+                    wait = 1800.0
+                    try:
+                        wait = max(60.0, float(r.headers.get("Retry-After", "") or 1800))
+                    except ValueError:
+                        pass
+                    _cal_cache["retry_after"] = now_ts() + wait
+                    raise RuntimeError(
+                        "la fuente del calendario nos limitó por exceso de peticiones "
+                        f"(429). Reintento en {int(wait / 60)} min")
                 r.raise_for_status()
                 raw = r.json()
-        except Exception as exc:  # noqa: BLE001
-            raw, error = [], str(exc)[:200]
+                _cal_cache.update({"raw": raw, "ts": now_ts(), "retry_after": 0.0})
+                try:
+                    cache_file.write_text(json.dumps(raw))
+                except Exception:  # noqa: BLE001 - la caché es un extra
+                    pass
+            except Exception as exc:  # noqa: BLE001
+                error = str(exc)[:200]
+                raw = cached
+                if raw is None and cache_file.exists():
+                    try:                      # el que dejó el Sentinel
+                        raw = json.loads(cache_file.read_text())
+                        _cal_cache.update({"raw": raw,
+                                           "ts": cache_file.stat().st_mtime})
+                        error += " — mostrando el último calendario guardado"
+                    except Exception:  # noqa: BLE001
+                        pass
+                if raw is None:
+                    raw = []
 
         now = _t.time()
         horizon = now + 7 * 86400
@@ -1638,7 +1686,8 @@ Conecta tu cuenta en <a href="/oauth/login">/oauth/login</a> para operar de verd
                 "watched": cur in symbols_ccy,
             })
         events.sort(key=lambda x: x["ts"])
-        return {"events": events[:120], "source": src, "server_time": now, "error": error}
+        return {"events": events[:120], "source": src, "server_time": now,
+                "error": error, "fetched_ts": _cal_cache["ts"] or None}
 
     # ------------------------------------------------------------- dashboard
 
