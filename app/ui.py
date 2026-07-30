@@ -95,6 +95,21 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 #sistema .hd .e{font-size:26px}#sistema .hd h2{margin:0;font-size:16px;color:#e6f7ff;letter-spacing:1px}#sistema .hd .role{font-size:11px;color:var(--dim)}
 #sistema .hd .x{margin-left:auto;cursor:pointer;color:#5f7387;font-size:16px}
 #sistema .sbody{padding:14px 18px;overflow:auto}
+/* Ventanitas centradas (un bot, los instrumentos…): lo que no cabe en un
+   desplegable dentro de otra lista. Van por encima de todo y comparten estilo. */
+.modalwin{position:fixed;left:50%;top:50%;transform:translate(-50%,-46%) scale(.97);opacity:0;pointer-events:none;
+  width:min(580px,94vw);max-height:86vh;z-index:40;background:linear-gradient(180deg,#06121cfa,#04080efa);
+  border:1px solid #12414f;border-radius:14px;box-shadow:0 30px 80px #000d;display:flex;flex-direction:column;
+  transition:opacity .24s ease,transform .24s var(--ease-drawer)}
+.modalwin.open{opacity:1;pointer-events:auto;transform:translate(-50%,-50%) scale(1)}
+.modalwin .hd{padding:14px 16px;border-bottom:1px solid #103040;display:flex;gap:12px;align-items:center}
+.modalwin .hd .e{font-size:24px}
+.modalwin .hd h2{margin:0;font-size:15px;color:#e6f7ff;letter-spacing:1px}
+.modalwin .hd .role{font-size:11px;color:var(--dim)}
+.modalwin .hd .x{margin-left:auto;cursor:pointer;color:#5f7387;font-size:16px}
+.modalwin .sbody{padding:12px 16px;overflow:auto}
+#modalshade{position:fixed;inset:0;z-index:39;background:#01060bb0;opacity:0;pointer-events:none;transition:opacity .24s}
+#modalshade.open{opacity:1;pointer-events:auto}
 .slbl{font-size:10px;letter-spacing:2px;color:#5f7387;margin:18px 0 9px}
 .ssec{display:flex;flex-wrap:wrap;gap:8px}
 .cfg{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:9px 2px;border-bottom:1px solid #10293650;font-size:12.5px;color:#a9bcd0}
@@ -191,7 +206,10 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 .sysact{display:flex;flex-wrap:wrap;gap:6px;padding:8px 10px;border-top:1px solid #10333f}
 .sysact .btn{padding:6px 9px;font-size:9.5px;letter-spacing:1px}
 .hudfoot{padding:6px 10px;border-top:1px solid #10333f;font-size:9px;letter-spacing:1.6px;color:#33505f;
-  display:flex;justify-content:space-between;cursor:pointer}
+  display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer}
+/* El calendario completo se abre desde AQUI, junto al calendario de la sesion, no
+   desde Configuracion: es donde se está mirando cuando hace falta ver todo. */
+.hudfoot .calfull{padding:4px 8px;font-size:8.5px;letter-spacing:1.2px;flex:0 0 auto}
 @media(max-width:1180px){.hudcol{display:none}}
 /* CINTA DE ACTIVIDAD (arriba, centrada): lo que se está analizando y ejecutando */
 #tape{position:fixed;top:58px;left:50%;transform:translateX(-50%) translateY(-10px);z-index:10;
@@ -266,8 +284,6 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     </div>
     <div class="slbl">CONEXIÓN Y CONFIGURACIÓN</div>
     <div id="sys-info"></div>
-    <div class="slbl">📈 INSTRUMENTOS Y ESTRATEGIAS</div>
-    <div id="sys-watch"></div>
     <div class="slbl">🔑 CLAVES (API KEYS)</div>
     <div id="sys-keys"></div>
     <div class="slbl">📓 MEMORIA (OBSIDIAN)</div>
@@ -277,6 +293,30 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     <div class="slbl">🏁 FLOTA DE ESTRATEGIAS</div>
     <div id="sys-fleet"></div>
   </div>
+</div>
+
+<div id="modalshade" onclick="closeWins()"></div>
+<div id="botwin" class="modalwin">
+  <div class="hd"><div class="e">&#129302;</div>
+    <div><h2 id="bw-name">BOT</h2><div class="role" id="bw-role"></div></div>
+    <div class="x" onclick="closeBotWin()">&#10005;</div></div>
+  <div class="sbody">
+    <div id="bw-head"></div>
+    <div class="ssec" id="bw-acts" style="margin:8px 0"></div>
+    <div id="bot-expl"></div>
+    <div id="bot-repl"></div>
+    <div class="slbl" style="margin:12px 0 4px">PAR&Aacute;METROS</div>
+    <div class="wadd"><input id="bot-q" placeholder="BUSCAR PAR&Aacute;METRO (SL, fib, sesion&hellip;)"
+      oninput="botFind(this.value)" style="text-transform:none"></div>
+    <div id="bot-body"><div class="empty">&hellip;</div></div>
+  </div>
+</div>
+
+<div id="instwin" class="modalwin">
+  <div class="hd"><div class="e">&#128200;</div>
+    <div><h2>INSTRUMENTOS</h2><div class="role">Qu&eacute; vigila Hydra y con qu&eacute; estrategia</div></div>
+    <div class="x" onclick="closeWins()">&#10005;</div></div>
+  <div class="sbody"><div id="sys-watch"><div class="empty">&hellip;</div></div></div>
 </div>
 
 <div id="stage"><canvas id="corefx"></canvas><div id="tip"></div></div>
@@ -294,7 +334,8 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
   <div id="hudCal" class="hud grow">
     <div class="hudhd"><span class="dot"></span>CALENDARIO<span class="tf" id="hud-imp"></span></div>
     <div class="hudbody" id="hud-news"><div class="empty" style="padding:8px;font-size:11px">…</div></div>
-    <div class="hudfoot" onclick="openCalendar()"><span id="hud-calses">SESIÓN ACTIVA</span><span>VER TODO &#9656;</span></div>
+    <div class="hudfoot"><span id="hud-calses">SESIÓN ACTIVA</span>
+      <button class="btn ghost calfull" onclick="openCalendar()">&#128197; VERSI&Oacute;N EXTENDIDA &#9656;</button></div>
   </div>
 </div>
 
@@ -315,13 +356,16 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     <div class="hudhd"><span class="dot"></span>BOTS<span class="tf" id="hud-bots-n"></span></div>
     <div class="posbox" id="hud-bots"><div class="empty" style="padding:4px 2px;font-size:10.5px">…</div></div>
   </div>
+  <div id="hudI" class="hud" onclick="openInstWin()" style="cursor:pointer" title="Ver, añadir y quitar instrumentos">
+    <div class="hudhd"><span class="dot"></span>INSTRUMENTOS<span class="tf" id="hud-instr-n"></span></div>
+    <div class="posbox" id="hud-instr"><div class="empty" style="padding:4px 2px;font-size:10.5px">…</div></div>
+  </div>
   <div class="spacer-v"></div>
   <div id="hudA" class="hud">
     <div class="hudhd"><span class="dot"></span>CONFIGURACION<span class="tf" id="hud-tf"></span></div>
     <div class="sysact">
       <button class="btn ghost" id="hud-halt" onclick="doHalt()">&#9208; HALT</button>
       <button class="btn ghost" onclick="openTradeContext()">&#128452; CONTEXT</button>
-      <button class="btn ghost" onclick="openCalendar()">&#128197; CALENDARIO</button>
       <button class="btn ghost" id="b-sistema" title="Voz, claves, instrumentos y flota">&#9881; SISTEMA</button>
     </div>
   </div>
@@ -356,7 +400,7 @@ function renderCore(c){
   $('#c-bal').innerHTML='balance <b>'+(c.balance!=null?c.balance:'—')+'</b>';
   $('#c-pb').innerHTML='playbook <b>v'+c.playbook_version+'</b>';
   $('#b-halt').textContent=c.halted?'▶ RESUME':'⏸ HALT';
-  $('#b-cal').style.display='';
+  {const bc=$('#b-cal'); if(bc) bc.style.display='';}
   {const bs=$('#b-sfx'); if(bs) bs.classList.toggle('on',sfxOn);}
   if(c.voice_enabled===false)['b-mic','b-wake','b-clap','b-speak'].forEach(id=>{const e=$('#'+id);if(e)e.style.display='none';});
   ttsServer=!!c.tts_server; if(c.owner_name)SIR=c.owner_name; if(c.owner_lang)LANG=c.owner_lang;
@@ -411,8 +455,9 @@ function banner(c){ const b=$('#banner'); let m='';
   b.style.display=m?'block':'none'; b.innerHTML=m; }
 function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('show'); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),3800); }
 
-$('#b-refresh').onclick=()=>{ toast('Datos actualizados'); load(); }; $('#b-halt').onclick=doHalt; $('#b-demo').onclick=runDemo; $('#b-cal').onclick=openCalendar;
-$('#b-sistema').onclick=()=>{ renderSysInfo(); renderWatch(); renderSecrets(); renderVault(); renderProps(); renderFleet(); $('#sistema').classList.add('open'); };
+$('#b-refresh').onclick=()=>{ toast('Datos actualizados'); load(); }; $('#b-halt').onclick=doHalt; $('#b-demo').onclick=runDemo;
+{const bc=$('#b-cal'); if(bc) bc.onclick=openCalendar;}
+$('#b-sistema').onclick=()=>{ renderSysInfo(); renderSecrets(); renderVault(); renderProps(); renderFleet(); $('#sistema').classList.add('open'); };
 /* ------- BOTS DE CTRADER: se importan sus parametros del .algo ------- */
 /* El aviso de los dibujos, honesto. Antes decia "lee dibujos a mano" siempre que
    el bot TUVIERA esos parametros; en modo automatico eso es falso, y en combinado
@@ -423,12 +468,15 @@ function chartNote(b){ const n=(b.chart_bound||[]).length, m=b.chart_mode||'desc
     +'no depende de nada dibujado a mano, así que se puede replicar entero.</div>';
   if(!n) return '';
   if(m==='mixto') return '<div class="phelp" style="color:#9fd8ea;margin:-4px 0 6px">'
-    +'◑ Modo combinado: calcula sus niveles Y ADEMÁS lee lo que dibujas ('
-    +b.chart_bound.map(escapeHtml).join(', ')+'). La parte automática sí se replica; '
-    +'tus dibujos no. Ponlo en automático si quieres comparar de igual a igual.</div>';
+    +'◑ Modo combinado: calcula sus propios niveles y además <b>lee objetos del gráfico</b> ('
+    +b.chart_bound.map(escapeHtml).join(', ')+'). '
+    +'No puedo saber de quién son esos objetos: si <b>los dibuja él mismo</b>, no depende de ti '
+    +'y se puede replicar; si esperas los que dibujas tú, esa parte no existe fuera de cTrader. '
+    +'Tú sabes cuál de las dos es.</div>';
   return '<div class="phelp" style="color:#fbbf24;margin:-4px 0 6px">'
-    +'⚠ Toma los niveles del gráfico ('+b.chart_bound.map(escapeHtml).join(', ')
-    +'): eso no existe fuera de cTrader y ninguna réplica lo iguala.</div>'; }
+    +'⚠ Toma los niveles de objetos del gráfico ('+b.chart_bound.map(escapeHtml).join(', ')
+    +') y no de su propio cálculo. Si esos objetos los pinta él, se replica; si los pintas tú, '
+    +'esa entrada no existe fuera de cTrader.</div>'; }
 
 let BOTSEL='', BOTQ='';
 async function renderBots(tgt){ const box=$(tgt||'#mb-work'); if(!box)return;
@@ -448,27 +496,17 @@ async function renderBots(tgt){ const box=$(tgt||'#mb-work'); if(!box)return;
     +(bots.length?'<span style="float:right;cursor:pointer;opacity:.8;font-weight:400" onclick="botDelAll()">vaciar la lista ✕</span>':'')
     +'</div>';
   if(!bots.length) h+='<div class="empty">Ninguno todavía. Elige arriba el que quieras: se queda guardado.</div>';
-  bots.forEach(b=>{ const on=BOTSEL===b.file;
-    h+='<div class="wrow" style="cursor:pointer" onclick="botOpen(\''+b.file+'\')">'
-      +'<span class="wsym" style="min-width:auto">'+(on?'▾ ':'▸ ')+escapeHtml(String(b.name))+'</span>'
-      +'<span class="phelp" style="margin:0;flex:1">'+b.n_params+' parámetros · '+b.n_groups+' grupos · API '+escapeHtml(String(b.api_version||'?'))+'</span>'
-      +'<span class="wx" title="Quitar" onclick="event.stopPropagation();botDel(\''+b.file+'\')">✕</span></div>';
-    h+='<div class="phelp" style="margin:-4px 0 4px;color:'+(b.can_report?'#34d399':'#8aa')+'">'
-      +(b.can_report
-        ? '✅ Este bot PUEDE reportar a Hydra. En cTrader, grupo «🌐 Backend Remoto»: activa <b>'
-          +escapeHtml(String((b.remote_params||{}).enableremotelogging||'EnableRemoteLogging'))
-          +'</b> y pon <b>'+escapeHtml(String((b.remote_params||{}).backendurl||'BackendUrl'))
-          +'</b> = <code>'+location.origin+'</code> (solo la base).'
-        : '✗ Este bot NO tiene parámetros de reporte, y no se le pueden añadir sin tocar su código. '
-          +'Hydra lo seguirá igual por sus operaciones reales en la cuenta (abajo, «bots en la cuenta»).')
-      +'</div>';
-    h+=chartNote(b);
-    if(on) h+='<div class="ssec" style="margin:6px 0">'
-      +'<button class="btn" onclick="botExplain(false)">🧠 Explícame la estrategia</button>'
-      +'<button class="btn ghost" onclick="botExplain(true)">↻ Rehacer</button>'
-      +'<button class="btn ghost" onclick="replicaRun()">⚖️ ¿La replica Hydra?</button>'
-      +'</div><div id="bot-expl"></div><div id="bot-repl"></div>'
-      +'<div id="bot-body"><div class="empty">Cargando…</div></div>';
+  /* La lista es SOLO la lista: un renglon por bot. Su configuracion se abre en su
+     propia ventanita, porque 297 parametros dentro de un desplegable no se leen. */
+  bots.forEach(b=>{
+    h+='<div class="wrow" style="cursor:pointer" onclick="botOpen(\''+b.file+'\')" title="Abrir su configuración">'
+      +'<span class="wsym" style="min-width:0;flex:1">'+escapeHtml(String(b.name))
+      +'<span class="phelp" style="margin:0;display:block;text-transform:none">'
+      +b.n_params+' parámetros · '+b.n_groups+' grupos'
+      +(b.can_report?' · <span style="color:#34d399">reporta a Hydra</span>':'')
+      +'</span></span>'
+      +'<span class="phelp" style="margin:0;padding:0 6px;flex:0 0 auto">abrir ▸</span>'
+      +'<span class="wx" title="Quitar de la lista" onclick="event.stopPropagation();botDel(\''+b.file+'\')">✕</span></div>';
   });
   // el seguimiento por etiqueta va al FINAL: sirve aunque no subas ningun .algo
   h+='<div class="slbl" style="margin:16px 0 4px">BOTS EN LA CUENTA (por etiqueta)</div>'
@@ -515,16 +553,23 @@ async function algoDir(){ const box=$('#algo-dir'); if(!box)return;
 /* Elegir de UNO EN UNO. Con decenas de bots una lista completa no se lee, asi que
    se buscan por nombre y solo se muestran unos pocos: los mas recientes primero,
    que son los que acabas de compilar. */
-let PICKQ='';
+let PICKQ='', PICKT=null;
+/* Al teclear NO se repinta el input: si se repintara, el navegador le quitaria el
+   foco y habria que volver a pulsarlo despues de CADA letra. Solo se cambia la
+   lista, y se espera un instante para no lanzar una peticion por tecla. */
+function algoPickType(v){ PICKQ=v; clearTimeout(PICKT); PICKT=setTimeout(()=>algoPick(),170); }
 async function algoPick(q){ const box=$('#algo-pick'); if(!box)return;
   if(q!==undefined) PICKQ=q;
+  if(!$('#pick-list')) box.innerHTML='<div class="slbl" style="margin:12px 0 4px">AÑADIR UN BOT DE LA CARPETA</div>'
+    +'<div class="wadd"><input id="pick-q" placeholder="BUSCAR POR NOMBRE" value="'+escapeHtml(PICKQ)
+    +'" oninput="algoPickType(this.value)" style="text-transform:none"></div>'
+    +'<div id="pick-list"></div>';
+  const list=$('#pick-list'); if(!list)return;
   let d; try{ d=await (await fetch('/algo/folder?limit=8&q='+encodeURIComponent(PICKQ))).json(); }
   catch(e){ return; }
-  if(!d.ok){ box.innerHTML='<div class="phelp" style="color:#fbbf24">'+escapeHtml(d.error||'')+'</div>'; return; }
-  let h='<div class="slbl" style="margin:12px 0 4px">AÑADIR UN BOT DE LA CARPETA</div>'
-    +'<div class="wadd"><input id="pick-q" placeholder="BUSCAR POR NOMBRE" value="'+escapeHtml(PICKQ)
-    +'" oninput="algoPick(this.value)" style="text-transform:none"></div>';
-  if(!(d.files||[]).length){ box.innerHTML=h+'<div class="empty">Sin coincidencias.</div>'; return; }
+  if(!d.ok){ list.innerHTML='<div class="phelp" style="color:#fbbf24">'+escapeHtml(d.error||'')+'</div>'; return; }
+  let h='';
+  if(!(d.files||[]).length){ list.innerHTML='<div class="empty">Sin coincidencias.</div>'; return; }
   d.files.forEach(f=>{ const done=f.imported&&!f.stale;
     h+='<div class="wrow" style="align-items:flex-start">'
       +'<span class="wsym" style="min-width:0;flex:1;overflow:hidden">'
@@ -542,7 +587,7 @@ async function algoPick(q){ const box=$('#algo-pick'); if(!box)return;
   h+='<div class="phelp">Mostrando '+d.shown+' de '+d.total+' bots'
     +(d.total>d.shown?' — busca para ver el resto':'')
     +' · '+d.n_imported+' ya guardados.</div>';
-  box.innerHTML=h; }
+  list.innerHTML=h; }
 async function algoPickOne(file){ toast('Leyendo '+file.split('/').pop()+'…');
   let d; try{ d=await (await fetch('/algo/pick',{method:'POST',
         headers:{'content-type':'application/json'},body:JSON.stringify({file:file})})).json(); }
@@ -581,18 +626,65 @@ async function algoUp(){ const el=$('#algo-f'), out=$('#algo-out');
   toast(d.name+': '+d.n_params+' parámetros importados');
   speak(L('Importé '+d.n_params+' parámetros de '+d.name+'.','Imported '+d.n_params+' parameters from '+d.name+'.'));
   BOTSEL=d.bot; renderBots(); }
-function botOpen(f){ BOTSEL=(BOTSEL===f?'':f); BOTQ=''; renderBots(); }
+/* ------- VENTANITA DE UN BOT -------
+   Al pulsar un bot se abre SU ventana, no un desplegable: ahi caben la cabecera,
+   los botones y los 297 parametros con su buscador. El buscador vive en el HTML
+   fijo y solo se repinta la LISTA: si se repintara el input, el navegador le
+   quitaria el foco y habria que volver a pulsarlo tras cada letra. */
+let BOTINFO=null, BOTQT=null;
+async function botOpen(f){ BOTSEL=f; BOTQ='';
+  const q=$('#bot-q'); if(q) q.value='';
+  openWin('#botwin');
+  $('#bw-name').textContent='…'; $('#bw-role').textContent='';
+  $('#bw-head').innerHTML=''; $('#bw-acts').innerHTML='';
+  $('#bot-expl').innerHTML=''; $('#bot-repl').innerHTML='';
+  $('#bot-body').innerHTML='<div class="empty">Leyendo sus parámetros…</div>';
+  let d={}; try{ d=await (await fetch('/algo/bots')).json(); }catch(e){}
+  const b=(d.bots||[]).find(x=>x.file===f)||{};
+  BOTINFO=b;
+  $('#bw-name').textContent=String(b.name||f);
+  const kind=String(b.kind||'');
+  $('#bw-role').textContent=(kind?kind+' · ':'')+(b.n_params||0)+' parámetros · '
+    +(b.n_groups||0)+' grupos · API '+String(b.api_version||'?');
+  // un Indicator no opera: dibuja. Decirlo evita esperar ordenes de algo que no las manda
+  let head=/indicator/i.test(kind)?('<div class="phelp" style="color:#fbbf24;margin:0 0 6px">'
+    +'Es un <b>indicador</b>, no un robot: dibuja y calcula, pero no manda órdenes.</div>'):'';
+  head+='<div class="phelp" style="margin:0 0 6px;color:'+(b.can_report?'#34d399':'#8aa')+'">'
+    +(b.can_report
+      ? '✅ Puede reportar a Hydra. En cTrader, grupo «🌐 Backend Remoto»: activa <b>'
+        +escapeHtml(String((b.remote_params||{}).enableremotelogging||'EnableRemoteLogging'))
+        +'</b> y pon <b>'+escapeHtml(String((b.remote_params||{}).backendurl||'BackendUrl'))
+        +'</b> = <code>'+location.origin+'</code> (solo la base).'
+      : '✗ No tiene parámetros de reporte, y no se le pueden añadir sin tocar su código. '
+        +'Hydra lo sigue igual por sus operaciones reales en la cuenta.')
+    +'</div>'+chartNote(b);
+  $('#bw-head').innerHTML=head;
+  $('#bw-acts').innerHTML='<button class="btn" onclick="botExplain(false)">🧠 Explícame la estrategia</button>'
+    +'<button class="btn ghost" onclick="botExplain(true)">↻ Rehacer</button>'
+    +'<button class="btn ghost" onclick="replicaRun()">⚖️ ¿La replica Hydra?</button>'
+    +'<button class="btn ghost" onclick="botDel(\''+f+'\')">✕ Quitar de la lista</button>';
+  botBody(); }
+function closeWins(){ document.querySelectorAll('.modalwin.open').forEach(w=>w.classList.remove('open'));
+  $('#modalshade').classList.remove('open'); }
+function closeBotWin(){ closeWins(); }
+function openWin(id){ closeWins(); $('#modalshade').classList.add('open'); $(id).classList.add('open'); }
+/* Los instrumentos se editan AQUI, no en Configuracion: estaban en los dos sitios y
+   no se sabia cual mandaba. */
+function openInstWin(){ openWin('#instwin'); renderWatch(); }
+addEventListener('keydown',e=>{ if(e.key==='Escape') closeWins(); });
 async function botDel(f){ await fetch('/algo/bots/'+encodeURIComponent(f),{method:'DELETE'});
-  if(BOTSEL===f)BOTSEL=''; toast('Bot quitado'); renderBots(); }
-function botFind(v){ BOTQ=v; botBody(); }
+  if(BOTSEL===f){ BOTSEL=''; closeBotWin(); }
+  toast('Bot quitado'); renderBots(); }
+/* Al teclear NO se repinta el input (perderia el foco) y se espera un instante:
+   asi una palabra no dispara ocho peticiones. */
+function botFind(v){ BOTQ=v; clearTimeout(BOTQT); BOTQT=setTimeout(()=>botBody(),160); }
 async function botBody(tgt){ const box=$(tgt||'#bot-body'); if(!box||!BOTSEL)return;
   let d; try{ d=await (await fetch('/algo/bots/'+encodeURIComponent(BOTSEL)
         +'?q='+encodeURIComponent(BOTQ))).json(); }
   catch(e){ box.innerHTML='<div class="empty">Error de red.</div>'; return; }
-  let h='<div class="wadd"><input placeholder="BUSCAR PARÁMETRO (p. ej. SL, fib, sesion)" '
-    +'value="'+escapeHtml(BOTQ)+'" oninput="botFind(this.value)"></div>';
   const gs=d.groups||[];
-  if(!gs.length){ box.innerHTML=h+'<div class="empty">Sin coincidencias.</div>'; return; }
+  if(!gs.length){ box.innerHTML='<div class="empty">Sin coincidencias'+(BOTQ?(' para «'+escapeHtml(BOTQ)+'»'):'')+'.</div>'; return; }
+  let h='';
   gs.forEach(g=>{ h+='<div class="slbl" style="margin:12px 0 4px">'+escapeHtml(g.group)+'</div>';
     g.params.forEach(p=>{ const rng=(p.min!=null&&p.max!=null&&p.max<1e300)?(' · '+p.min+'…'+p.max):'';
       h+='<div class="cfg" style="padding:5px 2px"><span style="max-width:58%">'+escapeHtml(String(p.label))
@@ -1122,11 +1214,30 @@ function spark(vals,col){ if(!vals||vals.length<2)return'';
     +'<stop offset="0" stop-color="'+col+'" stop-opacity=".28"/><stop offset="1" stop-color="'+col+'" stop-opacity="0"/></linearGradient></defs>'
     +'<polygon points="0,22 '+pts+' 100,22" fill="url(#'+id+')"/>'
     +'<polyline points="'+pts+'" fill="none" stroke="'+col+'" stroke-width="1" vector-effect="non-scaling-stroke"/></svg>'; }
+/* Ventana INSTRUMENTOS del HUD: la lista de los VIGILADOS (que existe aunque el
+   broker no haya mandado precios todavia) y un aviso de que se pulsa para editar. */
+function renderHudInstr(d){ const box=$('#hud-instr'); if(!box)return;
+  const watch=((DATA&&DATA.core&&DATA.core.symbols)||[]).map(x=>String(x).toUpperCase());
+  const pinned=((DATA&&DATA.core&&DATA.core.pinned)||['DXY']).map(x=>String(x).toUpperCase());
+  const order=watch.concat(pinned.filter(x=>watch.indexOf(x)<0));
+  const by={}; (INSTR||[]).forEach(r=>{ by[String(r.symbol||'').toUpperCase()]=r; });
+  const n=$('#hud-instr-n'); if(n) n.textContent=order.length+(pinned.length?(' · '+pinned.length+' fijo'+(pinned.length>1?'s':'')):'');
+  if(!order.length){ box.innerHTML='<div class="empty" style="padding:4px 2px;font-size:10.5px">'
+      +L('Ninguno vigilado. Pulsa para añadir.','None watched. Click to add.')+'</div>'; return; }
+  box.innerHTML=order.map(sym=>{ const r=by[sym]||{}, fx=pinned.indexOf(sym)>=0;
+    const up=(r.change_pct||0)>=0, col=r.price==null?'#5f7387':(up?'#34d399':'#ff5d73');
+    return '<div class="prow" style="border-left-color:'+col+'">'
+      +'<span class="sy">'+escapeHtml(sym)+(fx?' 🔒':'')+'</span>'
+      +'<span class="vl" style="color:'+col+'">'
+      +(r.price==null?L('sin datos','no data')
+        :(r.price+' · '+(up?'+':'')+Number(r.change_pct||0).toFixed(2)+'%'))+'</span></div>'; }).join('')
+    +'<div class="phelp" style="margin:4px 0 0;text-align:right">'+L('pulsa para editar ▸','click to edit ▸')+'</div>'; }
 async function pollInstruments(){
   let d; try{ d=await (await fetch('/instruments')).json(); }catch(e){ return; }
   const rows=d.rows||[];
   INSTR=rows;                       // los instrumentos SON el tercer anillo del reactor
   const tf=$('#hud-tf'); if(tf) tf.textContent=d.timeframe||'';
+  renderHudInstr(d);
   const box=$('#hud-inst'); if(!box) return;          // el panel es opcional: el anillo manda
   if(!rows.length){ box.innerHTML='<div class="empty" style="padding:8px;font-size:11px">'
       +escapeHtml(d.reason||L('Sin datos todavía.','No data yet.'))+'</div>'; return; }
