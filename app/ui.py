@@ -854,29 +854,39 @@ async function renderBotsPanel(){ const seq=++MBSEQ;
     +'<button class="btn ghost" style="padding:5px 10px" onclick="mbGo(\'#mb-work\')">'+ICO('chip',12)+' '+L('Mis bots','My bots')+'</button>'
     +'<button class="btn ghost" style="padding:5px 10px" onclick="mbGo(\'#mb-ind\')">'+ICO('bars',12)+' '+L('Indicadores','Indicators')+'</button>'
     +'</div>';
-  h+='<div id="mb-live"><div class="slbl" style="margin:2px 0 4px">'+L('EN MARCHA AHORA','RUNNING NOW')+'</div>';
-  /* Estar en la lista NO es estar corriendo, y hay que decirlo: Hydra lee tus .algo
-     pero NO puede arrancarlos — la Open API de cTrader no tiene mensajes para
-     controlar cBots. Se arrancan en cTrader; aqui aparecen solos cuando dan señales
-     de vida. Sin esta explicacion, la ventana vacia parece un fallo. */
-  if(!bs.length) h+='<div class="empty" style="text-align:left;line-height:1.5">'
-    +'<b>'+L('Ninguno activo ahora.','None active right now.')+'</b><br>'
-    +L('Tener el bot en la lista no lo pone a correr: Hydra lee su configuración, pero <b>arrancarlo se hace en cTrader</b> (la Open API no permite controlar cBots desde fuera). Aquí aparece solo cuando:',
-       'Having a bot listed does not run it: Hydra reads its configuration, but <b>starting it happens in cTrader</b> (the Open API cannot control cBots). It shows up here when:')
-    +'<div style="margin:6px 0 0 2px">'
-    +'· <b>'+L('OPERA','TRADING')+'</b> — '+L('abre una posición en la cuenta (no hay que tocar nada).','it opens a position in the account (nothing to set up).')+'<br>'
-    +'· <b>'+L('ANALIZA','ANALYSING')+'</b> — '+L('te reporta lo que ve. Para eso, en cTrader, en el grupo «Backend Remoto» de ese bot: activa <code>EnableRemoteLogging</code> y pon <code>BackendUrl</code> = <code>'+location.origin+'</code>',
-                                                 'it reports what it sees. For that, in cTrader, in that bot\'s «Backend Remoto» group: turn on <code>EnableRemoteLogging</code> and set <code>BackendUrl</code> = <code>'+location.origin+'</code>')
-    +'</div></div>';
-  else bs.forEach(b=>{ const op=b.open>0, col=op?'#34d399':'#5ad1e6';
-    h+='<div class="wrow" style="border-left:2px solid '+col+';padding-left:8px">'
-      +'<span class="wsym" style="min-width:auto;max-width:50%">'+escapeHtml(String(b.label))+'</span>'
-      +'<span style="margin-left:auto;text-align:right;font-size:11px">'
-      +'<b style="color:'+col+';display:block">'+(op?L('OPERA','TRADING'):L('ANALIZA','ANALYSING'))+'</b>'
-      +'<span class="phelp" style="margin:0;display:block">'+(op?(b.open+' '+L('abiertas','open')):(b.seen+' '+L('señales','signals')))
-      +' · '+ctxAgo(b.last_ts)+'</span>'
-      +((b.symbols||[]).length?'<span class="phelp" style="margin:0;display:block">'+escapeHtml(b.symbols.slice(0,6).join(', '))+'</span>':'')
-      +'</span></div>'; });
+  h+='<div id="mb-live"><div class="slbl" style="margin:2px 0 4px">'
+    +L('TUS BOTS AHORA','YOUR BOTS NOW')+(live.n_chosen?(' ('+live.n_chosen+')'):'')+'</div>';
+  /* Se listan TUS bots, los tres que elegiste, siempre — con lo que esten haciendo o
+     con "EN REPOSO". Las etiquetas que no son tuyas (CSV de otros bots, carpetas de
+     instancia de cTrader, operaciones a mano) van aparte y contadas: mezclarlas era
+     lo que hacia aparecer trece "analizando" cuando habia tres. */
+  if(!(live.n_chosen)) h+='<div class="empty" style="text-align:left;line-height:1.5">'
+    +'<b>'+L('No has elegido ningún bot todavía.','No bots chosen yet.')+'</b><br>'
+    +L('Añádelos abajo, en «AÑADIR UN BOT DE LA CARPETA».','Add them below, in «AÑADIR UN BOT DE LA CARPETA».')+'</div>';
+  (bs||[]).forEach(b=>{ const op=b.open>0, an=b.state==='analiza';
+    const col=op?'#34d399':(an?'#5ad1e6':'#3d5a6b');
+    const lt=b.last||null;
+    h+='<div class="wrow" style="border-left:2px solid '+col+';padding-left:8px;align-items:flex-start">'
+      +'<span class="wsym" style="min-width:0;flex:1">'+escapeHtml(String(b.label))
+      // QUE esta analizando: instrumento, temporalidad y como salio la ultima
+      +(lt?('<span class="phelp" style="margin:0;display:block;text-transform:none">'
+            +escapeHtml(String(lt.symbol||'?'))+' '+escapeHtml(String(lt.timeframe||''))
+            +(lt.bias?(' · '+escapeHtml(String(lt.bias))):'')
+            +(lt.score!=null?(' · score '+lt.score):'')
+            +(lt.outcome?(' · '+escapeHtml(String(lt.outcome))):'')+'</span>')
+        :(b.symbols&&b.symbols.length?('<span class="phelp" style="margin:0;display:block">'
+            +escapeHtml(b.symbols.slice(0,6).join(', '))+'</span>'):''))
+      +'</span>'
+      +'<span style="text-align:right;font-size:11px;flex:0 0 auto">'
+      +'<b style="color:'+col+';display:block">'+(op?L('OPERA','TRADING'):(an?L('ANALIZA','ANALYSING'):L('EN REPOSO','IDLE')))+'</b>'
+      +'<span class="phelp" style="margin:0;display:block">'
+      +(op?(b.open+' '+L('abiertas','open')):(an?(b.seen+' '+L('señales','signals')):L('sin señales','no signals')))
+      +(b.last_ts?(' · '+ctxAgo(b.last_ts)):'')+'</span></span></div>'; });
+  if(live.n_others) h+='<div class="phelp" style="margin-top:4px">'
+    +L(live.n_others+' etiquetas más que no son de tus bots (CSV de otros, carpetas de instancia de cTrader, operaciones a mano): ',
+       live.n_others+' other labels that are not your bots: ')
+    +'<span style="opacity:.75">'+(live.others||[]).slice(0,4).map(o=>escapeHtml(String(o.label).slice(0,26))).join(' · ')
+    +(live.n_others>4?' …':'')+'</span></div>';
   h+='</div>';
   // la carpeta y tus bots: los pinta renderBots, que es quien sabe de esto
   h+='<div id="mb-work"><div class="empty">'+L('Cargando…','Loading…')+'</div></div>';
@@ -1722,24 +1732,27 @@ function hudStart(){ document.querySelectorAll('.hudcol .hud').forEach((e,i)=>se
 let BOTLIVE={n:0,opera:0,analiza:0,bots:[]};
 async function pollBots(){
   let d; try{ d=await (await fetch('/bots/active?minutes=45')).json(); }catch(e){ return; }
-  const bs=(d.bots||[]);
+  const bs=(d.mine||d.bots||[]);      // tus bots, no cualquier etiqueta suelta
   /* El COMPONENTE «BOTS» de la placa se alimenta de aquí: una sola llamada sirve
      a la ventana y al módulo, así los dos dicen siempre lo mismo. */
-  BOTLIVE.n=bs.length; BOTLIVE.opera=bs.filter(b=>b.open>0).length;
-  BOTLIVE.analiza=BOTLIVE.n-BOTLIVE.opera; BOTLIVE.bots=bs;
+  // solo cuentan como "vivos" los que hacen algo: en reposo no es actividad
+  const act=bs.filter(b=>b.state!=='reposo');
+  BOTLIVE.n=act.length; BOTLIVE.opera=bs.filter(b=>b.open>0).length;
+  BOTLIVE.analiza=BOTLIVE.n-BOTLIVE.opera; BOTLIVE.bots=act;
   const box=$('#hud-bots'); if(!box)return;
   const n=$('#hud-bots-n');
-  if(n) n.textContent=bs.length?(bs.filter(b=>b.open).length+' OPERAN'):'EN REPOSO';
+  if(n) n.textContent=bs.length?(BOTLIVE.opera+'/'+bs.length+' OPERAN'):'SIN BOTS';
   if(!bs.length){ box.innerHTML='<div class="empty" style="padding:4px 2px;font-size:10.5px">'
-      +L('Ningún bot activo. Aparecen al abrir posición o al reportar análisis.',
-         'No active bots. They appear when they open a position or report analysis.')+'</div>'; return; }
-  box.innerHTML=bs.map(b=>{ const op=b.open>0, col=op?'#34d399':'#5ad1e6';
+      +L('Ningún bot elegido. Añádelos en la ventana de BOTS.',
+         'No bots chosen. Add them in the BOTS window.')+'</div>'; return; }
+  box.innerHTML=bs.map(b=>{ const op=b.open>0, idle=b.state==='reposo';
+    const col=op?'#34d399':(idle?'#3d5a6b':'#5ad1e6');
     return '<div class="prow" style="border-left-color:'+col+'">'
-      +'<span class="sd" style="color:#02141b;background:'+col+'">'+(op?'OPERA':'ANALIZA')+'</span>'
+      +'<span class="sd" style="color:#02141b;background:'+col+'">'+(op?'OPERA':(idle?'REPOSO':'ANALIZA'))+'</span>'
       +'<span class="sy" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
       +escapeHtml(String(b.label))+'</span>'
-      +'<span class="vl">'+(op?(b.open+(b.open>1?' pos':' pos')):(b.seen+' señales'))
-      +(b.alerted?' · '+b.alerted+' ok':'')+' · '+ctxAgo(b.last_ts)+'</span>'
+      +'<span class="vl">'+(op?(b.open+' pos'):(idle?L('sin señales','no signals'):(b.seen+' señales')))
+      +(b.alerted?' · '+b.alerted+' ok':'')+(b.last_ts?(' · '+ctxAgo(b.last_ts)):'')+'</span>'
       +'</div>'
       +((b.symbols||[]).length?'<div class="phelp" style="margin:-2px 0 4px 6px">'
         +escapeHtml(b.symbols.slice(0,6).join(', '))+'</div>':''); }).join(''); }

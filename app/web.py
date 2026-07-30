@@ -1634,6 +1634,10 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             return {"ok": True}
         return JSONResponse({"ok": False, "error": "no existe"}, status_code=404)
 
+    def _norm_lbl(x) -> str:
+        """Etiquetas comparables: sin espacios, guiones ni mayúsculas."""
+        return "".join(ch for ch in str(x or "").lower() if ch.isalnum())
+
     @app.get("/bots/active")
     async def bots_active(minutes: float = 45):
         """Solo los bots que están HACIENDO algo: operando o analizando.
@@ -1648,7 +1652,8 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         def slot(label: str) -> dict:
             key = (label or "").strip() or "(sin etiqueta)"
             return out.setdefault(key, {"label": key, "open": 0, "seen": 0,
-                                        "alerted": 0, "symbols": [], "last_ts": 0})
+                                        "alerted": 0, "symbols": [], "last_ts": 0,
+                                        "last": None})
 
         try:
             for a in store.trade_context_active(minutes):
@@ -1656,6 +1661,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                 g["seen"] += a["seen"]
                 g["alerted"] += a["alerted"]
                 g["last_ts"] = max(g["last_ts"], int(a["last_ts"] or 0))
+                g["last"] = a.get("last") or g["last"]
                 for s in a["symbols"]:
                     if s not in g["symbols"]:
                         g["symbols"].append(s)
@@ -1677,10 +1683,52 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             except Exception:  # noqa: BLE001
                 pass
 
-        bots = sorted(out.values(), key=lambda r: (-r["open"], -r["last_ts"]))
-        for b in bots:
+        for b in out.values():
             b["state"] = "opera" if b["open"] else "analiza"
-        return {"ok": True, "minutes": minutes, "bots": bots}
+
+        # SOLO TUS BOTS. La lista de etiquetas la escribe cualquiera: un CSV de otro
+        # bot, una carpeta de instancia de cTrader, una operación a mano. Se cruza con
+        # los bots que elegiste y el resto se aparta — antes se mezclaba todo y salían
+        # trece "analizando" cuando había tres elegidos.
+        chosen: list[dict] = []
+        for jf in sorted(_bots_dir().glob("*.json")):
+            try:
+                d = json.loads(jf.read_text())
+            except Exception:  # noqa: BLE001
+                continue
+            keys = {_norm_lbl(x) for x in (d.get("name"), d.get("type_label"), jf.stem,
+                                           Path(d.get("src_path") or "").stem) if x}
+            chosen.append({"file": jf.stem, "name": d.get("name") or jf.stem,
+                           "keys": {k for k in keys if k}})
+
+        mine, taken = [], set()
+        for c in chosen:
+            hit = None
+            for label, b in out.items():
+                ln = _norm_lbl(label)
+                if not ln:
+                    continue
+                if any(k == ln or k in ln or ln in k for k in c["keys"]):
+                    hit = (label, b)
+                    break
+            row = {"label": c["name"], "file": c["file"], "open": 0, "seen": 0,
+                   "alerted": 0, "symbols": [], "last_ts": 0, "state": "reposo",
+                   "last": None}
+            if hit:
+                taken.add(hit[0])
+                row.update({k: hit[1][k] for k in
+                            ("open", "seen", "alerted", "symbols", "last_ts",
+                             "state", "last")})
+                row["real_label"] = hit[0]      # la etiqueta con la que abre de verdad
+            mine.append(row)
+        mine.sort(key=lambda r: (0 if r["state"] != "reposo" else 1,
+                                 -r["open"], -r["last_ts"]))
+        others = sorted((b for lbl, b in out.items() if lbl not in taken),
+                        key=lambda r: (-r["open"], -r["last_ts"]))
+        # `bots` se mantiene por compatibilidad: es lo que pinta el HUD pequeño
+        return {"ok": True, "minutes": minutes, "bots": mine,
+                "mine": mine, "others": others[:20], "n_others": len(others),
+                "n_chosen": len(chosen)}
 
     # --------------------- gestion de posiciones con la politica del propio bot
 

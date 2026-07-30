@@ -324,10 +324,21 @@ class Store:
             "GROUP_CONCAT(DISTINCT symbol) "
             "FROM trade_context WHERE ts >= ? GROUP BY lbl ORDER BY MAX(ts) DESC",
             (since,)).fetchall()
-        return [{"label": r[0], "seen": int(r[1]), "last_ts": r[2],
-                 "alerted": int(r[3] or 0),
-                 "symbols": [s for s in (r[4] or "").split(",") if s][:6]}
-                for r in rows]
+        out = []
+        for r in rows:
+            # QUÉ está mirando ahora mismo: sin esto la ventana dice "analiza" y deja
+            # al dueño preguntándose analiza qué.
+            last = self.db.execute(
+                "SELECT symbol,timeframe,outcome,score,bias FROM trade_context "
+                "WHERE COALESCE(NULLIF(TRIM(bot_label),''),'(sin etiqueta)')=? "
+                "AND ts >= ? ORDER BY ts DESC LIMIT 1", (r[0], since)).fetchone()
+            out.append({"label": r[0], "seen": int(r[1]), "last_ts": r[2],
+                        "alerted": int(r[3] or 0),
+                        "symbols": [s for s in (r[4] or "").split(",") if s][:6],
+                        "last": ({"symbol": last[0], "timeframe": last[1],
+                                  "outcome": last[2], "score": last[3],
+                                  "bias": last[4]} if last else None)})
+        return out
 
     def setups(self, days: float = 30, limit: int = 40) -> list[dict]:
         """Los SETUPS acumulados: cada combinación repetida, con cómo le fue.
