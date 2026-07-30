@@ -1640,6 +1640,60 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             b["state"] = "opera" if b["open"] else "analiza"
         return {"ok": True, "minutes": minutes, "bots": bots}
 
+    @app.get("/trades/recent")
+    async def trades_recent(days: float = 3, limit: int = 12):
+        """Las operaciones del bot para la cinta de abajo: qué, cuánto y cuánto dio.
+
+        Dos clases de fila, y se distinguen a propósito:
+        - CERRADAS: traen su resultado real (bruto − comisión + swap). Eso es dinero.
+        - ABIERTAS: van marcadas como abiertas y SIN resultado. La Open API no manda
+          el flotante, y calcularlo a ojo (sin el valor del pip de cada símbolo ni la
+          divisa de la cuenta) daría una cifra que parece buena y no lo es. Antes de
+          inventarla, se dice que está abierta.
+
+        La "estrategia" es la ETIQUETA con la que el cBot abrió: funciona con
+        cualquier bot sin tocarlo.
+        """
+        import logging as _lg
+        if broker is None or not broker.client.account_authorized:
+            return {"ok": False, "error": "conecta cTrader", "rows": []}
+        lim = max(1, min(60, int(limit)))
+        rows: list[dict] = []
+        try:
+            pos = await asyncio.wait_for(broker.positions(), timeout=12)
+            for p in pos:
+                sym = await broker.symbol_name_by_id(p["symbol_id"])
+                rows.append({"state": "open", "ts": p.get("open_ts") or 0,
+                             "strategy": (p.get("label") or "").strip() or "(sin etiqueta)",
+                             "symbol": sym, "side": p.get("side", ""),
+                             "lots": round(float(p.get("volume_units") or 0) / 100000, 2),
+                             "units": p.get("volume_units"), "pnl": None})
+        except Exception as exc:  # noqa: BLE001 - una parte caída no tumba la cinta
+            _lg.getLogger("web").debug("trades_recent posiciones: %s", exc)
+        try:
+            deals = await asyncio.wait_for(
+                broker.deals_since(time.time() - max(0.1, days) * 86400), timeout=20)
+            for d in deals:
+                if not d.get("closed"):
+                    continue
+                sym = await broker.symbol_name_by_id(d["symbol_id"])
+                rows.append({"state": "closed", "ts": d.get("ts") or 0,
+                             "strategy": (d.get("label") or "").strip() or "(sin etiqueta)",
+                             "symbol": sym, "side": d.get("side", ""),
+                             "lots": round(float(d.get("volume_units") or 0) / 100000, 2),
+                             "units": d.get("volume_units"),
+                             "pnl": round(d.get("gross", 0.0) - abs(d.get("commission", 0.0))
+                                          + d.get("swap", 0.0), 2)})
+        except Exception as exc:  # noqa: BLE001
+            _lg.getLogger("web").debug("trades_recent deals: %s", exc)
+        # abiertas primero (es lo que está en juego ahora) y, dentro, lo más reciente
+        rows.sort(key=lambda r: (0 if r["state"] == "open" else 1, -(r["ts"] or 0)))
+        closed = [r for r in rows if r["state"] == "closed"]
+        return {"ok": True, "days": days, "rows": rows[:lim],
+                "n_open": sum(1 for r in rows if r["state"] == "open"),
+                "n_closed": len(closed),
+                "pnl_closed": round(sum(r["pnl"] or 0 for r in closed), 2)}
+
     @app.get("/bots/live")
     async def bots_live(days: float = 7):
         """Qué está haciendo CADA bot en la cuenta, agrupado por su etiqueta.

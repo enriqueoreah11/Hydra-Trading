@@ -148,6 +148,24 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 .cal-dot{width:8px;height:8px;border-radius:99px;flex:none;box-shadow:0 0 8px currentColor}
 .cal-cur{color:#cfe6f2;font-weight:700;width:38px;flex:none;font-size:11px}
 .cal-title{color:#a9bcd0}.cal-det{color:#5f7387;font-size:10.5px}
+/* CINTA DE OPERACIONES (abajo, centrada): lo que el bot tiene puesto y lo que ha
+   cerrado. Ocupa el hueco del aviso de la key, que estorbaba mas que ayudaba. */
+#trades{position:fixed;left:50%;bottom:74px;transform:translateX(-50%) translateY(8px);z-index:24;
+  width:min(720px,92vw);max-height:184px;overflow:hidden;background:#050f18ee;
+  border:1px solid #12414f;border-radius:12px;box-shadow:0 12px 40px #000a;
+  opacity:0;transition:opacity .5s ease,transform .5s var(--ease-drawer);display:flex;flex-direction:column}
+#trades.in{opacity:1;transform:translateX(-50%)}
+#trades .thd{display:flex;justify-content:space-between;align-items:center;gap:10px;
+  padding:6px 12px;border-bottom:1px solid #10333f;font-size:9px;letter-spacing:2px;color:#4d6b7d}
+#trades .tbd{overflow:auto;padding:4px 8px 7px}
+.trow{display:flex;align-items:center;gap:8px;padding:4px 4px;border-bottom:1px solid #0c1f2a80;font-size:11.5px}
+.trow:last-child{border-bottom:0}
+.trow .st{flex:0 0 auto;font-size:8.5px;letter-spacing:1.2px;padding:2px 6px;border-radius:5px}
+.trow .sy{flex:0 0 auto;display:flex;align-items:center;gap:5px;color:#dffaff;font-weight:600;min-width:96px}
+.trow .stg{flex:1 1 auto;color:#7f97a8;font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trow .lt{flex:0 0 auto;color:#9fd8ea;font-size:10.5px}
+.trow .pl{flex:0 0 auto;min-width:74px;text-align:right;font-weight:700}
+@media(max-width:900px){#trades{display:none}}
 #banner{position:fixed;left:50%;bottom:78px;transform:translateX(-50%);z-index:25;background:#08192af0;border:1px solid #1a4a5f;border-radius:12px;padding:11px 16px;max-width:min(760px,94vw);font-size:12.5px;color:#bfe6f5;box-shadow:0 10px 40px #000a}
 #banner code{background:#03121b;padding:2px 7px;border-radius:6px;color:#7ff6ff;border:1px solid #12303f}#banner a{color:#7ff6ff}
 /* PANTALLAS LATERALES: columna izquierda = sesiones + calendario de esa sesión;
@@ -197,7 +215,7 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
   box-shadow:0 0 10px color-mix(in srgb,var(--c) 30%,transparent)}
 .nrow{display:flex;gap:7px;align-items:baseline;padding:6px 8px;border-radius:3px;font-size:10.5px;margin-bottom:2px}
 .nrow.w{background:#0a2030aa;border-left:2px solid #38e6ff}
-.nrow .t{color:#3d5a6b;width:38px;flex:none}
+.nrow .t{color:#3d5a6b;width:62px;flex:none;white-space:nowrap}
 .nrow .d{width:6px;height:6px;border-radius:99px;flex:none;box-shadow:0 0 7px currentColor;align-self:center}
 .nrow .c{color:#9fd8ea;width:30px;flex:none;letter-spacing:.5px}
 .nrow .n{color:#7d97a8;line-height:1.35}
@@ -410,6 +428,10 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 </div>
 
 <div id="toast"></div><div id="banner" style="display:none"></div>
+<div id="trades">
+  <div class="thd"><span>OPERACIONES</span><span id="tr-sum"></span></div>
+  <div class="tbd" id="tr-body"><div class="empty" style="padding:6px 2px;font-size:10.5px">&hellip;</div></div>
+</div>
 
 <script>
 const $=s=>document.querySelector(s);
@@ -481,10 +503,10 @@ async function saveParams(k){ const body={}; document.querySelectorAll('#d-body 
   if(r.ok){ toast('Parámetros guardados ✓'); speak('Ajustes guardados.'); load(); } else { toast('No se pudo guardar'); } }
 function prettify(s){ try{ return escapeHtml(JSON.stringify(JSON.parse(s),null,1)); }catch(_){ return escapeHtml(s);} }
 function escapeHtml(s){ return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
-function banner(c){ const b=$('#banner'); let m='';
-  if(!c.has_anthropic) m='🔑 Falta la key para que los agentes piensen: <code>fly secrets set ANTHROPIC_API_KEY=sk-ant-...</code>';
-  else if(!c.connected&&c.oauth_ok) m='⏳ Autorizado, conectando con cTrader…';
-  b.style.display=m?'block':'none'; b.innerHTML=m; }
+/* El aviso de la key ya no ocupa el centro de abajo: ese sitio es para LAS
+   OPERACIONES. Lo que falte se dice donde toca (Configuración → CONEXIÓN), no
+   tapando la pantalla. */
+function banner(c){ const b=$('#banner'); if(b) b.style.display='none'; }
 function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('show'); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),3800); }
 
 $('#b-refresh').onclick=()=>{ toast('Datos actualizados'); load(); }; $('#b-halt').onclick=doHalt; $('#b-demo').onclick=runDemo;
@@ -790,7 +812,19 @@ async function renderBotsPanel(){ const seq=++MBSEQ;
     +'<button class="btn ghost" style="padding:5px 10px" onclick="mbGo(\'#mb-ind\')">'+ICO('bars',12)+' '+L('Indicadores','Indicators')+'</button>'
     +'</div>';
   h+='<div id="mb-live"><div class="slbl" style="margin:2px 0 4px">'+L('EN MARCHA AHORA','RUNNING NOW')+'</div>';
-  if(!bs.length) h+='<div class="empty">'+L('Ninguno operando ni analizando en los últimos 45 minutos.','None trading or analysing in the last 45 minutes.')+'</div>';
+  /* Estar en la lista NO es estar corriendo, y hay que decirlo: Hydra lee tus .algo
+     pero NO puede arrancarlos — la Open API de cTrader no tiene mensajes para
+     controlar cBots. Se arrancan en cTrader; aqui aparecen solos cuando dan señales
+     de vida. Sin esta explicacion, la ventana vacia parece un fallo. */
+  if(!bs.length) h+='<div class="empty" style="text-align:left;line-height:1.5">'
+    +'<b>'+L('Ninguno activo ahora.','None active right now.')+'</b><br>'
+    +L('Tener el bot en la lista no lo pone a correr: Hydra lee su configuración, pero <b>arrancarlo se hace en cTrader</b> (la Open API no permite controlar cBots desde fuera). Aquí aparece solo cuando:',
+       'Having a bot listed does not run it: Hydra reads its configuration, but <b>starting it happens in cTrader</b> (the Open API cannot control cBots). It shows up here when:')
+    +'<div style="margin:6px 0 0 2px">'
+    +'· <b>'+L('OPERA','TRADING')+'</b> — '+L('abre una posición en la cuenta (no hay que tocar nada).','it opens a position in the account (nothing to set up).')+'<br>'
+    +'· <b>'+L('ANALIZA','ANALYSING')+'</b> — '+L('te reporta lo que ve. Para eso, en cTrader, en el grupo «Backend Remoto» de ese bot: activa <code>EnableRemoteLogging</code> y pon <code>BackendUrl</code> = <code>'+location.origin+'</code>',
+                                                 'it reports what it sees. For that, in cTrader, in that bot\'s «Backend Remoto» group: turn on <code>EnableRemoteLogging</code> and set <code>BackendUrl</code> = <code>'+location.origin+'</code>')
+    +'</div></div>';
   else bs.forEach(b=>{ const op=b.open>0, col=op?'#34d399':'#5ad1e6';
     h+='<div class="wrow" style="border-left:2px solid '+col+';padding-left:8px">'
       +'<span class="wsym" style="min-width:auto;max-width:50%">'+escapeHtml(String(b.label))+'</span>'
@@ -1407,12 +1441,13 @@ async function pollNews(){ const box=$('#hud-news'); if(!box)return;
   const pages=Math.max(1,Math.ceil(ev.length/NEWS_PP));
   if(NEWSP>=pages) NEWSP=pages-1;
   const page=ev.slice(NEWSP*NEWS_PP,(NEWSP+1)*NEWS_PP);
-  let last='',h=chips;
+  let h=chips;
   page.forEach(e=>{ const dt=new Date(e.ts*1000);
-    const day=dt.toLocaleDateString(LANG==='en'?'en':'es',{weekday:'short',day:'numeric',month:'short'});
-    if(day!==last){ h+='<div style="color:#3d5a6b;font-size:9px;letter-spacing:2px;margin:9px 0 4px;text-transform:uppercase">'+escapeHtml(day)+'</div>'; last=day; }
+    const wd=dt.toLocaleDateString(LANG==='en'?'en':'es',{weekday:'short'})
+              .replace('.','').toUpperCase().slice(0,3);
     const col=IMPC[(e.impact||'low').toLowerCase()]||'#5ad1e6';
-    h+='<div class="nrow'+(e.watched?' w':'')+'"><span class="t">'+dt.toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'})+'</span>'
+    h+='<div class="nrow'+(e.watched?' w':'')+'"><span class="t">'+wd+' '
+      +dt.toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'})+'</span>'
       +'<span class="d" style="background:'+col+';color:'+col+'"></span>'
       +'<span class="c">'+escapeHtml(String(e.currency||''))+'</span>'
       +'<span class="n">'+escapeHtml(String(e.title||''))+'</span></div>'; });
@@ -1466,6 +1501,42 @@ async function pollPositions(){ const box=$('#hud-pos'); if(!box)return;
       +'<span class="sy">'+escapeHtml(String(p.symbol||'—'))+'</span>'
       +'<span class="vl">'+(lots>=0.01?lots.toFixed(2)+' lot':p.volume_units+' u')+' · '+ctxAgo(p.open_ts)+'</span>'
       +'</div>'; }).join(''); }
+/* CINTA DE OPERACIONES: estrategia (la etiqueta del bot), instrumento con su icono,
+   lotaje y resultado. Las CERRADAS traen dinero real; las ABIERTAS se marcan como
+   abiertas y sin cifra — la Open API no manda el flotante y calcularlo a ojo daria
+   un numero que parece bueno y no lo es. */
+async function pollTrades(){ const box=$('#tr-body'), wrap=$('#trades'); if(!box)return;
+  let d; try{ d=await (await fetch('/trades/recent?days=3&limit=12')).json(); }catch(e){ return; }
+  const sum=$('#tr-sum');
+  if(!d.ok){ if(sum) sum.textContent='';
+    box.innerHTML='<div class="empty" style="padding:6px 2px;font-size:10.5px">'
+      +escapeHtml(d.error||L('sin datos','no data'))+'</div>';
+    if(wrap) wrap.classList.add('in'); return; }
+  const rows=d.rows||[];
+  if(sum){ const p=d.pnl_closed||0, col=p>0?'#34d399':(p<0?'#ff5d73':'#4d6b7d');
+    sum.innerHTML=(d.n_open||0)+' '+L('ABIERTAS','OPEN')+' · '+(d.n_closed||0)+' '+L('CERRADAS','CLOSED')
+      +' · <b style="color:'+col+'">'+(p>0?'+':'')+p+'</b>'; }
+  if(!rows.length){ box.innerHTML='<div class="empty" style="padding:6px 2px;font-size:10.5px">'
+      +L('Ninguna operación en los últimos 3 días.','No trades in the last 3 days.')+'</div>';
+    if(wrap) wrap.classList.add('in'); return; }
+  box.innerHTML=rows.map(r=>{ const op=r.state==='open';
+    const buy=String(r.side||'').toUpperCase().indexOf('BUY')>=0;
+    const sc=buy?'#34d399':'#ff5d73';
+    const mu=window.mktIconURL?window.mktIconURL(r.symbol):'';
+    const pl=r.pnl==null?null:Number(r.pnl);
+    const pc=pl==null?'#5f7387':(pl>0?'#34d399':(pl<0?'#ff5d73':'#9fd8ea'));
+    return '<div class="trow">'
+      +'<span class="st" style="color:#02141b;background:'+sc+'">'+(buy?'BUY':'SELL')+'</span>'
+      +'<span class="sy">'+(mu?'<img src="'+mu+'" style="width:15px;height:15px">':'')
+      +escapeHtml(String(r.symbol||'—'))+'</span>'
+      +'<span class="stg">'+escapeHtml(String(r.strategy||''))+'</span>'
+      +'<span class="lt">'+(r.lots>=0.01?r.lots.toFixed(2)+' lot':(r.units||0)+' u')
+      +' · '+ctxAgo(r.ts)+'</span>'
+      +'<span class="pl" style="color:'+pc+'">'
+      +(pl==null?('<span style="font-size:9px;letter-spacing:1px">'+L('ABIERTA','OPEN')+'</span>')
+                :((pl>0?'+':'')+pl.toFixed(2)))+'</span>'
+      +'</div>'; }).join('');
+  if(wrap) wrap.classList.add('in'); }
 /* CINTA DE ACTIVIDAD: qué está analizando y qué está ejecutando, en vivo.
    Traduce cada entrada del diario a una línea corta y legible. */
 const TAPE_AG={analyst:['ANALIZA','#fbbf24'],risk_manager:['RIESGO','#ff9f6b'],
@@ -1524,11 +1595,11 @@ function hudStart(){ document.querySelectorAll('.hudcol .hud').forEach((e,i)=>se
   // terminen de entrar para medirlas donde de verdad se quedan.
   [900,1800].forEach(t=>setTimeout(()=>window.pcbRewire&&window.pcbRewire(),t));
   setTimeout(()=>{const t=$('#tape');if(t)t.classList.add('in');},140);
-  renderSessions(); pollPositions(); pollInstruments(); pollNews(); renderHudSys(); pollBrain(); pollTape(); pollBots();
+  renderSessions(); pollPositions(); pollInstruments(); pollNews(); renderHudSys(); pollBrain(); pollTape(); pollBots(); pollTrades();
   setInterval(renderSessions,30000); setInterval(pollPositions,20000);
   setInterval(pollInstruments,30000); setInterval(refreshNews,1800000);
   setInterval(pollBrain,60000); setInterval(pollTape,6000);
-  setInterval(pollBots,20000); }
+  setInterval(pollBots,20000); setInterval(pollTrades,25000); }
 /* Ventana BOTS: solo los que están HACIENDO algo — operando o analizando.
    "Analiza" sale de trade_context (el bot mira aunque no abra), "opera" de las
    posiciones abiertas. El que no reporta y no tiene posiciones, no aparece. */
@@ -1924,13 +1995,13 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     OIL:{c:'52,46,40',c2:'150,110,60',dk:'18,14,10',sym:'drop'},
     BRENT:{c:'44,46,52',c2:'120,96,64',dk:'16,16,20',sym:'barrel'},
     // "500" se lee al instante; la araña que habia no se entendia a este tamaño
-    'S&P 500':{c:'36,120,66',c2:'132,222,152',dk:'8,42,20',sym:'500'},
-    NASDAQ:{c:'34,116,176',c2:'132,216,255',dk:'8,38,62',sym:'chip'},
-    DOW:{c:'74,90,168',c2:'156,176,255',dk:'22,28,66',sym:'bull'},
+    'S&P 500':{c:'36,120,66',c2:'132,222,152',dk:'8,42,20',sym:'num',t:'500'},
+    NASDAQ:{c:'34,116,176',c2:'132,216,255',dk:'8,38,62',sym:'num',t:'100'},
+    DOW:{c:'74,90,168',c2:'156,176,255',dk:'22,28,66',sym:'num',t:'30'},
     DXY:{c:'36,138,90',c2:'134,232,178',dk:'8,46,28',sym:'dollar'},
-    DAX:{c:'150,40,44',c2:'255,150,150',dk:'50,10,12',sym:'ticker'},
-    FTSE:{c:'40,60,140',c2:'150,170,255',dk:'12,20,54',sym:'ticker'},
-    NIKKEI:{c:'170,40,60',c2:'255,150,170',dk:'56,12,20',sym:'ticker'} };
+    DAX:{c:'150,40,44',c2:'255,150,150',dk:'50,10,12',sym:'num',t:'40'},
+    FTSE:{c:'40,60,140',c2:'150,170,255',dk:'12,20,54',sym:'num',t:'100'},
+    NIKKEI:{c:'170,40,60',c2:'255,150,170',dk:'56,12,20',sym:'num',t:'225'} };
   // nombre "de calle" de cada símbolo (para la moneda del cajón y el panel)
   const MKT_NAMES={XAUUSD:'GOLD',XAGUSD:'SILVER',XPTUSD:'PLATINUM',XTIUSD:'OIL',USOIL:'OIL',WTI:'OIL',
     XBRUSD:'BRENT',UKOIL:'BRENT',US100:'NASDAQ',USTEC:'NASDAQ',NAS100:'NASDAQ',US30:'DOW',
@@ -1954,8 +2025,9 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       case 'barrel': ct.beginPath(); ct.moveTo(-s*0.5,-s*0.7); ct.lineTo(s*0.5,-s*0.7); ct.lineTo(s*0.5,s*0.7); ct.lineTo(-s*0.5,s*0.7); ct.closePath(); ct.stroke(); ct.beginPath(); ct.moveTo(-s*0.5,-s*0.25); ct.lineTo(s*0.5,-s*0.25); ct.moveTo(-s*0.5,s*0.25); ct.lineTo(s*0.5,s*0.25); ct.stroke(); break;
       case 'chip': ct.beginPath(); ct.rect(-s*0.5,-s*0.5,s,s); ct.stroke(); for(let k=-1;k<=1;k++){ ct.beginPath(); ct.moveTo(-s*0.72,k*s*0.34); ct.lineTo(-s*0.5,k*s*0.34); ct.moveTo(s*0.5,k*s*0.34); ct.lineTo(s*0.72,k*s*0.34); ct.moveTo(k*s*0.34,-s*0.72); ct.lineTo(k*s*0.34,-s*0.5); ct.moveTo(k*s*0.34,s*0.5); ct.lineTo(k*s*0.34,s*0.72); ct.stroke(); } ct.beginPath(); ct.arc(0,0,s*0.16,0,7); ct.fill(); break;
       case 'forex': coinForex(ct,s); break;
-      case '500': ct.font='800 '+(s*0.86)+'px system-ui,sans-serif'; ct.textAlign='center';
-        ct.textBaseline='middle'; ct.fillText('500',0,s*0.06); break;
+      case 'num': { const t=String(txt||''); // 500, 100, 30: el numero del indice
+        ct.font='800 '+(s*(t.length>2?0.86:1.05))+'px system-ui,sans-serif';
+        ct.textAlign='center'; ct.textBaseline='middle'; ct.fillText(t,0,s*0.06); break; }
       case 'spider': ct.beginPath(); ct.ellipse(0,s*0.18,s*0.26,s*0.34,0,0,7); ct.fill(); ct.beginPath(); ct.arc(0,-s*0.26,s*0.19,0,7); ct.fill(); for(const sg of [-1,1]){ for(let k=0;k<4;k++){ ct.beginPath(); ct.moveTo(sg*s*0.14,s*0.05); ct.quadraticCurveTo(sg*s*0.62,-s*0.15+k*s*0.22,sg*s*0.82,s*0.1+k*s*0.2); ct.stroke(); } } break;
       case 'bull': ct.beginPath(); ct.moveTo(-s*0.72,-s*0.45); ct.quadraticCurveTo(-s*0.45,-s*0.8,-s*0.22,-s*0.42); ct.moveTo(s*0.72,-s*0.45); ct.quadraticCurveTo(s*0.45,-s*0.8,s*0.22,-s*0.42); ct.stroke(); ct.beginPath(); ct.moveTo(-s*0.36,-s*0.35); ct.lineTo(-s*0.3,s*0.42); ct.quadraticCurveTo(0,s*0.78,s*0.3,s*0.42); ct.lineTo(s*0.36,-s*0.35); ct.closePath(); ct.stroke(); break;
       case 'dollar': ct.font='700 '+(s*1.6)+'px system-ui,sans-serif'; ct.textAlign='center'; ct.textBaseline='middle'; ct.fillText('$',0,s*0.06); break;
