@@ -1124,9 +1124,15 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
     _BUILD_NOISE = ("/obj/", "/.git/", "/node_modules/")
 
     def _algo_rank(f: Path) -> tuple:
-        """Cuál copia gana: primero Release, y entre iguales la más reciente."""
+        """Cuál copia gana: LA MÁS RECIENTE, y solo a igualdad de fecha, Release.
+
+        Antes ganaba Release y eso escogía compilaciones viejas: cTrader construye
+        en Debug al pulsar Build, así que un Release de hace meses tapaba el build
+        de hoy — con menos parámetros, y por eso parecía que el bot había perdido
+        los del reporte a Hydra.
+        """
         s = str(f).lower()
-        return (1 if "/release/" in s else 0, f.stat().st_mtime)
+        return (f.stat().st_mtime, 1 if "/release/" in s else 0)
 
     def _algo_unique(d: Path) -> list[tuple[Path, int]]:
         """Un .algo por bot: [(archivo elegido, cuántas copias había)]."""
@@ -1225,9 +1231,38 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             # aparecen dos entradas del mismo bot
             files = [f for f, _ in _algo_unique(d)]
 
+        # ¿Se importó una copia VIEJA de un bot y hay otra más nueva en otra carpeta
+        # (Debug frente a Release)? Se adopta la nueva y se tira la ficha vieja: si
+        # no, el bot se queda congelado en una compilación anterior y parece que ha
+        # perdido parámetros que sí tiene.
+        allow, adopted, missing = set(), [], []
+        if only_known:
+            best = {f.stem.lower(): f for f, _ in _algo_unique(d)}
+            for old, prev in list(known.items()):
+                nb = best.get(Path(old).stem.lower())
+                # el archivo ya no está y no hay otra copia: se dice, no se borra su
+                # ficha a la callada — quitarla es decisión del dueño
+                if not nb and not Path(old).is_file():
+                    missing.append(Path(old).stem)
+                if not nb or str(nb) == old:
+                    continue
+                if nb.stat().st_mtime <= (prev[0] or 0):
+                    continue
+                for jf in _bots_dir().glob("*.json"):
+                    try:
+                        if json.loads(jf.read_text()).get("src_path") == old:
+                            jf.unlink()
+                    except Exception:  # noqa: BLE001
+                        pass
+                known.pop(old, None)
+                allow.add(str(nb))
+                adopted.append({"bot": Path(old).stem, "from": old, "to": str(nb)})
+            if allow:
+                files = files + [Path(x) for x in allow if Path(x) not in files]
+
         added, updated, same, failed = [], [], [], []
         for f in files:
-            if only_known and str(f) not in known:
+            if only_known and str(f) not in known and str(f) not in allow:
                 continue                  # no se cuela nadie que no hayas elegido
             st = f.stat()
             sig = (int(st.st_mtime), st.st_size)
@@ -1240,23 +1275,37 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             except Exception as exc:  # noqa: BLE001 - un .algo roto no corta el escaneo
                 failed.append({"file": f.name, "error": str(exc)[:120]})
                 continue
+            # El nombre que se muestra es el DEL ARCHIVO, que es como lo ves en
+            # cTrader y en tu carpeta ("Confluence Bot"). El interno del código
+            # ("ConfluenceAlertBotV2") se guarda aparte: sirve para entenderlo, pero
+            # no es como se llama el bot para su dueño.
             parsed.update({"imported_ts": _t.time(), "file_bytes": st.st_size,
-                           "src_path": str(f), "src_mtime": int(st.st_mtime)})
-            safe = "".join(c for c in str(parsed["name"])
-                           if c.isalnum() or c in "-_")[:60] or f.stem
-            # Dos bots distintos pueden declarar el MISMO nombre interno. Si el
-            # hueco ya lo ocupa otro archivo, se desambigua con el nombre del
-            # fichero: si no, uno pisaría al otro sin avisar.
+                           "src_path": str(f), "src_mtime": int(st.st_mtime),
+                           "type_label": parsed.get("name"), "name": f.stem})
+            safe = "".join(c for c in f.stem
+                           if c.isalnum() or c in "-_ ")[:60].strip() or "bot"
             dest = _bots_dir() / f"{safe}.json"
+            # Un mismo archivo no puede tener DOS fichas: si el nombre cambió (o
+            # antes se guardaba por el nombre interno), la vieja se va.
+            for jf in _bots_dir().glob("*.json"):
+                if jf == dest:
+                    continue
+                try:
+                    if json.loads(jf.read_text()).get("src_path") == str(f):
+                        jf.unlink()
+                except Exception:  # noqa: BLE001
+                    pass
+            # Dos archivos distintos con el MISMO nombre: se desambigua con su
+            # carpeta, o uno pisaría al otro sin avisar.
             if dest.exists():
                 try:
                     other = json.loads(dest.read_text()).get("src_path")
                 except Exception:  # noqa: BLE001
                     other = None
                 if other and other != str(f):
-                    stem = "".join(c for c in f.stem if c.isalnum() or c in "-_")[:30]
-                    dest = _bots_dir() / f"{safe}__{stem}.json"
-                    parsed["name"] = f"{parsed['name']} ({f.stem})"
+                    tag = "".join(c for c in f.parent.name if c.isalnum())[:20]
+                    dest = _bots_dir() / f"{safe}__{tag}.json"
+                    parsed["name"] = f"{f.stem} ({f.parent.name})"
             dest.write_text(json.dumps(parsed, ensure_ascii=False, indent=1))
             (updated if prev else added).append(
                 {"name": parsed["name"], "params": parsed["n_params"],
@@ -1266,8 +1315,12 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             store.log("system", "algo_scan",
                       f"{len(added)} nuevos, {len(updated)} actualizados, "
                       f"{len(same)} sin cambios, {len(failed)} con error")
+        if adopted:
+            store.log("system", "algo_adopt",
+                      "; ".join(f"{a['bot']}: {a['to']}" for a in adopted))
         return {"ok": True, "dir": str(d), "added": added, "updated": updated,
-                "unchanged": len(same), "failed": failed}
+                "unchanged": len(same), "failed": failed, "adopted": adopted,
+                "missing": missing}
 
     @app.post("/algo/scan")
     async def algo_scan():
@@ -1443,7 +1496,8 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                 d = json.loads(f.read_text())
             except Exception:  # noqa: BLE001
                 continue
-            out.append({"file": f.stem, "name": d.get("name"), "kind": d.get("kind"),
+            out.append({"file": f.stem, "name": d.get("name"),
+                        "type_label": d.get("type_label") or "", "kind": d.get("kind"),
                         "n_params": d.get("n_params"), "n_groups": d.get("n_groups"),
                         "api_version": d.get("api_version"),
                         "built_at": d.get("built_at"),

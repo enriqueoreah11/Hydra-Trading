@@ -672,9 +672,10 @@ async function botOpen(f){ BOTSEL=f; BOTQ='';
   const b=(d.bots||[]).find(x=>x.file===f)||{};
   BOTINFO=b;
   $('#bw-name').textContent=String(b.name||f);
-  const kind=String(b.kind||'');
+  const kind=String(b.kind||''), tl=String(b.type_label||'');
   $('#bw-role').textContent=(kind?kind+' · ':'')+(b.n_params||0)+' parámetros · '
-    +(b.n_groups||0)+' grupos · API '+String(b.api_version||'?');
+    +(b.n_groups||0)+' grupos · API '+String(b.api_version||'?')
+    +((tl&&tl!==String(b.name||''))?(' · clase '+tl):'');
   // un Indicator no opera: dibuja. Decirlo evita esperar ordenes de algo que no las manda
   let head=/indicator/i.test(kind)?('<div class="phelp" style="color:#fbbf24;margin:0 0 6px">'
     +'Es un <b>indicador</b>, no un robot: dibuja y calcula, pero no manda órdenes.</div>'):'';
@@ -753,10 +754,14 @@ async function mbScan(){ const box=$('#algo-scan'); if(box) box.textContent=L('R
   let d; try{ d=await (await fetch('/algo/refresh',{method:'POST'})).json(); }
   catch(e){ if(box) box.textContent='Error de red.'; return; }
   if(!d.ok){ if(box){ box.style.color='#fbbf24'; box.textContent=d.error||''; } return; }
-  const n=(d.added||[]).length+(d.updated||[]).length;
+  const n=(d.added||[]).length+(d.updated||[]).length, ad=d.adopted||[], ms=d.missing||[];
   toast(n?(n+' bots actualizados'):'Sin cambios');
-  if(box) box.textContent=n?(n+' actualizados'):'Ninguno había cambiado.';
-  if(n) renderBots(); }
+  if(box){ let t=n?(n+' actualizados'):'Ninguno había cambiado.';
+    // si se cambió de copia se DICE de dónde: es un cambio de fuente, no un detalle
+    ad.forEach(a=>{ t+=' · '+a.bot+': ahora se lee de '+String(a.to).split('/').slice(-2).join('/'); });
+    if(ms.length) t+=' · sin archivo: '+ms.join(', ');
+    box.textContent=t; }
+  if(n||ad.length) renderBots(); }
 async function openBots(){ selected=null;
   panelIcon('__bots',ICO('chip',26,'#78e8aa')); $('#d-name').textContent='BOTS · '+L('estrategias','strategies');
   $('#d-role').textContent=L('Tus cBots y los indicadores de Hydra','Your cBots and Hydra\'s indicators');
