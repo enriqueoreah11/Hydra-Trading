@@ -437,16 +437,19 @@ async function renderBots(){ const box=$('#sys-bots'); if(!box)return;
   let d; try{ d=await (await fetch('/algo/bots')).json(); }
   catch(e){ box.innerHTML='<div class="empty">No disponible. ¿Falta reiniciar?</div>'; return; }
   const bots=d.bots||[];
-  let h='<div class="phelp">Sube tu <code>.algo</code> y Hydra lee sus <b>parámetros</b>: nombres, tipos, valores por defecto y rangos. La <b>lógica</b> vive en una DLL de .NET que solo ejecuta cTrader — eso no corre aquí.</div>';
+  /* ORDEN: primero la carpeta y el selector (es lo que se usa a diario), después
+     los bots que YA elegiste, y al final el seguimiento por etiqueta. Antes la
+     lista de importados iba arriba y tapaba el acceso. */
+  let h='<div class="phelp">La carpeta queda fija y tú eliges <b>cuál</b> subir. De cada <code>.algo</code> se leen sus <b>parámetros</b>; la <b>lógica</b> vive en una DLL de .NET que solo ejecuta cTrader.</div>';
   h+='<div id="algo-dir"></div>'
-    +'<div class="phelp" style="margin-top:10px">…o sube uno a mano:</div>'
+    +'<div class="phelp" style="margin-top:10px">…o sube uno a mano, desde donde quieras:</div>'
     +'<div class="wadd"><input type="file" id="algo-f" accept=".algo" '
     +'style="flex:1;background:#08131d;color:#9fe6ff;border:1px solid #17495d;border-radius:8px;padding:6px 8px;font-size:11.5px">'
     +'<button class="btn ghost" onclick="algoUp()">Importar</button></div><div id="algo-out" class="phelp"></div>';
-  h+='<div class="slbl" style="margin:14px 0 4px">BOTS EN LA CUENTA (por etiqueta)</div>'
-    +'<div class="phelp">Esto sale de tus operaciones reales, no del bot: funciona con <b>cualquier</b> bot sin tocarlo.</div>'
-    +'<button class="btn ghost" onclick="botsLive()">⟳ Ver qué opera cada bot</button><div id="bots-live"></div>';
-  if(!bots.length){ box.innerHTML=h+'<div class="empty" style="margin-top:10px">Ningún .algo importado todavía (el seguimiento por etiqueta funciona igual).</div>'; return; }
+  h+='<div class="slbl" style="margin:16px 0 4px">TUS BOTS ELEGIDOS ('+bots.length+')'
+    +(bots.length?'<span style="float:right;cursor:pointer;opacity:.8;font-weight:400" onclick="botDelAll()">vaciar la lista ✕</span>':'')
+    +'</div>';
+  if(!bots.length) h+='<div class="empty">Ninguno todavía. Elige arriba el que quieras: se queda guardado.</div>';
   bots.forEach(b=>{ const on=BOTSEL===b.file;
     h+='<div class="wrow" style="cursor:pointer" onclick="botOpen(\''+b.file+'\')">'
       +'<span class="wsym" style="min-width:auto">'+(on?'▾ ':'▸ ')+escapeHtml(String(b.name))+'</span>'
@@ -469,9 +472,21 @@ async function renderBots(){ const box=$('#sys-bots'); if(!box)return;
       +'</div><div id="bot-expl"></div><div id="bot-repl"></div>'
       +'<div id="bot-body"><div class="empty">Cargando…</div></div>';
   });
+  // el seguimiento por etiqueta va al FINAL: sirve aunque no subas ningun .algo
+  h+='<div class="slbl" style="margin:16px 0 4px">BOTS EN LA CUENTA (por etiqueta)</div>'
+    +'<div class="phelp">Esto sale de tus operaciones reales, no del bot: funciona con <b>cualquier</b> bot sin tocarlo, aunque no lo hayas subido.</div>'
+    +'<button class="btn ghost" onclick="botsLive()">⟳ Ver qué opera cada bot</button><div id="bots-live"></div>';
   box.innerHTML=h;
   algoDir();
   if(BOTSEL) botBody(); }
+/* Vaciar la lista. Hace falta porque hasta ahora la carpeta se importaba entera y
+   quedaron decenas guardados: sin esto no hay forma de volver a empezar y elegir. */
+async function botDelAll(){ const n=(await (await fetch('/algo/bots')).json()).bots.length;
+  if(!n) return;
+  if(!confirm('¿Quitar los '+n+' bots de la lista? No se borra ningún archivo de tu carpeta: solo lo que Hydra tiene leído, y podrás volver a elegir los que quieras.')) return;
+  let d; try{ d=await (await fetch('/algo/bots',{method:'DELETE'})).json(); }
+  catch(e){ toast('Error de red.'); return; }
+  BOTSEL=''; toast((d.removed||0)+' quitados'); renderBots(); }
 /* La carpeta de .algo: la que ya sincronizas con GitHub, tu Mac y el VPS.
    Leerla de ahi evita subir nada y recoge sola los bots que recompiles. */
 async function algoDir(){ const box=$('#algo-dir'); if(!box)return;

@@ -1307,6 +1307,24 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                         "imported_ts": d.get("imported_ts")})
         return {"bots": out}
 
+    @app.delete("/algo/bots")
+    async def algo_bots_clear():
+        """Vacía la lista de bots leídos. NO toca ningún .algo de la carpeta.
+
+        Hace falta porque antes la carpeta se importaba entera: quedaron decenas
+        guardados y sin esto no hay manera de empezar de cero y elegir a mano.
+        """
+        n = 0
+        for f in _bots_dir().glob("*.json"):
+            try:
+                f.unlink()
+                n += 1
+            except OSError:
+                pass
+        if n:
+            store.log("system", "algo_clear", f"{n} bots quitados de la lista")
+        return {"ok": True, "removed": n}
+
     @app.get("/algo/bots/{name}")
     async def algo_bot(name: str, group: str = "", q: str = ""):
         f = (_bots_dir() / (name + ".json")).resolve()
