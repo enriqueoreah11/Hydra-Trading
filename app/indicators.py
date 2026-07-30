@@ -14,6 +14,46 @@ def ema(values: list[float], period: int) -> list[float]:
     return out
 
 
+def sma(values: list[float], period: int) -> list[float]:
+    """Media simple. No es lo mismo que la EMA, y muchos planes usan las dos: la
+    SMA200 como línea de agua y una EMA rápida para el gatillo. Antes de tener
+    `period` velas se promedia lo que haya, para no dejar huecos."""
+    if not values or period < 1:
+        return []
+    out, acc = [], 0.0
+    for i, v in enumerate(values):
+        acc += v
+        if i >= period:
+            acc -= values[i - period]
+        out.append(acc / min(i + 1, period))
+    return out
+
+
+def ma_stack(closes: list[float]) -> dict:
+    """Cómo están ordenadas las medias y dónde queda el precio.
+
+    Devuelve la LECTURA, no solo los números: es lo que hace falta para decidir si
+    hay tendencia o si el precio anda peleado con sus medias. `enough_history`
+    avisa cuando la SMA200 aún no tiene 200 velas y por tanto no se puede creer.
+    """
+    if not closes:
+        return {}
+    e20, e50 = ema(closes, 20), ema(closes, 50)
+    s50, s200 = sma(closes, 50), sma(closes, 200)
+    last = closes[-1]
+    above = [n for n, v in (("ema20", e20[-1]), ("ema50", e50[-1]),
+                            ("sma50", s50[-1]), ("sma200", s200[-1])) if last > v]
+    if last > s200[-1] and e20[-1] > e50[-1]:
+        read = "alcista"
+    elif last < s200[-1] and e20[-1] < e50[-1]:
+        read = "bajista"
+    else:
+        read = "mixto"
+    return {"sma50": round(s50[-1], 6), "sma200": round(s200[-1], 6),
+            "price_above": above, "lectura": read,
+            "enough_history": len(closes) >= 200}
+
+
 def rsi(values: list[float], period: int = 14) -> list[float]:
     if len(values) < period + 1:
         return [50.0] * len(values)
@@ -71,6 +111,9 @@ def snapshot(candles: list[Candle]) -> dict:
         "ema200": round(e200[-1], 6),
         "rsi14": round(r[-1], 2),
         "atr14": round(a[-1], 6),
+        # las medias simples y la lectura del abanico: el Analyst las recibe ya
+        # interpretadas, no tiene que deducir el orden de cuatro números
+        "ma": ma_stack(closes),
         "levels": swing_levels(candles),
         "recent_candles": [
             {"ts": c.ts, "o": c.open, "h": c.high, "l": c.low, "c": c.close}

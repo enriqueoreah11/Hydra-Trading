@@ -416,6 +416,22 @@ function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('sho
 $('#b-refresh').onclick=()=>{ toast('Datos actualizados'); load(); }; $('#b-halt').onclick=doHalt; $('#b-demo').onclick=runDemo; $('#b-cal').onclick=openCalendar;
 $('#b-sistema').onclick=()=>{ renderSysInfo(); renderBots(); renderWatch(); renderSecrets(); renderVault(); renderProps(); renderFleet(); $('#sistema').classList.add('open'); };
 /* ------- BOTS DE CTRADER: se importan sus parametros del .algo ------- */
+/* El aviso de los dibujos, honesto. Antes decia "lee dibujos a mano" siempre que
+   el bot TUVIERA esos parametros; en modo automatico eso es falso, y en combinado
+   solo cuenta lo que este activado. El texto sale del modo real. */
+function chartNote(b){ const n=(b.chart_bound||[]).length, m=b.chart_mode||'desconocido';
+  if(m==='auto') return '<div class="phelp" style="color:#34d399;margin:-4px 0 6px">'
+    +'✔ Detecta sus propios niveles ('+escapeHtml(String(b.chart_mode_param||''))+' en automático): '
+    +'no depende de nada dibujado a mano, así que se puede replicar entero.</div>';
+  if(!n) return '';
+  if(m==='mixto') return '<div class="phelp" style="color:#9fd8ea;margin:-4px 0 6px">'
+    +'◑ Modo combinado: calcula sus niveles Y ADEMÁS lee lo que dibujas ('
+    +b.chart_bound.map(escapeHtml).join(', ')+'). La parte automática sí se replica; '
+    +'tus dibujos no. Ponlo en automático si quieres comparar de igual a igual.</div>';
+  return '<div class="phelp" style="color:#fbbf24;margin:-4px 0 6px">'
+    +'⚠ Toma los niveles del gráfico ('+b.chart_bound.map(escapeHtml).join(', ')
+    +'): eso no existe fuera de cTrader y ninguna réplica lo iguala.</div>'; }
+
 let BOTSEL='', BOTQ='';
 async function renderBots(){ const box=$('#sys-bots'); if(!box)return;
   let d; try{ d=await (await fetch('/algo/bots')).json(); }
@@ -445,9 +461,7 @@ async function renderBots(){ const box=$('#sys-bots'); if(!box)return;
         : '✗ Este bot NO tiene parámetros de reporte, y no se le pueden añadir sin tocar su código. '
           +'Hydra lo seguirá igual por sus operaciones reales en la cuenta (abajo, «bots en la cuenta»).')
       +'</div>';
-    if((b.chart_bound||[]).length) h+='<div class="phelp" style="color:#fbbf24;margin:-4px 0 6px">'
-      +'⚠ '+b.chart_bound.length+' parámetros leen dibujos que haces A MANO en el gráfico ('
-      +b.chart_bound.map(escapeHtml).join(', ')+'). Eso no existe fuera de cTrader: una réplica solo puede igualar la parte automática.</div>';
+    h+=chartNote(b);
     if(on) h+='<div class="ssec" style="margin:6px 0">'
       +'<button class="btn" onclick="botExplain(false)">🧠 Explícame la estrategia</button>'
       +'<button class="btn ghost" onclick="botExplain(true)">↻ Rehacer</button>'
@@ -472,9 +486,47 @@ async function algoDir(){ const box=$('#algo-dir'); if(!box)return;
         +'onclick="document.querySelector(\'#algo-d\').value=\''+g.replace(/'/g,"")+'\'">'
         +escapeHtml(g)+(c[g]!=null?(' ('+c[g]+' .algo)'):'')+'</code>').join(' ')+'</div>'; }
   if(d.dir) h+='<div class="phelp" style="color:'+(d.exists?'#34d399':'#ff5d73')+'">'
-    +(d.exists?('✅ '+d.n_found+' archivos .algo encontrados'):'❌ esa carpeta no existe')+'</div>';
-  if(d.exists) h+='<button class="btn" onclick="algoScan()">⟳ Escanear e importar todos</button><div id="algo-scan" class="phelp"></div>';
+    +(d.exists?('✅ '+d.n_found+' archivos .algo en la carpeta'):'❌ esa carpeta no existe')+'</div>';
+  if(d.exists) h+='<div id="algo-pick"></div>'
+    +'<div class="phelp" style="opacity:.75">Los que elijas quedan guardados y se refrescan solos cada '
+    +(d.watch_minutes||10)+' min al recompilarlos. Si de verdad los quieres TODOS: '
+    +'<span style="cursor:pointer;text-decoration:underline" onclick="algoScan()">importar la carpeta entera</span>.</div>'
+    +'<div id="algo-scan" class="phelp"></div>';
+  box.innerHTML=h;
+  if(d.exists) algoPick(); }
+/* Elegir de UNO EN UNO. Con decenas de bots una lista completa no se lee, asi que
+   se buscan por nombre y solo se muestran unos pocos: los mas recientes primero,
+   que son los que acabas de compilar. */
+let PICKQ='';
+async function algoPick(q){ const box=$('#algo-pick'); if(!box)return;
+  if(q!==undefined) PICKQ=q;
+  let d; try{ d=await (await fetch('/algo/folder?limit=8&q='+encodeURIComponent(PICKQ))).json(); }
+  catch(e){ return; }
+  if(!d.ok){ box.innerHTML='<div class="phelp" style="color:#fbbf24">'+escapeHtml(d.error||'')+'</div>'; return; }
+  let h='<div class="slbl" style="margin:12px 0 4px">AÑADIR UN BOT DE LA CARPETA</div>'
+    +'<div class="wadd"><input id="pick-q" placeholder="BUSCAR POR NOMBRE" value="'+escapeHtml(PICKQ)
+    +'" oninput="algoPick(this.value)" style="text-transform:none"></div>';
+  if(!(d.files||[]).length){ box.innerHTML=h+'<div class="empty">Sin coincidencias.</div>'; return; }
+  d.files.forEach(f=>{ const done=f.imported&&!f.stale;
+    h+='<div class="wrow"><span class="wsym" style="min-width:auto;max-width:56%">'
+      +escapeHtml(f.name)+'</span>'
+      +'<span class="phelp" style="margin:0 0 0 auto;text-align:right">'+f.kb+' KB · '+ctxAgo(f.mtime)+'</span>'
+      +(done?'<span class="phelp" style="margin:0 0 0 8px;color:#34d399">guardado</span>'
+            :'<button class="btn ghost" style="margin-left:8px;padding:4px 10px" onclick="algoPickOne(\''
+              +f.file.replace(/\\/g,'/').replace(/'/g,'')+'\')">'+(f.stale?'actualizar':'añadir')+'</button>')
+      +'</div>'; });
+  h+='<div class="phelp">Mostrando '+d.shown+' de '+d.total+(d.total>d.shown?' — busca para ver el resto':'')
+    +' · '+d.n_imported+' ya guardados.</div>';
   box.innerHTML=h; }
+async function algoPickOne(file){ toast('Leyendo '+file.split('/').pop()+'…');
+  let d; try{ d=await (await fetch('/algo/pick',{method:'POST',
+        headers:{'content-type':'application/json'},body:JSON.stringify({file:file})})).json(); }
+  catch(e){ toast('Error de red.'); return; }
+  if(!d.ok){ toast(d.error||'No pude leerlo.'); return; }
+  const b=d.bot||{};
+  toast(b.name?(b.name+': '+b.params+' parámetros'):'Sin cambios');
+  if(b.name) speak(L('Guardé '+b.name+'.','Saved '+b.name+'.'));
+  renderBots(); }
 async function algoDirSet(){ const el=$('#algo-d'); if(!el)return;
   const r=await fetch('/algo/dir',{method:'POST',headers:{'content-type':'application/json'},
     body:JSON.stringify({dir:el.value})});
@@ -550,8 +602,9 @@ let MBSEL='', MBSEQ=0;
 function mbOpen(f){ MBSEL=(MBSEL===f?'':f); BOTSEL=MBSEL; renderBotsPanel(); }
 function openSysBots(){ const b=$('#b-sistema'); if(b) b.click();
   setTimeout(()=>{ const el=$('#sys-bots'); if(el&&el.scrollIntoView) el.scrollIntoView({block:'start',behavior:'smooth'}); },280); }
-async function mbScan(){ const box=$('#mb-scan'); if(box) box.textContent=L('Releyendo la carpeta…','Re-reading the folder…');
-  let d; try{ d=await (await fetch('/algo/scan',{method:'POST'})).json(); }
+async function mbScan(){ const box=$('#mb-scan'); if(box) box.textContent=L('Refrescando los bots elegidos…','Refreshing the bots you picked…');
+  // refresh, NO scan: aqui no se importa la carpeta entera a tus espaldas
+  let d; try{ d=await (await fetch('/algo/refresh',{method:'POST'})).json(); }
   catch(e){ if(box) box.textContent='Error de red.'; return; }
   if(!d.ok){ if(box){ box.style.color='#fbbf24'; box.textContent=d.error||''; } return; }
   const n=(d.added||[]).length+(d.updated||[]).length;
@@ -596,9 +649,7 @@ async function renderBotsPanel(){ const seq=++MBSEQ;
       +'<span class="phelp" style="margin:0 0 0 auto;text-align:right">'+b.n_params+' '+L('parámetros','parameters')
       +'<br>'+(b.can_report?'<span style="color:#34d399">'+L('puede reportar','can report')+'</span>'
                           :'<span style="color:#8aa">'+L('se sigue por etiqueta','tracked by label')+'</span>')+'</span></div>';
-    if((b.chart_bound||[]).length) h+='<div class="phelp" style="color:#fbbf24;margin:-4px 0 4px 6px">⚠ '
-      +b.chart_bound.length+' '+L('parámetros leen dibujos hechos a mano en el gráfico: eso no existe fuera de cTrader.',
-                                  'parameters read hand-drawn chart objects: that does not exist outside cTrader.')+'</div>';
+    h+=chartNote(b);
     if(on) h+='<div class="ssec" style="margin:6px 0 2px">'
       +'<button class="btn" onclick="botExplain(false,\'#mb-expl\')">🧠 '+L('Explícame la estrategia','Explain the strategy')+'</button>'
       +'<button class="btn ghost" onclick="botExplain(true,\'#mb-expl\')">↻ '+L('Rehacer','Redo')+'</button>'
@@ -609,15 +660,16 @@ async function renderBotsPanel(){ const seq=++MBSEQ;
   h+='<div class="slbl" style="margin:14px 0 4px">'+L('CARPETA FIJA','PINNED FOLDER')+'</div>';
   h+='<div class="phelp"><code>'+escapeHtml(String(dir.dir||'—'))+'</code>'
     +(dir.exists?(' · '+dir.n_found+' .algo'):' · <span style="color:#ff5d73">'+L('no existe','missing')+'</span>')+'</div>';
-  h+='<div class="phelp">'+L('Se relee sola cada '+(dir.watch_minutes||10)+' minutos: si recompilas un bot o el repo baja uno nuevo, aparece sin tocar nada.',
-                             'Re-read on its own every '+(dir.watch_minutes||10)+' minutes: recompile a bot or pull a new one and it shows up by itself.')+'</div>';
+  h+='<div class="phelp">'+L('Los bots que elegiste se refrescan solos cada '+(dir.watch_minutes||10)+' minutos, así que al recompilarlos no hay que hacer nada. Los NUEVOS se añaden a mano, de uno en uno, para no llenar esto con la carpeta entera.',
+                             'The bots you picked refresh on their own every '+(dir.watch_minutes||10)+' minutes, so recompiling needs no action. NEW ones are added by hand, one at a time, so this does not fill up with the whole folder.')+'</div>';
   if(dir.last_result) h+='<div class="phelp">'+L('Último repaso','Last pass')+': '
     +dir.last_result.added+' '+L('nuevos','new')+' · '+dir.last_result.updated+' '+L('actualizados','updated')
     +' · '+dir.last_result.unchanged+' '+L('sin cambios','unchanged')
     +(dir.last_result.failed?' · <span style="color:#ff5d73">'+dir.last_result.failed+' '+L('con error','failed')+'</span>':'')
     +(dir.last_scan?' · '+ctxAgo(dir.last_scan):'')+'</div>';
   h+='<div class="ssec" style="margin:6px 0">'
-    +'<button class="btn ghost" onclick="mbScan()">⟳ '+L('Releer ahora','Re-read now')+'</button>'
+    +'<button class="btn ghost" onclick="mbScan()">⟳ '+L('Refrescar los míos','Refresh mine')+'</button>'
+    +'<button class="btn ghost" onclick="openSysBots()">＋ '+L('Añadir un bot','Add a bot')+'</button>'
     +'<button class="btn ghost" onclick="botsLive(\'#mb-acct\')">📊 '+L('Qué opera cada bot en la cuenta','What each bot trades in the account')+'</button>'
     +'<button class="btn ghost" onclick="openSysBots()">🔧 '+L('Taller completo','Full workshop')+'</button>'
     +'</div><div id="mb-scan" class="phelp"></div><div id="mb-acct"></div>';
@@ -995,6 +1047,13 @@ async function openMarket(sym,tf){ selected=null; tf=tf||(DATA&&DATA.core&&DATA.
   h+='<div class="slbl">'+L('INDICADORES','INDICATORS')+'</div>';
   h+='<div class="cfg"><span>RSI 14</span> <b style="color:'+(d.rsi14>70?'#ff5d73':(d.rsi14<30?'#34d399':'#dffaff'))+'">'+d.rsi14+'</b></div>';
   h+='<div class="cfg"><span>EMA 20 / 50 / 200</span> <b>'+d.ema20+' · '+d.ema50+' · '+d.ema200+'</b></div>';
+  const ma=d.ma||{};
+  if(ma.sma200!=null){ const lc=ma.lectura==='alcista'?'#34d399':(ma.lectura==='bajista'?'#ff5d73':'#fbbf24');
+    h+='<div class="cfg"><span>SMA 50 / 200</span> <b>'+ma.sma50+' · '+ma.sma200
+      +(ma.enough_history?'':'<span class="phelp" style="margin:0">'+L('la SMA200 aún no tiene 200 velas','SMA200 has fewer than 200 bars yet')+'</span>')+'</b></div>';
+    h+='<div class="cfg"><span>'+L('Abanico de medias','MA stack')+'</span> <b style="color:'+lc+'">'+escapeHtml(String(ma.lectura||''))
+      +'<span class="phelp" style="margin:0">'+L('precio por encima de','price above')+': '
+      +escapeHtml((ma.price_above||[]).join(', ')||'—')+'</span></b></div>'; }
   h+='<div class="cfg"><span>ATR 14</span> <b>'+d.atr14+'</b></div>';
   h+='<div class="slbl">KEY LEVELS</div>';
   const rs=(d.resistances||[]).slice(0,3), sp=(d.supports||[]).slice(0,3);

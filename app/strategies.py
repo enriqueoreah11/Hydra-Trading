@@ -117,11 +117,41 @@ def ema_trend(candles: list[Candle], p: dict, i: int) -> Signal | None:
     return None
 
 
+def ma_pullback(candles: list[Candle], p: dict, i: int) -> Signal | None:
+    """Retroceso a la media dentro de la tendencia (EMA corta + SMA de fondo).
+
+    Es la confluencia que más se repite en los planes de manual: la SMA larga dice
+    de qué lado se puede operar, y solo se entra cuando el precio vuelve a tocar la
+    EMA corta y la respeta. Nunca se opera contra la SMA.
+    """
+    fast = int(p.get("ema_fast", 20))
+    trend = int(p.get("sma_trend", 200))
+    if i < trend + 15:
+        return None
+    closes = [c.close for c in candles[:i + 1]]
+    ef, st = ind.ema(closes, fast), ind.sma(closes, trend)
+    if len(ef) < 3 or len(st) < 3:
+        return None
+    a = ind.atr(candles[:i + 1], 14)[-1]
+    if not a:
+        return None
+    c, prev = candles[i], candles[i - 1]
+    tol = a * float(p.get("touch_atr", 0.25))       # "tocar" con holgura de ATR
+    up = c.close > st[-1] and ef[-1] > st[-1]
+    dn = c.close < st[-1] and ef[-1] < st[-1]
+    if up and prev.low <= ef[-1] + tol and c.close > ef[-1] and c.close > prev.close:
+        return Signal("buy", c.close, *_stops(c.close, a, p, "buy"))
+    if dn and prev.high >= ef[-1] - tol and c.close < ef[-1] and c.close < prev.close:
+        return Signal("sell", c.close, *_stops(c.close, a, p, "sell"))
+    return None
+
+
 STRATEGIES = {
     "donchian": donchian,
     "rsi_fade": rsi_fade,
     "momentum_burst": momentum_burst,
     "ema_trend": ema_trend,
+    "ma_pullback": ma_pullback,
 }
 
 # Parámetros ajustables por estrategia, con rango permitido. El revisor solo
@@ -134,6 +164,8 @@ TUNABLE: dict[str, dict[str, tuple[float, float]]] = {
                        "atr_mult": (0.5, 4.0), "rr": (0.5, 5.0)},
     "ema_trend": {"ema_fast": (5, 50), "ema_slow": (20, 200),
                   "atr_mult": (0.5, 4.0), "rr": (0.5, 5.0)},
+    "ma_pullback": {"ema_fast": (5, 50), "sma_trend": (50, 200),
+                    "touch_atr": (0.05, 1.0), "atr_mult": (0.5, 4.0), "rr": (0.5, 5.0)},
 }
 
 DEFAULTS: dict[str, dict] = {
@@ -141,6 +173,8 @@ DEFAULTS: dict[str, dict] = {
     "rsi_fade": {"rsi_period": 2, "rsi_low": 10, "rsi_high": 90, "atr_mult": 1.5, "rr": 2.0},
     "momentum_burst": {"burst_bars": 5, "burst_atr": 1.2, "atr_mult": 1.5, "rr": 2.0},
     "ema_trend": {"ema_fast": 20, "ema_slow": 50, "atr_mult": 1.5, "rr": 2.0},
+    "ma_pullback": {"ema_fast": 20, "sma_trend": 200, "touch_atr": 0.25,
+                    "atr_mult": 1.5, "rr": 2.0},
 }
 
 

@@ -21,6 +21,15 @@ GZIP_OFFSET = 9
 # avisar antes de que alguien espere una réplica exacta.
 _CHART_HINTS = ("chartread", "chartonly", "chartsource", "usechart", "readchart")
 
+# PERO hay que mirar el modo ELEGIDO antes de acusar a nadie. Muchos bots detectan
+# ellos mismos sus niveles y solo LEEN dibujos si se les pide. En AutoOnly no leen
+# ninguno, así que decir "lee dibujos a mano" sería falso. Estos son los valores
+# típicos del selector de fuente y lo que implican de verdad.
+_MODE_BY_VALUE = {"autoonly": "auto", "auto": "auto", "internal": "auto",
+                  "indicators": "auto", "chartonly": "chart", "chart": "chart",
+                  "manual": "chart", "drawings": "chart",
+                  "combined": "mixto", "both": "mixto", "mixed": "mixto"}
+
 
 class AlgoError(RuntimeError):
     pass
@@ -47,6 +56,29 @@ def _is_chart_bound(param: dict) -> bool:
         return True
     # un enum con la opcion ChartOnly tambien depende del grafico
     return "ChartOnly" in (param.get("EnumValues") or {})
+
+
+def _enum_pick(param: dict) -> str:
+    """El valor ELEGIDO de un enum, por nombre. El defecto suele venir por índice."""
+    names = list(param.get("enum") or {})
+    cur = param.get("default")
+    if isinstance(cur, bool):
+        return str(cur)
+    if isinstance(cur, int) and 0 <= cur < len(names):
+        return names[cur]
+    return str(cur)
+
+
+def _chart_mode(items: list[dict]) -> tuple[str, str]:
+    """Cómo consigue el bot sus niveles: solos, de tus dibujos, o las dos cosas.
+
+    Se lee del selector de fuente (el enum que ofrece ChartOnly). Sin selector no
+    se puede afirmar nada, y eso también hay que decirlo.
+    """
+    for p in items:
+        if "ChartOnly" in (p.get("enum") or {}):
+            return _MODE_BY_VALUE.get(_enum_pick(p).lower(), "mixto"), p["name"]
+    return "desconocido", ""
 
 
 def parse(raw: bytes) -> dict:
@@ -78,6 +110,26 @@ def parse(raw: bytes) -> dict:
             chart_bound.append(prop)
         groups.setdefault(str(p.get("GroupName") or "Sin grupo"), []).append(item)
 
+    # Ahora que están todos, se mira el MODO para no acusar en falso. Un parámetro
+    # que puede leer dibujos solo los lee si el modo lo pide y si está activado.
+    allp = [p for g in groups.values() for p in g]
+    mode, mode_param = _chart_mode(allp)
+    if mode == "auto":                    # el bot se calcula sus propios niveles
+        real, maybe = [], list(chart_bound)
+    elif mode == "chart":                 # depende del gráfico y punto
+        real, maybe = list(chart_bound), []
+    else:                                 # mixto (o sin selector): solo lo activado
+        real, maybe = [], []
+        for p in allp:
+            if not p["chart_bound"]:
+                continue
+            off = p.get("default") is False or _enum_pick(p).lower() == "false"
+            (maybe if off else real).append(p["name"])
+        if mode_param and mode_param in real:
+            real.remove(mode_param)       # el selector no es un dibujo, es el modo
+            maybe.append(mode_param)
+    for p in allp:                        # que la marca por parámetro no engañe
+        p["chart_bound"] = p["name"] in real
     total = sum(len(v) for v in groups.values())
     # ¿Este bot puede reportar a Hydra? Solo si QUIEN LO ESCRIBIÓ le puso esos
     # parámetros. No se pueden añadir desde fuera: habría que tocar su código y
@@ -97,7 +149,10 @@ def parse(raw: bytes) -> dict:
         "source_included": bool((meta.get("Store") or {}).get("SourceIncluded")),
         "n_params": total,
         "n_groups": len(groups),
-        "chart_bound": chart_bound,
+        "chart_bound": real,           # los que HOY leen dibujos, con estos valores
+        "chart_maybe": maybe,          # los que podrían, si cambias el modo
+        "chart_mode": mode,            # auto | chart | mixto | desconocido
+        "chart_mode_param": mode_param,
         "can_report": len(remote) >= 2,        # url + interruptor, como mínimo
         "remote_params": remote,
         "groups": [{"group": g, "params": ps} for g, ps in groups.items()],

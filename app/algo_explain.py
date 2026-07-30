@@ -39,8 +39,11 @@ Qué se podría reproducir y qué es IMPOSIBLE, y por qué.
 Reglas:
 - No inventes comportamientos. Si un parámetro no deja claro qué hace, dilo.
 - Distingue siempre entre "esto lo dice el parámetro" y "esto supongo".
-- Si un parámetro lee objetos dibujados a mano en el gráfico, avisa de que eso no
-  existe fuera del escritorio de cTrader y ninguna réplica lo puede igualar.
+- Sobre los dibujos del gráfico, mira el MODO que tiene puesto y no exageres: en
+  automático el bot calcula sus propios niveles y no depende de ningún dibujo; en
+  combinado calcula los suyos Y ADEMÁS lee los tuyos, así que la parte automática
+  sí se puede replicar; solo en modo gráfico depende de verdad del escritorio de
+  cTrader. Di cuál de los tres es y qué implica.
 - Nada de relleno ni elogios. El dueño necesita detectar si te has equivocado.
 """
 
@@ -73,12 +76,24 @@ def _compact(parsed: dict) -> str:
 
 async def explain(parsed: dict) -> str:
     chart = parsed.get("chart_bound") or []
+    mode = str(parsed.get("chart_mode") or "desconocido")
+    _MODE_TXT = {
+        "auto": "MODO AUTOMÁTICO ({p}): el bot detecta sus propios niveles. NO lee "
+                "nada dibujado a mano, así que se puede replicar entero.",
+        "mixto": "MODO COMBINADO ({p}): detecta sus propios niveles Y ADEMÁS lee los "
+                 "que el usuario dibuje ({c}). La parte automática se puede replicar; "
+                 "los dibujos no.",
+        "chart": "MODO GRÁFICO ({p}): toma los niveles de lo que hay dibujado en el "
+                 "gráfico ({c}). Eso no existe fuera del escritorio de cTrader.",
+    }
+    fuente = _MODE_TXT.get(mode, "").format(p=parsed.get("chart_mode_param") or "?",
+                                            c=", ".join(chart) or "ninguno activado")
     user = (
         f"# Bot: {parsed.get('name')}\n"
         f"Tipo: {parsed.get('kind')} · API {parsed.get('api_version')} · "
         f"{parsed.get('framework')} · compilado {parsed.get('built_at')}\n"
         f"Parámetros: {parsed.get('n_params')} en {parsed.get('n_groups')} grupos\n"
-        + (f"\nATADOS AL GRÁFICO (dibujos a mano): {', '.join(chart)}\n" if chart else "")
+        + (f"\nFUENTE DE NIVELES — {fuente}\n" if fuente else "")
         + "\n## Parámetros\n" + _compact(parsed)
         + "\n\nEscribe el análisis siguiendo la estructura exacta."
     )

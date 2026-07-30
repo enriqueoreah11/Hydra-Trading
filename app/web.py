@@ -229,7 +229,10 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                 try:
                     if not (settings.algo_dir or "").strip():
                         await asyncio.to_thread(_algo_autopin)
-                    res = await asyncio.to_thread(_algo_scan_once)
+                    # SOLO refresca los bots ya elegidos: los nuevos se suben de uno
+                    # en uno desde la lista. La carpeta tiene decenas y una lista
+                    # completa no sirve de nada.
+                    res = await asyncio.to_thread(_algo_scan_once, True, "")
                     _algo_watch["last"] = time.time()
                     _algo_watch["result"] = {
                         "ok": bool(res.get("ok")),
@@ -692,7 +695,8 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         return {"price": round(price, 5), "ema20": e20, "ema50": e50, "ema200": e200,
                 "rsi14": rsi, "atr14": atr, "trend": "alcista" if price > e200 else "bajista",
                 "verdict": verdict, "supports": lv.get("supports", []),
-                "resistances": lv.get("resistances", [])}
+                "resistances": lv.get("resistances", []),
+                "ma": s.get("ma") or {}}      # medias simples + lectura del abanico
 
     @app.get("/symbols")
     async def symbols_list(q: str = ""):
@@ -740,7 +744,8 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
     PINNED = ["DXY"]
 
     _STRAT_LABEL = {"donchian": "Ruptura Donchian", "rsi_fade": "Reversión RSI",
-                    "momentum_burst": "Impulso", "ema_trend": "Tendencia EMA"}
+                    "momentum_burst": "Impulso", "ema_trend": "Tendencia EMA",
+                    "ma_pullback": "Retroceso a la media (EMA + SMA)"}
 
     def now_ts() -> float:
         import time as _t
@@ -1099,19 +1104,8 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         (settings.data_path / "algo_dir.txt").write_text(d)
         return {"ok": True, "dir": d}
 
-    def _algo_scan_once() -> dict:
-        """Importa todos los .algo de la carpeta. Reimporta los que cambiaron.
-
-        Pensado para la carpeta que ya sincronizas con GitHub y el VPS: cuando
-        recompilas un bot allí, el siguiente escaneo lo recoge solo. Es E/S de
-        disco pura y bloqueante: desde el vigilante se llama en un hilo.
-        """
-        from . import algo as algo_mod
-        import time as _t
-        d = _algo_dir()
-        if not d or not d.is_dir():
-            return {"ok": False, "error": "primero fija la carpeta"}
-        # lo ya importado, para saber qué cambió
+    def _algo_known() -> dict:
+        """Lo ya importado, por ruta de origen: {src_path: (mtime, bytes)}."""
         known: dict = {}
         for f in _bots_dir().glob("*.json"):
             try:
@@ -1120,9 +1114,41 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                     known[j["src_path"]] = (j.get("src_mtime"), j.get("file_bytes"))
             except Exception:  # noqa: BLE001
                 pass
+        return known
+
+    def _algo_scan_once(only_known: bool = False, only_file: str = "") -> dict:
+        """Lee .algo de la carpeta y guarda sus parámetros.
+
+        Tres modos, y el que manda es el segundo:
+        - todo (por defecto): importa cuanto haya. Útil una vez, no cada 10 min.
+        - only_known: NO añade bots nuevos; solo refresca los que ya elegiste. Es
+          lo que usa el vigilante, porque con una carpeta de decenas de bots una
+          lista completa no se puede leer y no es lo que se quiere ver.
+        - only_file: uno concreto, el que se pide desde la lista.
+
+        Es E/S de disco bloqueante: desde el vigilante se llama en un hilo.
+        """
+        from . import algo as algo_mod
+        import time as _t
+        d = _algo_dir()
+        if not d or not d.is_dir():
+            return {"ok": False, "error": "primero fija la carpeta"}
+        known = _algo_known()
+
+        if only_file:
+            target = (d / only_file).resolve()
+            if d.resolve() not in target.parents or target.suffix != ".algo":
+                return {"ok": False, "error": "esa ruta no está en tu carpeta"}
+            if not target.is_file():
+                return {"ok": False, "error": f"no existe {only_file}"}
+            files = [target]
+        else:
+            files = sorted(d.rglob("*.algo"))
 
         added, updated, same, failed = [], [], [], []
-        for f in sorted(d.rglob("*.algo")):
+        for f in files:
+            if only_known and str(f) not in known:
+                continue                  # no se cuela nadie que no hayas elegido
             st = f.stat()
             sig = (int(st.st_mtime), st.st_size)
             prev = known.get(str(f))
@@ -1170,6 +1196,64 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             return JSONResponse(res, status_code=400)
         return res
 
+    @app.post("/algo/refresh")
+    async def algo_refresh():
+        """Refresca SOLO los bots ya elegidos (por si los recompilaste). No añade
+        ninguno nuevo: eso se hace a mano desde la lista de la carpeta."""
+        res = await asyncio.to_thread(_algo_scan_once, True, "")
+        if not res.get("ok"):
+            return JSONResponse(res, status_code=400)
+        return res
+
+    @app.get("/algo/folder")
+    async def algo_folder(q: str = "", limit: int = 40):
+        """Qué .algo hay en la carpeta, para elegir DE UNO EN UNO.
+
+        No importa nada: solo lista y dice cuál está ya guardado. Con decenas de
+        bots una lista entera es ilegible, así que se busca y se corta.
+        """
+        d = _algo_dir()
+        if not d or not d.is_dir():
+            return {"ok": False, "error": "primero fija la carpeta"}
+        known = _algo_known()
+        ql = q.strip().lower()
+        rows, total = [], 0
+        for f in sorted(d.rglob("*.algo"), key=lambda x: -x.stat().st_mtime):
+            rel = str(f.relative_to(d))
+            if ql and ql not in rel.lower():
+                continue
+            total += 1
+            if len(rows) >= max(1, min(200, limit)):
+                continue
+            st = f.stat()
+            prev = known.get(str(f))
+            rows.append({"file": rel, "name": f.stem, "kb": round(st.st_size / 1024, 1),
+                         "mtime": int(st.st_mtime), "imported": bool(prev),
+                         "stale": bool(prev and tuple(prev) != (int(st.st_mtime), st.st_size))})
+        return {"ok": True, "dir": str(d), "total": total, "shown": len(rows),
+                "files": rows, "n_imported": len(known)}
+
+    @app.post("/algo/pick")
+    async def algo_pick(request: Request):
+        """Importa UN .algo de la carpeta: el que se elija en la lista."""
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        rel = str(body.get("file") or "").strip()
+        if not rel:
+            return JSONResponse({"ok": False, "error": "falta el archivo"},
+                                status_code=400)
+        res = await asyncio.to_thread(_algo_scan_once, False, rel)
+        if not res.get("ok"):
+            return JSONResponse(res, status_code=400)
+        if res.get("failed"):
+            return JSONResponse({"ok": False, "error": res["failed"][0]["error"]},
+                                status_code=400)
+        got = (res.get("added") or []) + (res.get("updated") or [])
+        return {"ok": True, "bot": got[0] if got else None,
+                "unchanged": not got}
+
     @app.post("/algo/import")
     async def algo_import(request: Request):
         """Recibe un .algo en crudo y guarda sus parámetros.
@@ -1214,6 +1298,9 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                         "api_version": d.get("api_version"),
                         "built_at": d.get("built_at"),
                         "chart_bound": d.get("chart_bound") or [],
+                        "chart_maybe": d.get("chart_maybe") or [],
+                        "chart_mode": d.get("chart_mode") or "desconocido",
+                        "chart_mode_param": d.get("chart_mode_param") or "",
                         "can_report": bool(d.get("can_report")),
                         "remote_params": d.get("remote_params") or {},
                         "has_explanation": bool(d.get("explanation")),
@@ -1429,19 +1516,33 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
 
         out = replica.compare(ctxs, candles, tolerance_bars=tol)
         # el aviso viaja CON el resultado: la cifra no se puede leer sin esto
-        chart_bound = []
+        # Con matiz: solo es un techo si el bot DE VERDAD depende de dibujos con los
+        # valores que tiene puestos. En modo automático no depende de ninguno, y en
+        # mixto detecta sus propios niveles y además lee los tuyos.
+        chart_bound: list[str] = []
+        modes: set[str] = set()
         for f in _bots_dir().glob("*.json"):
             try:
-                chart_bound += json.loads(f.read_text()).get("chart_bound") or []
+                d = json.loads(f.read_text())
             except Exception:  # noqa: BLE001
-                pass
+                continue
+            chart_bound += d.get("chart_bound") or []
+            modes.add(str(d.get("chart_mode") or "desconocido"))
+        names = ", ".join(sorted(set(chart_bound)))
+        if not chart_bound:
+            aviso = ""
+        elif "mixto" in modes:
+            aviso = ("tu bot está en modo combinado: detecta sus propios niveles y ADEMÁS "
+                     "lee lo que dibujas (" + names + "). La parte automática sí se puede "
+                     "replicar; lo que dibujaste a mano, no. Por eso la cifra puede "
+                     "quedarse corta sin que las estrategias fallen")
+        else:
+            aviso = ("tu bot toma los niveles del gráfico (" + names + "): esa entrada no "
+                     "existe fuera de cTrader, así que el porcentaje es el techo de lo "
+                     "replicable, no un fallo de las estrategias")
         out.update({"ok": True, "timeframe": settings.timeframe,
-                    "candle_errors": errors,
-                    "aviso": ("tu bot lee dibujos hechos a mano en el gráfico ("
-                              + ", ".join(sorted(set(chart_bound)))
-                              + "): esa entrada no existe fuera de cTrader, así que "
-                                "el porcentaje es el techo de lo replicable, no un fallo "
-                                "de las estrategias") if chart_bound else ""})
+                    "candle_errors": errors, "chart_modes": sorted(modes),
+                    "aviso": aviso})
         store.log("system", "replica_compare",
                   f"{out['compared']} capturas comparadas")
         return out
@@ -2183,8 +2284,16 @@ Conecta tu cuenta en <a href="/oauth/login">/oauth/login</a> para operar de verd
 
     @app.get("/", response_class=HTMLResponse)
     async def brain_page():
+        """El tablero. Se sirve SIN caché a propósito.
+
+        Toda la interfaz va dentro de este HTML, así que si el navegador se queda
+        con una copia vieja —y la app instalada en el iPhone lo hace— se ven los
+        cambios de hace días y parece que el despliegue no funcionó. Con no-store
+        cada apertura trae la versión que de verdad está corriendo.
+        """
         from .ui import BRAIN_HTML
-        return HTMLResponse(BRAIN_HTML)
+        return HTMLResponse(BRAIN_HTML, headers={
+            "Cache-Control": "no-store, must-revalidate", "Pragma": "no-cache"})
 
     @app.get("/classic", response_class=HTMLResponse)
     async def home():
