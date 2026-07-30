@@ -1007,6 +1007,9 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                         "api_version": d.get("api_version"),
                         "built_at": d.get("built_at"),
                         "chart_bound": d.get("chart_bound") or [],
+                        "can_report": bool(d.get("can_report")),
+                        "remote_params": d.get("remote_params") or {},
+                        "has_explanation": bool(d.get("explanation")),
                         "imported_ts": d.get("imported_ts")})
         return {"bots": out}
 
@@ -1072,6 +1075,66 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             f.unlink()
             return {"ok": True}
         return JSONResponse({"ok": False, "error": "no existe"}, status_code=404)
+
+    @app.get("/bots/live")
+    async def bots_live(days: float = 7):
+        """Qué está haciendo CADA bot en la cuenta, agrupado por su etiqueta.
+
+        Esto NO necesita que el bot colabore: cada cBot pone su etiqueta al abrir,
+        y se lee de la cuenta por la Open API. Sirve para los bots que no tienen
+        parámetros de reporte — que son la mayoría.
+        """
+        import time as _t
+        if not broker.client.account_authorized:
+            return {"ok": False, "error": "conecta cTrader"}
+        since = _t.time() - max(0.5, min(90.0, float(days))) * 86400
+        try:
+            pos = await asyncio.wait_for(broker.positions(), timeout=20)
+            for p in pos:
+                p["symbol"] = await broker.symbol_name_by_id(p["symbol_id"])
+        except Exception as exc:  # noqa: BLE001
+            pos, _ = [], exc
+        try:
+            deals = await asyncio.wait_for(broker.deals_since(since), timeout=25)
+            for d in deals:
+                d["symbol"] = await broker.symbol_name_by_id(d["symbol_id"])
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": f"no pude leer el histórico: {str(exc)[:140]}"}
+
+        SIN = "(sin etiqueta · manual o bot que no la pone)"
+        groups: dict[str, dict] = {}
+
+        def slot(label: str) -> dict:
+            key = label or SIN
+            return groups.setdefault(key, {
+                "label": key, "open": 0, "closed": 0, "net": 0.0,
+                "wins": 0, "losses": 0, "symbols": {}, "last_ts": 0})
+
+        for p in pos:
+            g = slot(str(p.get("label") or ""))
+            g["open"] += 1
+            g["symbols"][p["symbol"]] = g["symbols"].get(p["symbol"], 0) + 1
+            g["last_ts"] = max(g["last_ts"], int(p.get("open_ts") or 0))
+        for d in deals:
+            if not d["closed"]:
+                continue
+            g = slot(d["label"])
+            g["closed"] += 1
+            net = d["gross"] + d["commission"] + d["swap"]
+            g["net"] = round(g["net"] + net, 2)
+            g["wins" if net > 0 else "losses"] += 1
+            g["symbols"][d["symbol"]] = g["symbols"].get(d["symbol"], 0) + 1
+            g["last_ts"] = max(g["last_ts"], d["ts"])
+
+        out = []
+        for g in groups.values():
+            tot = g["wins"] + g["losses"]
+            out.append({**g, "symbols": sorted(g["symbols"], key=lambda k: -g["symbols"][k]),
+                        "win_pct": round(g["wins"] / tot * 100, 1) if tot else None})
+        out.sort(key=lambda r: -(r["open"] * 1000 + r["closed"]))
+        return {"ok": True, "days": days, "bots": out,
+                "nota": "cada cBot pone su propia etiqueta al abrir; los bots que no "
+                        "la ponen caen todos en el mismo grupo y no se pueden separar"}
 
     @app.post("/replica/compare")
     async def replica_compare(request: Request):

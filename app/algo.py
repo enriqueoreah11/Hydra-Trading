@@ -79,6 +79,14 @@ def parse(raw: bytes) -> dict:
         groups.setdefault(str(p.get("GroupName") or "Sin grupo"), []).append(item)
 
     total = sum(len(v) for v in groups.values())
+    # ¿Este bot puede reportar a Hydra? Solo si QUIEN LO ESCRIBIÓ le puso esos
+    # parámetros. No se pueden añadir desde fuera: habría que tocar su código y
+    # recompilarlo. Conviene saberlo antes de buscar una casilla que no existe.
+    flat = {p["name"].lower(): p["name"]
+            for g in groups.values() for p in g}
+    remote = {k: flat[k] for k in
+              ("backendurl", "backendapikey", "enableremotelogging", "remoteinstanceid")
+              if k in flat}
     return {
         "name": t.get("FriendlyName") or t.get("ShortName") or t.get("TypeName") or "bot",
         "type_name": t.get("TypeName"),
@@ -90,6 +98,8 @@ def parse(raw: bytes) -> dict:
         "n_params": total,
         "n_groups": len(groups),
         "chart_bound": chart_bound,
+        "can_report": len(remote) >= 2,        # url + interruptor, como mínimo
+        "remote_params": remote,
         "groups": [{"group": g, "params": ps} for g, ps in groups.items()],
     }
 

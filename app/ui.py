@@ -419,12 +419,24 @@ async function renderBots(){ const box=$('#sys-bots'); if(!box)return;
   h+='<div class="wadd"><input type="file" id="algo-f" accept=".algo" '
     +'style="flex:1;background:#08131d;color:#9fe6ff;border:1px solid #17495d;border-radius:8px;padding:6px 8px;font-size:11.5px">'
     +'<button class="btn" onclick="algoUp()">Importar</button></div><div id="algo-out" class="phelp"></div>';
-  if(!bots.length){ box.innerHTML=h+'<div class="empty">Ningún bot importado todavía.</div>'; return; }
+  h+='<div class="slbl" style="margin:14px 0 4px">BOTS EN LA CUENTA (por etiqueta)</div>'
+    +'<div class="phelp">Esto sale de tus operaciones reales, no del bot: funciona con <b>cualquier</b> bot sin tocarlo.</div>'
+    +'<button class="btn ghost" onclick="botsLive()">⟳ Ver qué opera cada bot</button><div id="bots-live"></div>';
+  if(!bots.length){ box.innerHTML=h+'<div class="empty" style="margin-top:10px">Ningún .algo importado todavía (el seguimiento por etiqueta funciona igual).</div>'; return; }
   bots.forEach(b=>{ const on=BOTSEL===b.file;
     h+='<div class="wrow" style="cursor:pointer" onclick="botOpen(\''+b.file+'\')">'
       +'<span class="wsym" style="min-width:auto">'+(on?'▾ ':'▸ ')+escapeHtml(String(b.name))+'</span>'
       +'<span class="phelp" style="margin:0;flex:1">'+b.n_params+' parámetros · '+b.n_groups+' grupos · API '+escapeHtml(String(b.api_version||'?'))+'</span>'
       +'<span class="wx" title="Quitar" onclick="event.stopPropagation();botDel(\''+b.file+'\')">✕</span></div>';
+    h+='<div class="phelp" style="margin:-4px 0 4px;color:'+(b.can_report?'#34d399':'#8aa')+'">'
+      +(b.can_report
+        ? '✅ Este bot PUEDE reportar a Hydra. En cTrader, grupo «🌐 Backend Remoto»: activa <b>'
+          +escapeHtml(String((b.remote_params||{}).enableremotelogging||'EnableRemoteLogging'))
+          +'</b> y pon <b>'+escapeHtml(String((b.remote_params||{}).backendurl||'BackendUrl'))
+          +'</b> = <code>'+location.origin+'</code> (solo la base).'
+        : '✗ Este bot NO tiene parámetros de reporte, y no se le pueden añadir sin tocar su código. '
+          +'Hydra lo seguirá igual por sus operaciones reales en la cuenta (abajo, «bots en la cuenta»).')
+      +'</div>';
     if((b.chart_bound||[]).length) h+='<div class="phelp" style="color:#fbbf24;margin:-4px 0 6px">'
       +'⚠ '+b.chart_bound.length+' parámetros leen dibujos que haces A MANO en el gráfico ('
       +b.chart_bound.map(escapeHtml).join(', ')+'). Eso no existe fuera de cTrader: una réplica solo puede igualar la parte automática.</div>';
@@ -466,6 +478,24 @@ async function botBody(){ const box=$('#bot-body'); if(!box||!BOTSEL)return;
         +'<br><code style="font-size:10px">'+escapeHtml(p.name)+'</code></span>'
         +'<b style="text-align:right">'+escapeHtml(String(p.enum?Object.keys(p.enum)[Number(p.default)]??p.default:p.default))
         +'<br><span class="phelp" style="margin:0">'+escapeHtml(String(p.type))+rng+'</span></b></div>'; }); });
+  box.innerHTML=h; }
+async function botsLive(){ const box=$('#bots-live'); if(!box)return;
+  box.innerHTML='<div class="empty">Leyendo posiciones e histórico de la cuenta…</div>';
+  let d; try{ d=await (await fetch('/bots/live?days=7')).json(); }
+  catch(e){ box.innerHTML='<div class="empty" style="color:#ff5d73">Error de red.</div>'; return; }
+  if(!d.ok){ box.innerHTML='<div class="empty" style="color:#fbbf24">'+escapeHtml(d.error||'')+'</div>'; return; }
+  const bs=d.bots||[];
+  if(!bs.length){ box.innerHTML='<div class="empty">Sin operaciones en los últimos '+d.days+' días.</div>'; return; }
+  let h='<div class="phelp">'+escapeHtml(d.nota||'')+'</div>';
+  bs.forEach(b=>{ const col=b.net>0?'#34d399':(b.net<0?'#ff5d73':'#9fd8ea');
+    h+='<div class="wrow" style="align-items:flex-start"><span class="wsym" style="min-width:auto;max-width:52%">'
+      +escapeHtml(String(b.label))+'</span>'
+      +'<span style="margin-left:auto;text-align:right;font-size:11px">'
+      +'<b style="color:'+col+'">'+(b.net>0?'+':'')+b.net+'</b>'
+      +'<span class="phelp" style="margin:0"> '+b.open+' abiertas · '+b.closed+' cerradas'
+      +(b.win_pct!=null?' · '+b.win_pct+'% aciertos':'')+'</span>'
+      +'<span class="phelp" style="margin:0">'+escapeHtml((b.symbols||[]).slice(0,5).join(', '))+'</span>'
+      +'</span></div>'; });
   box.innerHTML=h; }
 /* Explicación de la estrategia: sirve para comprobar si el sistema la entendió. */
 async function botExplain(redo){ const box=$('#bot-expl'); if(!box||!BOTSEL)return;

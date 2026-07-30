@@ -248,6 +248,38 @@ class Broker:
 
     # ----------------------------------------------------------------- deals
 
+    async def deals_since(self, since_epoch: float, max_rows: int = 1000) -> list[dict]:
+        """Operaciones cerradas del histórico, con su ETIQUETA.
+
+        La etiqueta es la clave: cada cBot pone la suya al abrir, así que sirve
+        para atribuir cada operación real al bot que la hizo — sin tocar el bot.
+        """
+        res = await self.client.send(c.DEAL_LIST_REQ, {
+            "ctidTraderAccountId": self.account_id,
+            "fromTimestamp": int(since_epoch * 1000),
+            "toTimestamp": int(time.time() * 1000),
+            "maxRows": int(max_rows),
+        })
+        md = self._money_digits
+        out: list[dict] = []
+        for d in res.get("deal", []):
+            cp = d.get("closePositionDetail") or {}
+            out.append({
+                "deal_id": int(d.get("dealId", 0)),
+                "position_id": int(d.get("positionId", 0)),
+                "symbol_id": int(d.get("symbolId", 0)),
+                "side": c.TRADE_SIDE_NAME.get(int(d.get("tradeSide", 0)), "?"),
+                "volume_units": float(d.get("volume", 0)) / 100,
+                "price": float(d.get("executionPrice", 0) or 0),
+                "ts": int(d.get("executionTimestamp", 0)) // 1000,
+                "label": d.get("label") or "",
+                "closed": bool(cp),
+                "gross": (float(cp.get("grossProfit", 0)) / (10 ** md)) if cp else 0.0,
+                "commission": (float(cp.get("commission", 0)) / (10 ** md)) if cp else 0.0,
+                "swap": (float(cp.get("swap", 0)) / (10 ** md)) if cp else 0.0,
+            })
+        return out
+
     async def realized_pnl_since(self, since_epoch: float) -> float:
         """Sum of realized gross profit + commission of deals since a timestamp."""
         res = await self.client.send(c.DEAL_LIST_REQ, {
