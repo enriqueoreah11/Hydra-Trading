@@ -58,15 +58,23 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 /* BOOT */
 #boot{position:fixed;inset:0;z-index:60;background:radial-gradient(900px 700px at 50% 45%,#08202f,#03060c 70%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;transition:opacity .7s}
 #boot.hide{opacity:0;pointer-events:none}
-#boot .bt{font-weight:800;letter-spacing:10px;font-size:44px;color:#dffaff;text-shadow:0 0 30px #38e6ff}
-#boot .bs{color:#7fd9ee;letter-spacing:3px;font-size:12px}
-#boot .bcore{width:120px;height:120px;border-radius:50%;position:relative;display:flex;align-items:center;justify-content:center;animation:bp 1.6s ease-in-out infinite}
-#boot .bcore svg{filter:drop-shadow(0 0 10px #38e6ff) drop-shadow(0 0 26px #22d3ee66)}
-#boot .bring{position:absolute;inset:-18px;border-radius:50%;border:2px solid #0e5a6e;border-top-color:#eaffff;animation:spin 3s linear infinite}
+#boot .bt{font-weight:800;letter-spacing:10px;font-size:38px;color:#5f7387;transition:color .3s,text-shadow .3s}
 @keyframes spin{to{transform:rotate(360deg)}}
-@keyframes bp{0%,100%{box-shadow:0 0 40px #38e6ff,0 0 90px #22d3ee66}50%{box-shadow:0 0 70px #7ff6ff,0 0 130px #22d3eeaa}}
-#activate{cursor:pointer;font-family:inherit;font-weight:800;letter-spacing:2px;font-size:15px;color:#02141b;background:linear-gradient(180deg,#7ff6ff,#22d3ee);border:0;padding:14px 30px;border-radius:12px;box-shadow:0 0 30px #38e6ff88}
-#activate:active{transform:translateY(1px)}
+/* APAGADO: el cuerpo en gris y los ojos en rojo en espera. El icono ES el botón,
+   no hay ningún texto más que el nombre. */
+#activate{cursor:pointer;background:0;border:0;padding:0;line-height:0;
+  transition:transform .3s var(--ease-out),filter .3s}
+#activate svg{width:min(148px,34vw);height:auto;filter:drop-shadow(0 0 14px #ff2b3f55)}
+#activate .body{fill:#2a3946;transition:fill .3s}
+#activate .eyes{fill:#ff1028;animation:standby 2.4s ease-in-out infinite}
+@keyframes standby{0%,100%{opacity:.45}50%{opacity:1}}
+#activate:active{transform:scale(.96)}
+@media(hover:hover) and (pointer:fine){
+  #activate:hover{transform:scale(1.05);filter:drop-shadow(0 0 26px #ffc40088)}
+  #activate:hover .body{fill:#7ff6ff}
+  #activate:hover .eyes{fill:#ffc400;animation:none;opacity:1}
+  #boot:has(#activate:hover) .bt{color:#dffaff;text-shadow:0 0 26px #38e6ff}
+}
 /* DRAWER */
 #drawer{position:fixed;top:0;right:0;height:100%;width:min(440px,94vw);z-index:30;background:linear-gradient(180deg,#06121cf5,#04080ef5);border-left:1px solid #12414f;box-shadow:-20px 0 60px #000b;transform:translateX(105%);transition:transform .42s var(--ease-drawer);display:flex;flex-direction:column}
 #drawer.open{transform:none}
@@ -228,15 +236,13 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 <canvas id="wave"></canvas>
 
 <div id="boot">
-  <div class="bcore">
-    <svg viewBox="0 0 120 120" width="120" height="120">
-      <g fill="#7ff6ff"><path fill-rule="evenodd" d="M60 5 L107.6 32.5 L107.6 87.5 L60 115 L12.4 87.5 L12.4 32.5 Z M60 17.6 L96.7 38.8 L96.7 81.2 L60 102.4 L23.3 81.2 L23.3 38.8 Z"/><path d="M60 23 L65 34.5 L60 41.5 L55 34.5 Z"/><path d="M26.5 40.5 L54 55 L54 59 L26.5 49 Z"/><path d="M93.5 40.5 L66 55 L66 59 L93.5 49 Z"/><path d="M27.5 62.5 L38 67 L38 78.5 L27.5 72 Z"/><path d="M92.5 62.5 L82 67 L82 78.5 L92.5 72 Z"/><path d="M42 62 L78 62 L78 67.5 L71.5 84 L67 68.5 L63.5 74 L60 67.5 L56.5 74 L53 68.5 L48.5 84 L42 67.5 Z"/><path d="M52 87 L56.5 81.5 L60 85.5 L63.5 81.5 L68 87 L60 96.5 Z"/></g>
+  <button id="activate" title="Encender Hydra" aria-label="Encender Hydra">
+    <svg viewBox="0 0 120 120">
+      <g class="body"><path fill-rule="evenodd" d="M60 5 L107.6 32.5 L107.6 87.5 L60 115 L12.4 87.5 L12.4 32.5 Z M60 17.6 L96.7 38.8 L96.7 81.2 L60 102.4 L23.3 81.2 L23.3 38.8 Z"/><path d="M60 23 L65 34.5 L60 41.5 L55 34.5 Z"/><path d="M27.5 62.5 L38 67 L38 78.5 L27.5 72 Z"/><path d="M92.5 62.5 L82 67 L82 78.5 L92.5 72 Z"/><path d="M42 62 L78 62 L78 67.5 L71.5 84 L67 68.5 L63.5 74 L60 67.5 L56.5 74 L53 68.5 L48.5 84 L42 67.5 Z"/><path d="M52 87 L56.5 81.5 L60 85.5 L63.5 81.5 L68 87 L60 96.5 Z"/></g>
+      <g class="eyes"><path d="M26.5 40.5 L54 55 L54 59 L26.5 49 Z"/><path d="M93.5 40.5 L66 55 L66 59 L93.5 49 Z"/></g>
     </svg>
-    <div class="bring"></div>
-  </div>
-  <div class="bt">HYDRA</div><div class="bs">RED NEURONAL · 11 AGENTES</div>
-  <button id="activate">⏻ ACTIVAR SISTEMA</button>
-  <div class="bs" style="opacity:.6">pulsa para encender el sistema</div>
+  </button>
+  <div class="bt">HYDRA</div>
 </div>
 
 <div id="top">
