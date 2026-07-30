@@ -1258,6 +1258,38 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                     "añade CTRADER_CLIENT_ID y CTRADER_CLIENT_SECRET a tu .env y reinicia"):
             return out
 
+        # 1b) FORMA de las credenciales. "Malformed client_id" casi siempre son
+        #     comillas, espacios o un salto de línea que se colaron al copiar.
+        #     Se describe la forma, nunca el valor.
+        import re as _re
+
+        def shape(raw: str) -> tuple[list[str], str]:
+            problems = []
+            if raw != raw.strip():
+                problems.append("sobra espacio o salto de línea en los extremos")
+            v = raw.strip()
+            if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+                problems.append("está entre comillas (quítalas: en el .env van sin ellas)")
+            if any(c.isspace() for c in v):
+                problems.append("tiene un espacio o salto de línea DENTRO")
+            if "\\" in v:
+                problems.append("tiene una barra invertida")
+            return problems, v
+
+        cid_probs, cid = shape(settings.ctrader_client_id)
+        sec_probs, sec = shape(settings.ctrader_client_secret)
+        if not _re.fullmatch(r"\d+_[A-Za-z0-9]+", cid):
+            cid_probs.append("no tiene la forma de un client_id de cTrader, que es "
+                             "NÚMERO_LETRASYNÚMEROS (por ejemplo 12345_aB3dEf...). "
+                             "¿Seguro que no pegaste el Client Secret o el id de otra cosa?")
+        detail = (f"client_id: {len(cid)} caracteres"
+                  + (f", prefijo numérico {cid.split('_')[0]}" if "_" in cid else ", sin prefijo")
+                  + f" · secret: {len(sec)} caracteres")
+        if not step("Forma de las credenciales", not (cid_probs or sec_probs), detail,
+                    "client_id — " + "; ".join(cid_probs) if cid_probs else
+                    ("secret — " + "; ".join(sec_probs) if sec_probs else "")):
+            return out
+
         # 2) URL de retorno: la causa más común de que el OAuth no deje tokens.
         #    La que usa la app tiene que estar registrada TAL CUAL en cTrader.
         origin = str(request.base_url).rstrip("/")
