@@ -1029,6 +1029,42 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             d["groups"] = gs
         return d
 
+    @app.post("/algo/bots/{name}/explain")
+    async def algo_explain(name: str, request: Request):
+        """Le pide al cerebro que explique la estrategia leyendo sus parámetros.
+
+        Se guarda junto al bot: la explicación cuesta tokens y no cambia si el
+        .algo no cambia, así que se reusa salvo que se pida rehacerla.
+        """
+        f = (_bots_dir() / (name + ".json")).resolve()
+        if _bots_dir().resolve() not in f.parents or not f.is_file():
+            return JSONResponse({"ok": False, "error": "no existe"}, status_code=404)
+        d = json.loads(f.read_text())
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        if d.get("explanation") and not body.get("redo"):
+            return {"ok": True, "cached": True, "explanation": d["explanation"],
+                    "explained_ts": d.get("explained_ts")}
+        if not settings.anthropic_api_key and settings.brain_for("architect") == "anthropic":
+            return JSONResponse(
+                {"ok": False, "error": "falta la clave de Anthropic (o pon el cerebro "
+                                       "en Local/Híbrido para usar Ollama)"},
+                status_code=400)
+        from . import algo_explain as ax
+        import time as _t
+        try:
+            text = await ax.explain(d)
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": str(exc)[:240]}, status_code=502)
+        d["explanation"] = text
+        d["explained_ts"] = _t.time()
+        f.write_text(json.dumps(d, ensure_ascii=False, indent=1))
+        store.log("system", "algo_explain", f"{d.get('name')}: {len(text)} caracteres")
+        return {"ok": True, "cached": False, "explanation": text,
+                "explained_ts": d["explained_ts"]}
+
     @app.delete("/algo/bots/{name}")
     async def algo_bot_del(name: str):
         f = (_bots_dir() / (name + ".json")).resolve()
@@ -1036,6 +1072,61 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             f.unlink()
             return {"ok": True}
         return JSONResponse({"ok": False, "error": "no existe"}, status_code=404)
+
+    @app.post("/replica/compare")
+    async def replica_compare(request: Request):
+        """Mide si las estrategias de Hydra coinciden con lo que decidió tu bot.
+
+        Usa las capturas de trade_context (el bot real, con su instante exacto) y
+        evalúa las estrategias sobre las MISMAS velas. No mide si la operación
+        habría ganado: mide si Hydra habría visto la misma señal.
+        """
+        from . import replica
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        limit = max(10, min(500, int(body.get("limit", 200))))
+        symbol = str(body.get("symbol") or "").upper()
+        tol = max(0, min(5, int(body.get("tolerance_bars", 1))))
+
+        ctxs = store.trade_contexts(limit, symbol, "")
+        if not ctxs:
+            return {"ok": False, "error": "no hay capturas todavía. Apunta el bot a "
+                    f"{str(request.base_url).rstrip('/')}/ingest/trade-context y deja "
+                    "que corra un rato."}
+        if not broker.client.account_authorized:
+            return {"ok": False, "error": "hace falta cTrader conectado para traer "
+                                          "las velas de esos instantes"}
+
+        syms = sorted({str(c.get("symbol") or "").upper() for c in ctxs if c.get("symbol")})
+        candles: dict = {}
+        errors: dict = {}
+        for sym in syms[:12]:
+            try:
+                candles[sym] = await asyncio.wait_for(
+                    broker.candles(sym, settings.timeframe, 1500), timeout=25)
+            except Exception as exc:  # noqa: BLE001
+                errors[sym] = str(exc)[:120]
+
+        out = replica.compare(ctxs, candles, tolerance_bars=tol)
+        # el aviso viaja CON el resultado: la cifra no se puede leer sin esto
+        chart_bound = []
+        for f in _bots_dir().glob("*.json"):
+            try:
+                chart_bound += json.loads(f.read_text()).get("chart_bound") or []
+            except Exception:  # noqa: BLE001
+                pass
+        out.update({"ok": True, "timeframe": settings.timeframe,
+                    "candle_errors": errors,
+                    "aviso": ("tu bot lee dibujos hechos a mano en el gráfico ("
+                              + ", ".join(sorted(set(chart_bound)))
+                              + "): esa entrada no existe fuera de cTrader, así que "
+                                "el porcentaje es el techo de lo replicable, no un fallo "
+                                "de las estrategias") if chart_bound else ""})
+        store.log("system", "replica_compare",
+                  f"{out['compared']} capturas comparadas")
+        return out
 
     # ------------------------------------------ instrumentos y sus estrategias
 

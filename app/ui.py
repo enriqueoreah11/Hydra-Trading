@@ -428,7 +428,12 @@ async function renderBots(){ const box=$('#sys-bots'); if(!box)return;
     if((b.chart_bound||[]).length) h+='<div class="phelp" style="color:#fbbf24;margin:-4px 0 6px">'
       +'⚠ '+b.chart_bound.length+' parámetros leen dibujos que haces A MANO en el gráfico ('
       +b.chart_bound.map(escapeHtml).join(', ')+'). Eso no existe fuera de cTrader: una réplica solo puede igualar la parte automática.</div>';
-    if(on) h+='<div id="bot-body"><div class="empty">Cargando…</div></div>';
+    if(on) h+='<div class="ssec" style="margin:6px 0">'
+      +'<button class="btn" onclick="botExplain(false)">🧠 Explícame la estrategia</button>'
+      +'<button class="btn ghost" onclick="botExplain(true)">↻ Rehacer</button>'
+      +'<button class="btn ghost" onclick="replicaRun()">⚖️ ¿La replica Hydra?</button>'
+      +'</div><div id="bot-expl"></div><div id="bot-repl"></div>'
+      +'<div id="bot-body"><div class="empty">Cargando…</div></div>';
   });
   box.innerHTML=h;
   if(BOTSEL) botBody(); }
@@ -461,6 +466,40 @@ async function botBody(){ const box=$('#bot-body'); if(!box||!BOTSEL)return;
         +'<br><code style="font-size:10px">'+escapeHtml(p.name)+'</code></span>'
         +'<b style="text-align:right">'+escapeHtml(String(p.enum?Object.keys(p.enum)[Number(p.default)]??p.default:p.default))
         +'<br><span class="phelp" style="margin:0">'+escapeHtml(String(p.type))+rng+'</span></b></div>'; }); });
+  box.innerHTML=h; }
+/* Explicación de la estrategia: sirve para comprobar si el sistema la entendió. */
+async function botExplain(redo){ const box=$('#bot-expl'); if(!box||!BOTSEL)return;
+  box.innerHTML='<div class="empty">Leyendo los parámetros y redactando… (una vez, luego queda guardado)</div>';
+  let d; try{ d=await (await fetch('/algo/bots/'+encodeURIComponent(BOTSEL)+'/explain',
+        {method:'POST',headers:{'content-type':'application/json'},
+         body:JSON.stringify({redo:!!redo})})).json(); }
+  catch(e){ box.innerHTML='<div class="empty" style="color:#ff5d73">Error de red.</div>'; return; }
+  if(!d.ok){ box.innerHTML='<div class="empty" style="color:#ff5d73">'+escapeHtml(d.error||'No pude explicarla.')+'</div>'; return; }
+  box.innerHTML='<div class="phelp">'+(d.cached?'Guardada de antes. Dale a «Rehacer» para pedirla de nuevo.':'Recién hecha.')
+    +' Leída SOLO de los parámetros: el código va compilado.</div>'
+    +'<div style="max-height:420px;overflow:auto;border:1px solid #12303f;border-radius:8px;'
+    +'padding:10px 12px;background:#050b12;font-size:12px;line-height:1.55;white-space:pre-wrap;'
+    +'word-break:break-word;color:#bcd6e6">'+escapeHtml(d.explanation||'')+'</div>';
+  speak(L('Listo. Revisa si entendí tu estrategia.','Done. Check whether I understood your strategy.')); }
+/* Medición: ¿coinciden las señales de Hydra con las decisiones reales del bot? */
+async function replicaRun(){ const box=$('#bot-repl'); if(!box)return;
+  box.innerHTML='<div class="empty">Comparando capturas del bot contra las estrategias…</div>';
+  let d; try{ d=await (await fetch('/replica/compare',{method:'POST',
+        headers:{'content-type':'application/json'},
+        body:JSON.stringify({limit:200,tolerance_bars:1})})).json(); }
+  catch(e){ box.innerHTML='<div class="empty" style="color:#ff5d73">Error de red.</div>'; return; }
+  if(!d.ok){ box.innerHTML='<div class="empty" style="color:#fbbf24">'+escapeHtml(d.error||'No se pudo medir.')+'</div>'; return; }
+  let h='<div class="phelp">Comparadas <b>'+d.compared+'</b> decisiones reales de tu bot contra las estrategias de Hydra, sobre las MISMAS velas ('+escapeHtml(String(d.timeframe))+'). Mide si Hydra habría visto la señal, <b>no</b> si habría ganado.</div>';
+  if(d.aviso) h+='<div class="phelp" style="color:#fbbf24">⚠ '+escapeHtml(d.aviso)+'</div>';
+  (d.leaderboard||[]).forEach(r=>{ const pc=r.agreement_pct;
+    const col=pc==null?'#5f7387':(pc>=60?'#34d399':(pc>=30?'#fbbf24':'#ff5d73'));
+    h+='<div class="cfg"><span>'+escapeHtml(r.strategy)+'</span><b style="color:'+col+'">'
+      +(pc==null?'—':pc+'%')+'<span class="phelp" style="margin:0"> '+r.hits+' igual · '
+      +r.wrong_side+' lado contrario · '+r.misses+' sin señal</span></b></div>'; });
+  const sk=d.skipped||{};
+  const tot=Object.values(sk).reduce((a,b)=>a+b,0);
+  if(tot) h+='<div class="phelp">Saltadas '+tot+': '+Object.entries(sk).filter(e=>e[1])
+    .map(e=>e[1]+' '+e[0].replace(/_/g,' ')).join(', ')+'.</div>';
   box.innerHTML=h; }
 /* Diagnóstico de la conexión: recorre la cadena y se para en el eslabón roto. */
 async function ctraderDiag(){ const box=$('#sys-diag'); if(!box)return;
