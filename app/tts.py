@@ -92,11 +92,26 @@ async def _voicebox(text: str) -> bytes | None:
         args: dict = {"text": text}
         if settings.voicebox_profile:
             args["profile"] = settings.voicebox_profile
-        spoken = unwrap(await rpc(http, "tools/call",
-                                  {"name": "voicebox.speak", "arguments": args}))
+        raw = await rpc(http, "tools/call",
+                        {"name": "voicebox.speak", "arguments": args})
+        # se guarda la respuesta CRUDA: sin esto, un cambio en Voicebox se ve solo
+        # como "no usa mi voz" y hay que adivinar cuál de los dos falló
+        state["last_speak"] = str(raw)[:400]
+        res = (raw or {}).get("result") or {}
+        if raw.get("error") or res.get("isError"):
+            txt = "".join(str(b.get("text") or "") for b in (res.get("content") or []))
+            _last_error = ("Voicebox rechazó la petición: "
+                           + (txt or str(raw.get("error")))[:200])
+            return None
+        spoken = unwrap(raw)
         gen = spoken.get("generation_id") or spoken.get("id")
         if not gen:
-            _last_error = f"Voicebox no devolvió id: {str(spoken)[:160]}"
+            # No hay id que seguir, pero la llamada NO falló: Voicebox ya está
+            # hablando por las bocinas. Antes se devolvía error aquí y la interfaz
+            # caía a la voz del navegador — o sea, "configuré mi voz y no la usa"
+            # cuando en realidad ya había sonado. Solo se espera si hay id.
+            state["played_locally"] = True
+            _last_error = ""
             return None
 
         # El estado es un stream SSE; esperamos a que termine de generar.
@@ -245,6 +260,10 @@ async def diagnose() -> dict:
         info["modo"] = ("Voicebox reproduce en las bocinas del Mac; el navegador no "
                         "vuelve a tocarlo (si lo hiciera, se oiria doble)")
         info["error"] = _last_error
+        # lo que contesto de verdad la app: es lo unico que permite ver si el
+        # problema esta en Hydra o en Voicebox, sin adivinar
+        info["respuesta_voicebox"] = state.get("last_speak", "")
+        info["sono_en_el_mac"] = bool(state.get("played_locally"))
         return info
     if not available():
         info["ok"] = False
