@@ -1245,6 +1245,10 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         """
         out: dict = {"steps": [], "ok": False}
 
+        # charset explicito: sin el, el navegador pinta los acentos como Ã± / Ã©
+        def _diag(payload: dict) -> JSONResponse:
+            return JSONResponse(payload, media_type="application/json; charset=utf-8")
+
         def step(name, ok, detail="", fix=""):
             out["steps"].append({"paso": name, "ok": bool(ok),
                                  "detalle": detail, "arreglo": fix})
@@ -1256,7 +1260,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                     f"client_id {'puesto' if settings.ctrader_client_id else 'FALTA'}, "
                     f"secret {'puesto' if settings.ctrader_client_secret else 'FALTA'}",
                     "añade CTRADER_CLIENT_ID y CTRADER_CLIENT_SECRET a tu .env y reinicia"):
-            return out
+            return _diag(out)
 
         # 1b) FORMA de las credenciales. "Malformed client_id" casi siempre son
         #     comillas, espacios o un salto de línea que se colaron al copiar.
@@ -1288,7 +1292,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         if not step("Forma de las credenciales", not (cid_probs or sec_probs), detail,
                     "client_id — " + "; ".join(cid_probs) if cid_probs else
                     ("secret — " + "; ".join(sec_probs) if sec_probs else "")):
-            return out
+            return _diag(out)
 
         # 2) URL de retorno: la causa más común de que el OAuth no deje tokens.
         #    La que usa la app tiene que estar registrada TAL CUAL en cTrader.
@@ -1309,7 +1313,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                     "" if tokens.has_tokens else
                     f"abre {origin}/oauth/login y completa el permiso. Si vuelves a "
                     f"esta pantalla sin tokens, el fallo es la URL de retorno (paso 2)"):
-            return out
+            return _diag(out)
 
         # 4) cuentas autorizadas
         try:
@@ -1320,12 +1324,12 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         except Exception as exc:  # noqa: BLE001
             step("Cuentas autorizadas", False, str(exc)[:200],
                  "revisa que el entorno (demo/live) del paso 5 coincida con tu cuenta")
-            return out
+            return _diag(out)
         listed = [{"id": a.get("ctidTraderAccountId"), "live": bool(a.get("isLive")),
                    "login": a.get("traderLogin")} for a in accs]
         if not step("Cuentas autorizadas", bool(listed), f"{len(listed)}: {listed}",
                     "en cTrader autoriza al menos una cuenta para esta aplicación"):
-            return out
+            return _diag(out)
 
         # 5) cuenta elegida y entorno
         aid = settings.ctrader_account_id
@@ -1334,20 +1338,20 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                     f"CTRADER_ACCOUNT_ID={aid or '(sin elegir)'}, entorno={settings.ctrader_env}",
                     "elige la cuenta en Sistema → CONEXIÓN, o pon su id en "
                     "CTRADER_ACCOUNT_ID. Debe ser una de las de arriba"):
-            return out
+            return _diag(out)
         env_ok = (settings.ctrader_env == "live") == match["live"]
         if not step("Entorno demo/live", env_ok,
                     f"la cuenta {aid} es {'LIVE' if match['live'] else 'DEMO'} y "
                     f"la app apunta a {settings.ctrader_env.upper()} ({settings.ws_url})",
                     f"cambia a {'live' if match['live'] else 'demo'}: son servidores "
                     f"distintos y con el equivocado la autorización se rechaza"):
-            return out
+            return _diag(out)
 
         # 6) autorización de la cuenta en el websocket
         if not step("Cuenta autorizada", broker.client.account_authorized,
                     getattr(broker.client, "last_error", "") or "sin error reportado",
                     "reinicia la app; si persiste, vuelve a hacer /oauth/login"):
-            return out
+            return _diag(out)
 
         # 7) los símbolos vigilados existen en ESTE broker
         names = broker.symbol_names()
@@ -1382,7 +1386,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         out["resumen"] = ("todo en orden" if out["ok"] else
                           "falla: " + ", ".join(x["paso"] for x in out["steps"] if not x["ok"]))
         out["symbols_del_broker"] = len(names)
-        return out
+        return _diag(out)
 
     @app.get("/tts/health")
     async def tts_health():

@@ -27,6 +27,37 @@ def build_auth_url(client_id: str, redirect_uri: str, scope: str = "trading") ->
     })
 
 
+async def _token_call(http: httpx.AsyncClient, payload: dict) -> dict:
+    """Pide tokens a cTrader.
+
+    Su endpoint espera las credenciales en la QUERY STRING. Si se mandan en el
+    cuerpo del formulario no las ve y contesta 200 con
+    "INVALID_REQUEST — Malformed client_id parameter", que despista mucho porque
+    el client_id es correcto. Se intenta primero por query y, si aun asi se
+    queja, se reintenta por cuerpo (versiones antiguas lo aceptaban).
+    """
+    attempts = [("query", {"params": payload}), ("cuerpo", {"data": payload})]
+    last = ""
+    for how, kw in attempts:
+        r = await http.post(TOKEN_URL, **kw)
+        try:
+            body = r.json()
+        except Exception:  # noqa: BLE001 - HTML de error o respuesta de un proxy
+            last = f"respondio {r.status_code} y no era JSON: {r.text[:200]}"
+            continue
+        if isinstance(body, dict) and isinstance(body.get("data"), dict):
+            body = {**body, **body["data"]}          # algunas versiones lo anidan
+        err = body.get("errorCode") or body.get("error") if isinstance(body, dict) else None
+        if not err and r.status_code < 400:
+            return body
+        desc = ""
+        if isinstance(body, dict):
+            desc = (body.get("description") or body.get("error_description")
+                    or body.get("errorDescription") or "")
+        last = f"({how}) {r.status_code}: {err or 'sin codigo'}" + (f" — {desc}" if desc else "")
+    raise RuntimeError("cTrader rechazo la peticion de tokens. " + last)
+
+
 class TokenStore:
     """Persists access/refresh tokens as JSON on the data volume."""
 
@@ -61,37 +92,17 @@ class TokenStore:
         self._save()
 
     async def exchange_code(self, code: str) -> None:
-        """Canjea el código por tokens.
-
-        El endpoint de cTrader puede contestar 200 CON un cuerpo de error, así que
-        no vale con raise_for_status: hay que mirar el cuerpo. Y cuando falla, el
-        motivo tiene que llegar a la pantalla, no morir en el log como un 500.
-        """
         async with httpx.AsyncClient(timeout=30) as http:
-            r = await http.post(TOKEN_URL, data={
-                "grant_type": "authorization_code",
-                "code": code,
-                "redirect_uri": self.redirect_uri,
-                "client_id": self.client_id,
-                "client_secret": self.client_secret,
-            })
-        try:
-            body = r.json()
-        except Exception:  # noqa: BLE001 - HTML o texto suelto
-            raise RuntimeError(
-                f"el endpoint de tokens respondió {r.status_code} y no era JSON: "
-                f"{r.text[:300]}") from None
-        if isinstance(body, dict) and isinstance(body.get("data"), dict):
-            body = {**body, **body["data"]}          # algunas versiones lo anidan
-        err = (body.get("errorCode") or body.get("error") or
-               body.get("error_description")) if isinstance(body, dict) else None
-        if err or r.status_code >= 400:
-            desc = (body.get("description") or body.get("error_description")
-                    or body.get("errorDescription") or "") if isinstance(body, dict) else ""
-            raise RuntimeError(
-                f"cTrader rechazó el canje ({r.status_code}): {err or 'sin código'}"
-                + (f" — {desc}" if desc else "")
-                + f". redirect_uri enviado: {self.redirect_uri}")
+            try:
+                body = await _token_call(http, {
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": self.redirect_uri,
+                    "client_id": self.client_id,
+                    "client_secret": self.client_secret,
+                })
+            except RuntimeError as exc:
+                raise RuntimeError(f"{exc} · redirect_uri enviado: {self.redirect_uri}") from None
         self._store_response(body)
 
     async def refresh(self) -> None:
@@ -99,14 +110,13 @@ class TokenStore:
         if not refresh_token:
             raise RuntimeError("no refresh token stored — redo the OAuth flow at /oauth/login")
         async with httpx.AsyncClient(timeout=30) as http:
-            r = await http.post(TOKEN_URL, data={
+            body = await _token_call(http, {
                 "grant_type": "refresh_token",
                 "refresh_token": refresh_token,
                 "client_id": self.client_id,
                 "client_secret": self.client_secret,
             })
-            r.raise_for_status()
-            self._store_response(r.json())
+        self._store_response(body)
 
     async def get_access_token(self) -> str:
         if not self.has_tokens:
