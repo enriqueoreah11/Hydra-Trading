@@ -499,7 +499,8 @@ async function algoDir(){ const box=$('#algo-dir'); if(!box)return;
         +'onclick="document.querySelector(\'#algo-d\').value=\''+g.replace(/'/g,"")+'\'">'
         +escapeHtml(g)+(c[g]!=null?(' ('+c[g]+' .algo)'):'')+'</code>').join(' ')+'</div>'; }
   if(d.dir) h+='<div class="phelp" style="color:'+(d.exists?'#34d399':'#ff5d73')+'">'
-    +(d.exists?('✅ '+d.n_found+' archivos .algo en la carpeta'):'❌ esa carpeta no existe')+'</div>';
+    +(d.exists?('✅ '+d.n_found+' bots'+(d.n_files>d.n_found?(' ('+d.n_files+' archivos: cTrader guarda cada bot en Debug y Release)'):''))
+              :'❌ esa carpeta no existe')+'</div>';
   if(d.exists) h+='<div id="algo-pick"></div>'
     +'<div class="ssec" style="margin:6px 0">'
     +'<button class="btn ghost" style="padding:5px 10px" onclick="mbScan()">⟳ Refrescar los míos</button>'
@@ -525,14 +526,21 @@ async function algoPick(q){ const box=$('#algo-pick'); if(!box)return;
     +'" oninput="algoPick(this.value)" style="text-transform:none"></div>';
   if(!(d.files||[]).length){ box.innerHTML=h+'<div class="empty">Sin coincidencias.</div>'; return; }
   d.files.forEach(f=>{ const done=f.imported&&!f.stale;
-    h+='<div class="wrow"><span class="wsym" style="min-width:auto;max-width:56%">'
-      +escapeHtml(f.name)+'</span>'
-      +'<span class="phelp" style="margin:0 0 0 auto;text-align:right">'+f.kb+' KB · '+ctxAgo(f.mtime)+'</span>'
+    h+='<div class="wrow" style="align-items:flex-start">'
+      +'<span class="wsym" style="min-width:0;flex:1;overflow:hidden">'
+      +escapeHtml(f.name)
+      // de donde sale la copia elegida: asi se ve que Debug/Release no son dos bots
+      +'<span class="phelp" style="margin:0;display:block;text-transform:none;'
+      +'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:rtl;text-align:left">'
+      +escapeHtml(String(f.where||''))+(f.copies>1?(' · '+f.copies+' copias'):'')+'</span></span>'
+      +'<span class="phelp" style="margin:0;padding:0 8px;flex:0 0 auto;text-align:right;white-space:nowrap">'
+      +f.kb+' KB<br>'+ctxAgo(f.mtime)+'</span>'
       +(done?'<span class="phelp" style="margin:0 0 0 8px;color:#34d399">guardado</span>'
             :'<button class="btn ghost" style="margin-left:8px;padding:4px 10px" onclick="algoPickOne(\''
               +f.file.replace(/\\/g,'/').replace(/'/g,'')+'\')">'+(f.stale?'actualizar':'añadir')+'</button>')
       +'</div>'; });
-  h+='<div class="phelp">Mostrando '+d.shown+' de '+d.total+(d.total>d.shown?' — busca para ver el resto':'')
+  h+='<div class="phelp">Mostrando '+d.shown+' de '+d.total+' bots'
+    +(d.total>d.shown?' — busca para ver el resto':'')
     +' · '+d.n_imported+' ya guardados.</div>';
   box.innerHTML=h; }
 async function algoPickOne(file){ toast('Leyendo '+file.split('/').pop()+'…');

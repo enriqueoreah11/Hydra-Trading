@@ -1118,17 +1118,45 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                 pass
         return best
 
+    # cTrader deja EL MISMO bot compilado en varios sitios: bin/Debug, bin/Release y
+    # los intermedios de obj/. Por eso una carpeta con 20 bots enseña 116 archivos y
+    # cada nombre sale repetido. Aquí se agrupa por bot y se elige una sola copia.
+    _BUILD_NOISE = ("/obj/", "/.git/", "/node_modules/")
+
+    def _algo_rank(f: Path) -> tuple:
+        """Cuál copia gana: primero Release, y entre iguales la más reciente."""
+        s = str(f).lower()
+        return (1 if "/release/" in s else 0, f.stat().st_mtime)
+
+    def _algo_unique(d: Path) -> list[tuple[Path, int]]:
+        """Un .algo por bot: [(archivo elegido, cuántas copias había)]."""
+        by: dict[str, list[Path]] = {}
+        for f in d.rglob("*.algo"):
+            s = str(f).replace("\\", "/").lower()
+            if any(n in s for n in _BUILD_NOISE):
+                continue
+            by.setdefault(f.stem.lower(), []).append(f)
+        out = []
+        for copies in by.values():
+            best = max(copies, key=_algo_rank)
+            out.append((best, len(copies)))
+        out.sort(key=lambda t: -t[0].stat().st_mtime)
+        return out
+
     @app.get("/algo/dir")
     async def algo_dir_get():
         d = _algo_dir()
-        found = []
+        found, n_files, n_bots = [], 0, 0
         if d and d.is_dir():
-            found = [str(f.relative_to(d)) for f in sorted(d.rglob("*.algo"))][:200]
+            uniq = _algo_unique(d)
+            n_bots = len(uniq)
+            n_files = sum(c for _, c in uniq)
+            found = [str(f.relative_to(d)) for f, _ in uniq][:200]
         real = [str(g) for g in _algo_guesses() if g.is_dir()]
         # cuántos .algo hay en cada sugerencia: así se ve de un vistazo cuál sirve
         counts = {g: len(list(Path(g).rglob("*.algo"))) for g in real}
         return {"dir": str(d) if d else "", "exists": bool(d and d.is_dir()),
-                "found": found, "n_found": len(found),
+                "found": found, "n_found": n_bots, "n_files": n_files,
                 "guesses": real or [str(g) for g in _algo_guesses()],
                 "guess_counts": counts,
                 "auto": bool(d) and str(d) in real,
@@ -1193,7 +1221,9 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                 return {"ok": False, "error": f"no existe {only_file}"}
             files = [target]
         else:
-            files = sorted(d.rglob("*.algo"))
+            # una copia por bot: sin esto se importa Debug Y Release del mismo y
+            # aparecen dos entradas del mismo bot
+            files = [f for f, _ in _algo_unique(d)]
 
         added, updated, same, failed = [], [], [], []
         for f in files:
@@ -1332,9 +1362,12 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             return {"ok": False, "error": "primero fija la carpeta"}
         known = _algo_known()
         ql = q.strip().lower()
-        rows, total = [], 0
-        for f in sorted(d.rglob("*.algo"), key=lambda x: -x.stat().st_mtime):
+        rows, total, n_files = [], 0, 0
+        # UNA fila por bot: si no, Debug y Release salen como dos bots distintos y
+        # la lista miente sobre cuántos tienes.
+        for f, copies in _algo_unique(d):
             rel = str(f.relative_to(d))
+            n_files += copies
             if ql and ql not in rel.lower():
                 continue
             total += 1
@@ -1342,11 +1375,13 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                 continue
             st = f.stat()
             prev = known.get(str(f))
+            where = str(f.parent.relative_to(d)) if f.parent != d else "."
             rows.append({"file": rel, "name": f.stem, "kb": round(st.st_size / 1024, 1),
                          "mtime": int(st.st_mtime), "imported": bool(prev),
+                         "where": where, "copies": copies,
                          "stale": bool(prev and tuple(prev) != (int(st.st_mtime), st.st_size))})
         return {"ok": True, "dir": str(d), "total": total, "shown": len(rows),
-                "files": rows, "n_imported": len(known)}
+                "files": rows, "n_imported": len(known), "n_files": n_files}
 
     @app.post("/algo/pick")
     async def algo_pick(request: Request):
