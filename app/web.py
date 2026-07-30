@@ -1332,8 +1332,18 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             await broker.client.wait_connected(timeout=12)
             accs = await asyncio.wait_for(broker.list_accounts(token), timeout=15)
         except Exception as exc:  # noqa: BLE001
-            step("Cuentas autorizadas", False, str(exc)[:200],
-                 "revisa que el entorno (demo/live) del paso 5 coincida con tu cuenta")
+            msg = str(exc)
+            # el fallo de certificado NO es un problema de demo/live: es que Python
+            # en macOS no usa el llavero del sistema y se queda sin raices
+            if "CERTIFICATE_VERIFY_FAILED" in msg or "SSLCertVerification" in msg:
+                fix = ("faltan las raices de confianza de Python. Instalalas en el "
+                       "entorno de la app:  cd ~/Hydra-Trading && "
+                       ".venv/bin/pip install -U certifi  y reinicia. "
+                       "Con Python de python.org tambien vale ejecutar "
+                       "'Install Certificates.command' de su carpeta en Aplicaciones.")
+            else:
+                fix = "revisa que el entorno (demo/live) del paso 5 coincida con tu cuenta"
+            step("Cuentas autorizadas", False, msg[:200], fix)
             return _diag(out)
         listed = [{"id": a.get("ctidTraderAccountId"), "live": bool(a.get("isLive")),
                    "login": a.get("traderLogin")} for a in accs]

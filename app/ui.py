@@ -587,7 +587,14 @@ function renderSysInfo(){ if(!DATA){ $('#sys-info').innerHTML='<div class="empty
   let h='<div class="cfg"><span>cTrader</span> '+conn+'</div>';
   if(c.connected&&c.account_id) h+='<div class="cfg"><span>Cuenta activa</span> <b>#'+c.account_id+' · '+((c.ctrader_env||'demo').toUpperCase())+'</b></div>';
   if(c.connected&&c.balance_error) h+='<div class="empty" style="color:#fbbf24">Balance no disponible: '+escapeHtml(c.balance_error)+'</div>';
-  if(!c.connected&&c.oauth_ok&&c.conn_error) h+='<div class="empty" style="color:#ff5d73">No conecta: '+escapeHtml(c.conn_error)+' — revisa que el entorno (DEMO/LIVE) coincida con la cuenta.</div>';
+  if(!c.connected&&c.oauth_ok&&c.conn_error){
+    const ssl=/CERTIFICATE_VERIFY_FAILED|SSLCertVerification/i.test(c.conn_error);
+    h+='<div class="empty" style="color:#ff5d73">No conecta: '+escapeHtml(c.conn_error)+'</div>'
+      +'<div class="phelp" style="color:#fbbf24">'+(ssl
+        ? 'Faltan las raíces de confianza de Python (no usa el llavero de macOS). Arréglalo con:<br>'
+          +'<code>cd ~/Hydra-Trading &amp;&amp; .venv/bin/pip install -U certifi</code><br>y reinicia la app.'
+        : 'Revisa que el entorno (DEMO/LIVE) coincida con la cuenta.')+'</div>';
+  }
   if(!c.oauth_ok) h+='<a class="btn" href="/oauth/login" style="display:inline-block;margin:10px 0;text-decoration:none">🔌 Conectar mi cuenta de cTrader</a>';
   if(c.oauth_ok) h+='<a class="btn ghost" href="/oauth/login" style="display:inline-block;margin:8px 0;text-decoration:none">🔄 Reconectar cTrader (actualizar cuentas)</a>';
   if(c.oauth_ok) h+='<div id="sys-accounts" class="empty">Cargando cuentas…</div>';

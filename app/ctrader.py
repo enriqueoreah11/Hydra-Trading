@@ -9,6 +9,7 @@ import asyncio
 import itertools
 import json
 import logging
+import ssl
 from typing import Any, Awaitable, Callable
 
 import websockets
@@ -16,6 +17,24 @@ import websockets
 from . import constants as c
 
 log = logging.getLogger("ctrader")
+
+
+def _ssl_context() -> ssl.SSLContext:
+    """Contexto TLS con una raíz de confianza que exista de verdad.
+
+    Python en macOS NO usa el llavero del sistema: trae su propio almacén y, si
+    nadie ejecutó "Install Certificates.command", se queda sin raíces y todo
+    falla con CERTIFICATE_VERIFY_FAILED "unable to get local issuer certificate".
+    Se prueba certifi (el paquete que trae las raíces) y, si no está, el almacén
+    por defecto. Nunca se desactiva la verificación: eso abriría la conexión a un
+    intermediario, y por aquí pasan órdenes de compra y venta.
+    """
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        log.warning("certifi no está instalado; uso el almacén por defecto de Python")
+        return ssl.create_default_context()
 
 HEARTBEAT_SECONDS = 10
 REQUEST_TIMEOUT = 20
@@ -108,7 +127,9 @@ class CTraderClient:
         while not self._stopping:
             try:
                 log.info("connecting to %s", self.ws_url)
-                async with websockets.connect(self.ws_url, max_size=16 * 1024 * 1024) as ws:
+                async with websockets.connect(
+                        self.ws_url, max_size=16 * 1024 * 1024,
+                        ssl=_ssl_context() if self.ws_url.startswith("wss") else None) as ws:
                     self._ws = ws
                     self._connected.set()
                     hb = asyncio.create_task(self._heartbeat())
