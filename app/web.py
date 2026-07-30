@@ -1192,6 +1192,52 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             return {"ok": True}
         return JSONResponse({"ok": False, "error": "no existe"}, status_code=404)
 
+    @app.get("/bots/active")
+    async def bots_active(minutes: float = 45):
+        """Solo los bots que están HACIENDO algo: operando o analizando.
+
+        Dos fuentes distintas y complementarias: las posiciones abiertas dicen
+        quién opera, y las capturas de trade_context dicen quién está mirando el
+        mercado aunque no haya abierto nada. Si un bot no aparece, o no reporta o
+        no está haciendo nada.
+        """
+        out: dict = {}
+
+        def slot(label: str) -> dict:
+            key = (label or "").strip() or "(sin etiqueta)"
+            return out.setdefault(key, {"label": key, "open": 0, "seen": 0,
+                                        "alerted": 0, "symbols": [], "last_ts": 0})
+
+        try:
+            for a in store.trade_context_active(minutes):
+                g = slot(a["label"])
+                g["seen"] += a["seen"]
+                g["alerted"] += a["alerted"]
+                g["last_ts"] = max(g["last_ts"], int(a["last_ts"] or 0))
+                for s in a["symbols"]:
+                    if s not in g["symbols"]:
+                        g["symbols"].append(s)
+        except Exception:  # noqa: BLE001 - el panel no debe caerse por esto
+            pass
+
+        if broker.client.account_authorized:
+            try:
+                pos = await asyncio.wait_for(broker.positions(), timeout=12)
+                for p in pos:
+                    p["symbol"] = await broker.symbol_name_by_id(p["symbol_id"])
+                    g = slot(str(p.get("label") or ""))
+                    g["open"] += 1
+                    g["last_ts"] = max(g["last_ts"], int(p.get("open_ts") or 0))
+                    if p["symbol"] not in g["symbols"]:
+                        g["symbols"].append(p["symbol"])
+            except Exception:  # noqa: BLE001
+                pass
+
+        bots = sorted(out.values(), key=lambda r: (-r["open"], -r["last_ts"]))
+        for b in bots:
+            b["state"] = "opera" if b["open"] else "analiza"
+        return {"ok": True, "minutes": minutes, "bots": bots}
+
     @app.get("/bots/live")
     async def bots_live(days: float = 7):
         """Qué está haciendo CADA bot en la cuenta, agrupado por su etiqueta.

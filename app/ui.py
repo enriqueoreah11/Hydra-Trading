@@ -255,6 +255,7 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
       <button class="btn ghost" id="b-mute" title="Dejar de oír el micrófono ahora">🔇 No oír</button>
       <button class="btn ghost" id="b-clap" title="Activar aplaudiendo 2 veces">👏 Aplauso</button>
       <button class="btn ghost on" id="b-speak" title="Voz de respuesta">🔊 Voz</button>
+      <button class="btn ghost on" id="b-sfx" title="Sonidos de encendido, pausa y apagado" onclick="sfxToggle()">🎛️ Sonidos</button>
     </div>
     <div class="slbl">ACCIONES</div>
     <div class="ssec">
@@ -312,6 +313,10 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     <div class="hudhd"><span class="dot"></span>CEREBRO Y VOZ</div>
     <div class="sysbox" id="hud-brain"><div class="empty" style="padding:4px 2px;font-size:10.5px">…</div></div>
   </div>
+  <div id="hudBots" class="hud">
+    <div class="hudhd"><span class="dot"></span>BOTS<span class="tf" id="hud-bots-n"></span></div>
+    <div class="posbox" id="hud-bots"><div class="empty" style="padding:4px 2px;font-size:10.5px">…</div></div>
+  </div>
   <div class="spacer-v"></div>
   <div id="hudA" class="hud">
     <div class="hudhd"><span class="dot"></span>CONFIGURACION<span class="tf" id="hud-tf"></span></div>
@@ -354,6 +359,7 @@ function renderCore(c){
   $('#c-pb').innerHTML='playbook <b>v'+c.playbook_version+'</b>';
   $('#b-halt').textContent=c.halted?'▶ RESUME':'⏸ HALT';
   $('#b-cal').style.display='';
+  {const bs=$('#b-sfx'); if(bs) bs.classList.toggle('on',sfxOn);}
   if(c.voice_enabled===false)['b-mic','b-wake','b-clap','b-speak'].forEach(id=>{const e=$('#'+id);if(e)e.style.display='none';});
   ttsServer=!!c.tts_server; if(c.owner_name)SIR=c.owner_name; if(c.owner_lang)LANG=c.owner_lang;
   renderHudSys();
@@ -859,7 +865,11 @@ async function selectAccount(){ const sel=$('#acc-sel'); if(!sel) return; const 
   if(r.ok){ toast('Cuenta seleccionada ✓ conectando…'); speak('Cuenta cambiada, '+SIR+'. Conectando.'); setTimeout(load,2500); setTimeout(()=>{renderSysInfo();},3000); }
   else if(r.status===404){ toast('Falta redesplegar: git pull && fly deploy (el selector aún no está en tu app).'); }
   else { let m='No se pudo cambiar'; try{ const j=await r.json(); if(j&&(j.error||j.detail)) m+=': '+(j.error||j.detail); }catch(_){} toast(m); } }
-async function doHalt(){ const halt=$('#b-halt').textContent.includes('HALT'); await fetch(halt?'/halt':'/resume',{method:'POST'}); toast(halt?'Sistema DETENIDO':'Sistema reanudado'); speak(halt?'Sistema detenido, '+SIR+'.':'Sistema reanudado, '+SIR+'.'); load(); }
+async function doHalt(){ const halt=$('#b-halt').textContent.includes('HALT');
+  if(halt) sfxOff(); else sfxBoot();          // el sonido va ANTES: se siente inmediato
+  await fetch(halt?'/halt':'/resume',{method:'POST'});
+  toast(halt?'Sistema DETENIDO':'Sistema reanudado');
+  speak(halt?'Sistema detenido, '+SIR+'.':'Sistema reanudado, '+SIR+'.'); load(); }
 async function openCalendar(){ selected=null;
   $('#d-e').textContent='📅'; $('#d-name').textContent='Calendario económico'; $('#d-role').textContent='Próximos 7 días'; $('#d-body').innerHTML='<div class="empty">Cargando eventos…</div>'; $('#drawer').classList.add('open');
   let d; try{ d=await (await fetch('/calendar')).json(); }catch(e){ $('#d-body').innerHTML='<div class="empty" style="color:#ff5d73">No se pudo cargar el calendario.</div>'; return; }
@@ -1076,10 +1086,32 @@ function hudStart(){ document.querySelectorAll('.hudcol .hud').forEach((e,i)=>se
   // terminen de entrar para medirlas donde de verdad se quedan.
   [900,1800].forEach(t=>setTimeout(()=>window.pcbRewire&&window.pcbRewire(),t));
   setTimeout(()=>{const t=$('#tape');if(t)t.classList.add('in');},140);
-  renderSessions(); pollPositions(); pollInstruments(); pollNews(); renderHudSys(); pollBrain(); pollTape();
+  renderSessions(); pollPositions(); pollInstruments(); pollNews(); renderHudSys(); pollBrain(); pollTape(); pollBots();
   setInterval(renderSessions,30000); setInterval(pollPositions,20000);
   setInterval(pollInstruments,30000); setInterval(refreshNews,1800000);
-  setInterval(pollBrain,60000); setInterval(pollTape,6000); }
+  setInterval(pollBrain,60000); setInterval(pollTape,6000);
+  setInterval(pollBots,20000); }
+/* Ventana BOTS: solo los que están HACIENDO algo — operando o analizando.
+   "Analiza" sale de trade_context (el bot mira aunque no abra), "opera" de las
+   posiciones abiertas. El que no reporta y no tiene posiciones, no aparece. */
+async function pollBots(){ const box=$('#hud-bots'); if(!box)return;
+  let d; try{ d=await (await fetch('/bots/active?minutes=45')).json(); }catch(e){ return; }
+  const bs=(d.bots||[]);
+  const n=$('#hud-bots-n');
+  if(n) n.textContent=bs.length?(bs.filter(b=>b.open).length+' OPERAN'):'EN REPOSO';
+  if(!bs.length){ box.innerHTML='<div class="empty" style="padding:4px 2px;font-size:10.5px">'
+      +L('Ningún bot activo. Aparecen al abrir posición o al reportar análisis.',
+         'No active bots. They appear when they open a position or report analysis.')+'</div>'; return; }
+  box.innerHTML=bs.map(b=>{ const op=b.open>0, col=op?'#34d399':'#5ad1e6';
+    return '<div class="prow" style="border-left-color:'+col+'">'
+      +'<span class="sd" style="color:#02141b;background:'+col+'">'+(op?'OPERA':'ANALIZA')+'</span>'
+      +'<span class="sy" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+      +escapeHtml(String(b.label))+'</span>'
+      +'<span class="vl">'+(op?(b.open+(b.open>1?' pos':' pos')):(b.seen+' señales'))
+      +(b.alerted?' · '+b.alerted+' ok':'')+' · '+ctxAgo(b.last_ts)+'</span>'
+      +'</div>'
+      +((b.symbols||[]).length?'<div class="phelp" style="margin:-2px 0 4px 6px">'
+        +escapeHtml(b.symbols.slice(0,6).join(', '))+'</div>':''); }).join(''); }
 /* Pantalla CEREBRO Y VOZ: qué modelo piensa y qué voz habla, sin abrir nada. */
 async function pollBrain(){ const box=$('#hud-brain'); if(!box)return;
   const row=(k,v,col)=>'<div class="srow2"><span>'+k+'</span><b'+(col?' style="color:'+col+'"':'')+'>'+escapeHtml(String(v))+'</b></div>';
@@ -1187,6 +1219,69 @@ function renderDemo(results){ let h='<p class="role">Datos sintéticos. Así lee
   openInfo('▶ Resultado del demo',h); }
 
 /* ===================== VOZ ===================== */
+/* ===================== SONIDOS DE MÁQUINA =====================
+   Sintetizados con Web Audio: nada de archivos, nada que descargar, y funciona
+   sin conexión. El contexto de audio se crea en el primer gesto del usuario —
+   los navegadores no dejan sonar antes, y el clic para encender ES ese gesto. */
+let sfxOn=true, actx=null;
+try{ const sv=localStorage.getItem('hydra_sfx'); if(sv!==null) sfxOn=sv==='1'; }catch(e){}
+function ac(){ if(!sfxOn) return null;
+  try{ if(!actx) actx=new (window.AudioContext||window.webkitAudioContext)();
+       if(actx.state==='suspended') actx.resume();
+       return actx; }catch(e){ return null; } }
+/* un oscilador con envolvente y barrido de tono/filtro */
+function tone(o){ const c=ac(); if(!c) return;
+  const t0=c.currentTime+(o.at||0), dur=o.dur||0.4;
+  const osc=c.createOscillator(), g=c.createGain(), f=c.createBiquadFilter();
+  osc.type=o.type||'sine';
+  osc.frequency.setValueAtTime(o.f0, t0);
+  if(o.f1) osc.frequency.exponentialRampToValueAtTime(Math.max(1,o.f1), t0+dur);
+  f.type='lowpass';
+  f.frequency.setValueAtTime(o.c0||8000, t0);
+  if(o.c1) f.frequency.exponentialRampToValueAtTime(Math.max(60,o.c1), t0+dur);
+  const v=o.vol||0.2;
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(v, t0+(o.atk||0.02));
+  g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+  osc.connect(f); f.connect(g); g.connect(c.destination);
+  osc.start(t0); osc.stop(t0+dur+0.05); }
+/* ruido filtrado: el "aire" del arranque y del apagado */
+function whoosh(o){ const c=ac(); if(!c) return;
+  const dur=o.dur||0.8, n=Math.floor(c.sampleRate*dur);
+  const buf=c.createBuffer(1,n,c.sampleRate), d=buf.getChannelData(0);
+  for(let i=0;i<n;i++) d[i]=(Math.random()*2-1)*(1-i/n);
+  const src=c.createBufferSource(); src.buffer=buf;
+  const f=c.createBiquadFilter(), g=c.createGain();
+  const t0=c.currentTime+(o.at||0);
+  f.type='bandpass'; f.Q.value=1.2;
+  f.frequency.setValueAtTime(o.c0||300, t0);
+  f.frequency.exponentialRampToValueAtTime(Math.max(60,o.c1||3000), t0+dur);
+  g.gain.setValueAtTime(o.vol||0.12, t0);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+  src.connect(f); f.connect(g); g.connect(c.destination);
+  src.start(t0); }
+/* ENCENDIDO: golpe grave, el reactor subiendo de vueltas y un repique claro */
+function sfxBoot(){ if(!ac())return;
+  tone({f0:42,f1:70,dur:0.9,type:'sine',vol:0.32,atk:0.01});
+  whoosh({dur:1.3,c0:180,c1:5200,vol:0.10});
+  tone({f0:120,f1:660,dur:1.1,type:'sawtooth',vol:0.10,c0:400,c1:6000,atk:0.25});
+  tone({at:0.95,f0:880,dur:0.5,type:'sine',vol:0.16,atk:0.01});
+  tone({at:1.02,f0:1320,dur:0.6,type:'sine',vol:0.10,atk:0.01}); }
+/* PAUSA: dos notas que bajan y el filtro cerrándose. Sigue vivo, pero quieto. */
+function sfxPause(){ if(!ac())return;
+  tone({f0:520,dur:0.20,type:'square',vol:0.13,c0:2600,c1:900});
+  tone({at:0.16,f0:330,dur:0.34,type:'square',vol:0.13,c0:1800,c1:500});
+  whoosh({at:0.1,dur:0.5,c0:1800,c1:200,vol:0.06}); }
+/* APAGADO: pierde vueltas hasta morir, como al desenchufar la máquina */
+function sfxOff(){ if(!ac())return;
+  tone({f0:520,f1:38,dur:1.6,type:'sawtooth',vol:0.20,c0:4000,c1:120,atk:0.02});
+  tone({at:0.05,f0:260,f1:30,dur:1.7,type:'sine',vol:0.22,atk:0.02});
+  whoosh({dur:1.5,c0:2600,c1:90,vol:0.09}); }
+function sfxToggle(){ sfxOn=!sfxOn;
+  try{ localStorage.setItem('hydra_sfx',sfxOn?'1':'0'); }catch(e){}
+  const b=$('#b-sfx'); if(b) b.classList.toggle('on',sfxOn);
+  toast(sfxOn?'Sonidos activados':'Sonidos silenciados');
+  if(sfxOn) sfxPause(); }
 let esVoices=[], esVoice=null, speakOn=true, ttsServer=false, ttsAudio=null, SIR='Krauser', LANG='mix';
 function L(es,en){ return LANG==='en'?en:es; }   // 'mix' usa base español
 function voiceLang(){ return LANG==='en'?'en-US':'es-ES'; }
@@ -1271,7 +1366,7 @@ function speakStatus(){ if(!DATA){ speak('Aún cargando.'); return; } const c=DA
   const conn=c.connected?'conectado a cTrader':(c.oauth_ok?'esperando conexión':'sin cuenta conectada');
   speak('Modo '+(c.dry_run?'papel':'real')+', '+conn+'. Balance '+(c.balance!=null?c.balance:'desconocido')+'. '+act+' de '+DATA.agents.length+' agentes activos, '+SIR+'.'); }
 
-$('#activate').onclick=()=>{ booted=true; $('#boot').classList.add('hide'); setTimeout(()=>$('#boot').style.display='none',700);
+$('#activate').onclick=()=>{ booted=true; sfxBoot(); $('#boot').classList.add('hide'); setTimeout(()=>$('#boot').style.display='none',700);
   hudStart(); loadVoices(); speak(L('Sistemas en línea, '+SIR+'. Toca Oye Hydra cuando quieras activar el micrófono.','Systems online, '+SIR+'. Tap Oye Hydra to enable the mic.'));
   if(SR) setV('Toca 👂 Oye Hydra para activar la voz');
   if(!ttsServer) setTimeout(()=>toast('💡 Voz neural apagada (suena genérica). Actívala: fly secrets set TTS_PROVIDER=elevenlabs TTS_API_KEY=… ELEVENLABS_VOICE_ID=…'),2500); };

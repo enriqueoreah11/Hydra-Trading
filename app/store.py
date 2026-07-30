@@ -293,6 +293,25 @@ class Store:
         return {"id": r[0], "ts": r[1], "symbol": r[2], "timeframe": r[3],
                 "outcome": r[4], "score": r[5], "raw": raw}
 
+    def trade_context_active(self, minutes: float = 45) -> list[dict]:
+        """Qué bots han ANALIZADO algo hace poco, por su etiqueta.
+
+        Analizar deja rastro en trade_context aunque no se opere: es la señal de
+        que el bot está vivo y mirando, no solo cuando abre posición.
+        """
+        since = time.time() - max(1.0, minutes) * 60
+        rows = self.db.execute(
+            "SELECT COALESCE(NULLIF(TRIM(bot_label),''),'(sin etiqueta)') AS lbl, "
+            "COUNT(*), MAX(ts), "
+            "SUM(CASE WHEN outcome LIKE 'alerted%' THEN 1 ELSE 0 END), "
+            "GROUP_CONCAT(DISTINCT symbol) "
+            "FROM trade_context WHERE ts >= ? GROUP BY lbl ORDER BY MAX(ts) DESC",
+            (since,)).fetchall()
+        return [{"label": r[0], "seen": int(r[1]), "last_ts": r[2],
+                 "alerted": int(r[3] or 0),
+                 "symbols": [s for s in (r[4] or "").split(",") if s][:6]}
+                for r in rows]
+
     def trade_context_digest(self, hours: float = 24, symbol: str = "") -> dict:
         """Resumen digerible de lo que vio el bot, para meterlo en un prompt.
 
