@@ -1421,6 +1421,11 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
   // TRADE CONTEXT: orbe de memoria. Gira fuera del orbe, en un plano inclinado,
   // en sentido contrario a los agentes (por eso a veces pasa por detrás).
   const CTXO={sx:0,sy:0,depth:0.5,n:-1,pulse:-1e9,tilt:0.46};
+  /* El componente de memoria tiene que SOBREVIVIR entre cuadros: su caja de
+     colisión se guarda al dibujarlo y se consulta en el cuadro siguiente. Si se
+     recreara cada frame, el cursor nunca lo encontraría (y no hacía nada). */
+  const CTXMOD={key:'__ctx',name:'CONTEXT',rgb:'176,150,255',ctx:true,
+                role:'Memoria de decisiones',x:0,y:0,ang:0};
   async function pollCtx(){ try{ const d=await (await fetch('/trade-context?limit=1')).json();
       const t=(d.stats&&d.stats.total)|0; if(CTXO.n>=0&&t>CTXO.n) CTXO.pulse=performance.now(); CTXO.n=t;
       CTXCOUNT=t; renderHudSys();
@@ -1460,8 +1465,6 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     // COMPONENTES FIJOS: van soldados a la placa. La elipse (más ancha que alta)
     // aprovecha el hueco entre la cinta de arriba y el aviso de abajo, y deja los
     // laterales para las ventanas.
-    const CTXMOD={key:'__ctx',name:'CONTEXT',rgb:'176,150,255',ctx:true,
-                  role:'Memoria de decisiones'};
     const NA=A.length+1, arx=S*0.34, ary=S*0.195;
     for(let i=0;i<A.length;i++){ const a=A[i];
       a.ang=-Math.PI/2+(i+0.5)*Math.PI*2/NA;       // FIJO: sin el término del giro
@@ -1529,22 +1532,24 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     // conexiones de HYDRA (centro) → agentes. Base tenue + resaltado del agente señalado/abierto
     const hyHover=hoverKey==='__hydra';
     const hk=hoverC?'__ctx':hoverKey;      // el modulo de memoria cuenta como nodo
-    // Ya no hay radios rectos al centro: la conexión la hace la PISTA de cobre de
-    // cada componente. Al señalar uno (o el núcleo) su pista se enciende.
-    const litHydra=hyHover?RING.map(a=>a.key):[sel,hk].filter(Boolean);
-    if(litHydra.length) for(const a of RING){
-      if(litHydra.indexOf(a.key)>=0&&a.wire){
-        const w=a.wire; g.strokeStyle='rgba(190,250,255,0.85)'; g.lineWidth=2;
-        g.beginPath(); g.moveTo(w.pts[0].x,w.pts[0].y);
-        for(let i=1;i<w.pts.length;i++) g.lineTo(w.pts[i].x,w.pts[i].y);
-        g.stroke(); } }
-    // conexiones entre agentes (curvas); se iluminan al pasar el cursor o si el agente está abierto
-    for(const L of LINKS){ const a=byKey[L[0]], b=byKey[L[1]]; if(!a||!b) continue;
-      const hot=(hk&&(L[0]===hk||L[1]===hk))||(sel&&(L[0]===sel||L[1]===sel));
-      const cx=(a.x+b.x)/2+(CX-(a.x+b.x)/2)*0.42, cy=(a.y+b.y)/2+(CY-(a.y+b.y)/2)*0.42;
-      g.strokeStyle=hot?'rgba(127,246,255,0.85)':'rgba(90,150,180,0.05)'; g.lineWidth=hot?1.7:1;
-      g.beginPath(); g.moveTo(a.x,a.y); g.quadraticCurveTo(cx,cy,b.x,b.y); g.stroke();
-      if(hot){ const p=qpt([a.x,a.y],[cx,cy],[b.x,b.y],(now*0.0006)%1); g.fillStyle='rgba(190,250,255,1)'; g.beginPath(); g.arc(p[0],p[1],2.2,0,7); g.fill(); } }
+    /* Sin líneas nuevas cruzando la placa: para enseñar QUÉ está conectado CON QUÉ
+       se encienden en BLANCO las pistas que ya existen — la del componente
+       señalado, y las de aquellos con los que trabaja (LINKS). */
+    let lit=null, focus=[sel,hk].filter(Boolean);
+    if(hyHover) lit=RING.map(a=>a.key);              // el núcleo enciende todas
+    else if(focus.length){ lit=focus.slice();
+      focus.forEach(k=>LINKS.forEach(L=>{
+        if(L[0]===k&&lit.indexOf(L[1])<0) lit.push(L[1]);
+        if(L[1]===k&&lit.indexOf(L[0])<0) lit.push(L[0]); })); }
+    if(lit) for(const a of RING){ const i=lit.indexOf(a.key);
+      if(i<0||!a.wire) continue;
+      const own=focus.indexOf(a.key)>=0;             // el señalado, más brillante
+      const w=a.wire;
+      g.shadowColor='rgba(255,255,255,1)'; g.shadowBlur=own?10:5;
+      g.strokeStyle='rgba(255,255,255,'+(own?0.95:0.55)+')'; g.lineWidth=own?2.2:1.6;
+      g.beginPath(); g.moveTo(w.pts[0].x,w.pts[0].y);
+      for(let j=1;j<w.pts.length;j++) g.lineTo(w.pts[j].x,w.pts[j].y);
+      g.stroke(); g.shadowBlur=0; }
     // MÓDULOS: componentes soldados a la placa. Caja alineada, pines hacia el chip
     // y una pista que llega hasta ellos, igual que las ventanas.
     const CW=Math.max(62,Math.min(96,S*0.115)), CH=Math.max(24,Math.min(34,S*0.040));
