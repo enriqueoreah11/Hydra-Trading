@@ -266,8 +266,6 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     </div>
     <div class="slbl">CONEXIÓN Y CONFIGURACIÓN</div>
     <div id="sys-info"></div>
-    <div class="slbl">🤖 MIS BOTS DE CTRADER (.algo)</div>
-    <div id="sys-bots"></div>
     <div class="slbl">📈 INSTRUMENTOS Y ESTRATEGIAS</div>
     <div id="sys-watch"></div>
     <div class="slbl">🔑 CLAVES (API KEYS)</div>
@@ -414,7 +412,7 @@ function banner(c){ const b=$('#banner'); let m='';
 function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('show'); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),3800); }
 
 $('#b-refresh').onclick=()=>{ toast('Datos actualizados'); load(); }; $('#b-halt').onclick=doHalt; $('#b-demo').onclick=runDemo; $('#b-cal').onclick=openCalendar;
-$('#b-sistema').onclick=()=>{ renderSysInfo(); renderBots(); renderWatch(); renderSecrets(); renderVault(); renderProps(); renderFleet(); $('#sistema').classList.add('open'); };
+$('#b-sistema').onclick=()=>{ renderSysInfo(); renderWatch(); renderSecrets(); renderVault(); renderProps(); renderFleet(); $('#sistema').classList.add('open'); };
 /* ------- BOTS DE CTRADER: se importan sus parametros del .algo ------- */
 /* El aviso de los dibujos, honesto. Antes decia "lee dibujos a mano" siempre que
    el bot TUVIERA esos parametros; en modo automatico eso es falso, y en combinado
@@ -433,7 +431,7 @@ function chartNote(b){ const n=(b.chart_bound||[]).length, m=b.chart_mode||'desc
     +'): eso no existe fuera de cTrader y ninguna réplica lo iguala.</div>'; }
 
 let BOTSEL='', BOTQ='';
-async function renderBots(){ const box=$('#sys-bots'); if(!box)return;
+async function renderBots(tgt){ const box=$(tgt||'#mb-work'); if(!box)return;
   let d; try{ d=await (await fetch('/algo/bots')).json(); }
   catch(e){ box.innerHTML='<div class="empty">No disponible. ¿Falta reiniciar?</div>'; return; }
   const bots=d.bots||[];
@@ -503,6 +501,10 @@ async function algoDir(){ const box=$('#algo-dir'); if(!box)return;
   if(d.dir) h+='<div class="phelp" style="color:'+(d.exists?'#34d399':'#ff5d73')+'">'
     +(d.exists?('✅ '+d.n_found+' archivos .algo en la carpeta'):'❌ esa carpeta no existe')+'</div>';
   if(d.exists) h+='<div id="algo-pick"></div>'
+    +'<div class="ssec" style="margin:6px 0">'
+    +'<button class="btn ghost" style="padding:5px 10px" onclick="mbScan()">⟳ Refrescar los míos</button>'
+    +'<button class="btn ghost" style="padding:5px 10px" onclick="botsLive()">📊 Qué opera cada bot</button>'
+    +'</div>'
     +'<div class="phelp" style="opacity:.75">Los que elijas quedan guardados y se refrescan solos cada '
     +(d.watch_minutes||10)+' min al recompilarlos. Si de verdad los quieres TODOS: '
     +'<span style="cursor:pointer;text-decoration:underline" onclick="algoScan()">importar la carpeta entera</span>.</div>'
@@ -613,38 +615,44 @@ async function botsLive(tgt){ const box=$(tgt||'#bots-live'); if(!box)return;
    de mando — quién está vivo, qué hace cada uno, qué entiende Hydra de él y si
    sus señales coinciden. El trabajo fino (los 297 parámetros, importar a mano)
    sigue en el taller de SISTEMA para no duplicar nada. */
-let MBSEL='', MBSEQ=0;
-function mbOpen(f){ MBSEL=(MBSEL===f?'':f); BOTSEL=MBSEL; renderBotsPanel(); }
-function openSysBots(){ const b=$('#b-sistema'); if(b) b.click();
-  setTimeout(()=>{ const el=$('#sys-bots'); if(el&&el.scrollIntoView) el.scrollIntoView({block:'start',behavior:'smooth'}); },280); }
-async function mbScan(){ const box=$('#mb-scan'); if(box) box.textContent=L('Refrescando los bots elegidos…','Refreshing the bots you picked…');
+let MBSEQ=0;
+/* Ir a una seccion de ESTA ventana. La configuracion de los bots ya no vive en
+   Configuracion: alli solo queda lo general de la app. */
+function mbGo(id){ const el=$(id); if(el&&el.scrollIntoView) el.scrollIntoView({block:'start',behavior:'smooth'}); }
+async function mbScan(){ const box=$('#algo-scan'); if(box) box.textContent=L('Refrescando los bots elegidos…','Refreshing the bots you picked…');
   // refresh, NO scan: aqui no se importa la carpeta entera a tus espaldas
   let d; try{ d=await (await fetch('/algo/refresh',{method:'POST'})).json(); }
   catch(e){ if(box) box.textContent='Error de red.'; return; }
   if(!d.ok){ if(box){ box.style.color='#fbbf24'; box.textContent=d.error||''; } return; }
   const n=(d.added||[]).length+(d.updated||[]).length;
   toast(n?(n+' bots actualizados'):'Sin cambios');
-  renderBotsPanel(); }
+  if(box) box.textContent=n?(n+' actualizados'):'Ninguno había cambiado.';
+  if(n) renderBots(); }
 async function openBots(){ selected=null;
   panelIcon('__bots','🧩'); $('#d-name').textContent='BOTS · '+L('estrategias','strategies');
-  $('#d-role').textContent=L('Ejecución, análisis y prueba de tus cBots','Execution, analysis and testing of your cBots');
+  $('#d-role').textContent=L('Tus cBots y los indicadores de Hydra','Your cBots and Hydra\'s indicators');
   $('#d-body').innerHTML='<div class="empty">'+L('Leyendo tus bots…','Reading your bots…')+'</div>';
   $('#drawer').classList.add('open');
   renderBotsPanel();
   speak(BOTLIVE.n?L(BOTLIVE.n+' bots activos.',BOTLIVE.n+' bots active.')
                  :L('Ningún bot activo ahora mismo.','No bots active right now.')); }
+/* La ventana de BOTS es el sitio ENTERO de los bots: quien esta vivo, la carpeta y
+   los que elegiste (con sus parametros), y los indicadores de Hydra. El armazon se
+   pinta de una vez y cada trozo se rellena solo, para que un fallo de red en uno no
+   deje la ventana en blanco. */
 async function renderBotsPanel(){ const seq=++MBSEQ;
-  let live={},bots={},dir={};
+  let live={};
   try{ live=await (await fetch('/bots/active?minutes=45')).json(); }catch(e){}
-  try{ bots=await (await fetch('/algo/bots')).json(); }catch(e){}
-  try{ dir=await (await fetch('/algo/dir')).json(); }catch(e){}
   const box=$('#d-body');
   // si mientras se pedían los datos se abrió OTRA cosa, no se pisa su panel
   if(!box||seq!==MBSEQ||$('#d-name').textContent.indexOf('BOTS')!==0) return;
-  const bs=live.bots||[], list=bots.bots||[];
-  let h='';
-  // 1) QUIÉN ESTÁ VIVO AHORA
-  h+='<div class="slbl" style="margin:2px 0 4px">'+L('EN MARCHA AHORA','RUNNING NOW')+'</div>';
+  const bs=live.bots||[];
+  let h='<div class="ssec" style="margin:0 0 10px">'
+    +'<button class="btn ghost" style="padding:5px 10px" onclick="mbGo(\'#mb-live\')">▶ '+L('En marcha','Running')+'</button>'
+    +'<button class="btn ghost" style="padding:5px 10px" onclick="mbGo(\'#mb-work\')">🤖 '+L('Mis bots','My bots')+'</button>'
+    +'<button class="btn ghost" style="padding:5px 10px" onclick="mbGo(\'#mb-ind\')">📐 '+L('Indicadores','Indicators')+'</button>'
+    +'</div>';
+  h+='<div id="mb-live"><div class="slbl" style="margin:2px 0 4px">'+L('EN MARCHA AHORA','RUNNING NOW')+'</div>';
   if(!bs.length) h+='<div class="empty">'+L('Ninguno operando ni analizando en los últimos 45 minutos.','None trading or analysing in the last 45 minutes.')+'</div>';
   else bs.forEach(b=>{ const op=b.open>0, col=op?'#34d399':'#5ad1e6';
     h+='<div class="wrow" style="border-left:2px solid '+col+';padding-left:8px">'
@@ -655,40 +663,48 @@ async function renderBotsPanel(){ const seq=++MBSEQ;
       +' · '+ctxAgo(b.last_ts)+'</span>'
       +((b.symbols||[]).length?'<span class="phelp" style="margin:0;display:block">'+escapeHtml(b.symbols.slice(0,6).join(', '))+'</span>':'')
       +'</span></div>'; });
-  // 2) LOS BOTS LEÍDOS DE LA CARPETA
-  h+='<div class="slbl" style="margin:14px 0 4px">'+L('TUS BOTS','YOUR BOTS')+' ('+list.length+')</div>';
-  if(!list.length) h+='<div class="empty">'+L('Todavía no he leído ningún .algo. Mira la carpeta, abajo.','No .algo read yet. Check the folder, below.')+'</div>';
-  list.forEach(b=>{ const on=MBSEL===b.file;
-    h+='<div class="wrow" style="cursor:pointer" onclick="mbOpen(\''+b.file+'\')">'
-      +'<span class="wsym" style="min-width:auto;max-width:56%">'+(on?'▾ ':'▸ ')+escapeHtml(String(b.name))+'</span>'
-      +'<span class="phelp" style="margin:0 0 0 auto;text-align:right">'+b.n_params+' '+L('parámetros','parameters')
-      +'<br>'+(b.can_report?'<span style="color:#34d399">'+L('puede reportar','can report')+'</span>'
-                          :'<span style="color:#8aa">'+L('se sigue por etiqueta','tracked by label')+'</span>')+'</span></div>';
-    h+=chartNote(b);
-    if(on) h+='<div class="ssec" style="margin:6px 0 2px">'
-      +'<button class="btn" onclick="botExplain(false,\'#mb-expl\')">🧠 '+L('Explícame la estrategia','Explain the strategy')+'</button>'
-      +'<button class="btn ghost" onclick="botExplain(true,\'#mb-expl\')">↻ '+L('Rehacer','Redo')+'</button>'
-      +'<button class="btn ghost" onclick="replicaRun(\'#mb-repl\')">⚖️ '+L('¿La replica Hydra?','Does Hydra replicate it?')+'</button>'
-      +'<button class="btn ghost" onclick="openSysBots()">🔧 '+L('Ver los parámetros','See the parameters')+'</button>'
-      +'</div><div id="mb-expl"></div><div id="mb-repl"></div>'; });
-  // 3) DE DÓNDE SALEN: la carpeta fija
-  h+='<div class="slbl" style="margin:14px 0 4px">'+L('CARPETA FIJA','PINNED FOLDER')+'</div>';
-  h+='<div class="phelp"><code>'+escapeHtml(String(dir.dir||'—'))+'</code>'
-    +(dir.exists?(' · '+dir.n_found+' .algo'):' · <span style="color:#ff5d73">'+L('no existe','missing')+'</span>')+'</div>';
-  h+='<div class="phelp">'+L('Los bots que elegiste se refrescan solos cada '+(dir.watch_minutes||10)+' minutos, así que al recompilarlos no hay que hacer nada. Los NUEVOS se añaden a mano, de uno en uno, para no llenar esto con la carpeta entera.',
-                             'The bots you picked refresh on their own every '+(dir.watch_minutes||10)+' minutes, so recompiling needs no action. NEW ones are added by hand, one at a time, so this does not fill up with the whole folder.')+'</div>';
-  if(dir.last_result) h+='<div class="phelp">'+L('Último repaso','Last pass')+': '
-    +dir.last_result.added+' '+L('nuevos','new')+' · '+dir.last_result.updated+' '+L('actualizados','updated')
-    +' · '+dir.last_result.unchanged+' '+L('sin cambios','unchanged')
-    +(dir.last_result.failed?' · <span style="color:#ff5d73">'+dir.last_result.failed+' '+L('con error','failed')+'</span>':'')
-    +(dir.last_scan?' · '+ctxAgo(dir.last_scan):'')+'</div>';
-  h+='<div class="ssec" style="margin:6px 0">'
-    +'<button class="btn ghost" onclick="mbScan()">⟳ '+L('Refrescar los míos','Refresh mine')+'</button>'
-    +'<button class="btn ghost" onclick="openSysBots()">＋ '+L('Añadir un bot','Add a bot')+'</button>'
-    +'<button class="btn ghost" onclick="botsLive(\'#mb-acct\')">📊 '+L('Qué opera cada bot en la cuenta','What each bot trades in the account')+'</button>'
-    +'<button class="btn ghost" onclick="openSysBots()">🔧 '+L('Taller completo','Full workshop')+'</button>'
-    +'</div><div id="mb-scan" class="phelp"></div><div id="mb-acct"></div>';
+  h+='</div>';
+  // la carpeta y tus bots: los pinta renderBots, que es quien sabe de esto
+  h+='<div id="mb-work"><div class="empty">'+L('Cargando…','Loading…')+'</div></div>';
+  h+='<div id="mb-ind"></div>';
+  box.innerHTML=h;
+  renderBots('#mb-work');
+  renderInd(); }
+/* ------- INDICADORES DE HYDRA: EMA, SMA, RSI, ATR y el R:R -------
+   Son los de SUS estrategias, no los del cBot: por eso van aqui, al lado de los
+   bots, y se dice claramente en que manda cada cosa. */
+let INDSEL='';
+async function renderInd(){ const box=$('#mb-ind'); if(!box)return;
+  let d; try{ d=await (await fetch('/strategies/params')).json(); }
+  catch(e){ box.innerHTML=''; return; }
+  const list=d.strategies||[];
+  let h='<div class="slbl" style="margin:16px 0 4px">'+L('INDICADORES DE HYDRA','HYDRA INDICATORS')+'</div>'
+    +'<div class="phelp">'+L('Estos son los indicadores de las estrategias de <b>Hydra</b> (EMA, SMA, RSI, ATR y el riesgo:beneficio), no los de tu cBot. Mandan en la flota de pruebas nueva y en la medición de réplica; los brazos ya creados conservan los suyos para poder comparar.',
+                             'These are the indicators of <b>Hydra</b>\'s own strategies (EMA, SMA, RSI, ATR and risk:reward), not your cBot\'s. They rule new test arms and the replica measurement; existing arms keep theirs so comparisons stay valid.')+'</div>';
+  list.forEach(st=>{ const on=INDSEL===st.id;
+    h+='<div class="wrow" style="cursor:pointer" onclick="indOpen(\''+st.id+'\')">'
+      +'<span class="wsym" style="min-width:auto;max-width:64%">'+(on?'▾ ':'▸ ')+escapeHtml(String(st.label))+'</span>'
+      +'<span class="phelp" style="margin:0 0 0 auto">'+st.params.length+' '+L('ajustes','settings')+'</span></div>';
+    if(on){ h+='<div style="padding:2px 2px 8px">';
+      st.params.forEach(p=>{ const rng=(p.min!=null&&p.max!=null)?(p.min+'…'+p.max):'';
+        h+='<div class="prm"><label>'+escapeHtml(p.name)+(rng?' <span class="phelp" style="margin:0">('+rng+')</span>':'')+'</label>'
+          +'<input data-i="'+p.name+'" value="'+escapeHtml(String(p.value))+'" style="text-transform:none">'
+          +(p.help?'<div class="phelp" style="margin:2px 0 0">'+escapeHtml(p.help)+'</div>':'')+'</div>'; });
+      h+='<button class="btn" onclick="indSave(\''+st.id+'\')">'+L('Guardar','Save')+'</button>'
+        +'<span class="phelp" id="ind-out" style="margin-left:8px"></span></div>'; } });
   box.innerHTML=h; }
+function indOpen(id){ INDSEL=(INDSEL===id?'':id); renderInd(); }
+async function indSave(id){ const body={};
+  document.querySelectorAll('#mb-ind [data-i]').forEach(el=>{ body[el.getAttribute('data-i')]=el.value; });
+  let d; try{ d=await (await fetch('/strategies/params',{method:'POST',
+        headers:{'content-type':'application/json'},
+        body:JSON.stringify({strategy:id,params:body})})).json(); }
+  catch(e){ toast('Error de red.'); return; }
+  if(!d.ok){ toast(d.error||'No pude guardar'); return; }
+  // se muestran los valores TAL COMO QUEDARON: si algo se recorto al rango, se ve
+  toast(L('Indicadores guardados','Indicators saved'));
+  const out=$('#ind-out'); if(out) out.textContent=JSON.stringify(d.params);
+  renderInd(); }
 /* Explicación de la estrategia: sirve para comprobar si el sistema la entendió. */
 async function botExplain(redo,tgt){ const box=$(tgt||'#bot-expl'); if(!box||!BOTSEL)return;
   box.innerHTML='<div class="empty">Leyendo los parámetros y redactando… (una vez, luego queda guardado)</div>';
@@ -936,13 +952,24 @@ async function renderVoice(){ const el=$('#sys-voice'); if(!el) return;
     +opt('','🌐 Navegador','La voz del sistema. Gratis.')
     +opt('voicebox','🎙️ Voicebox','Voz local clonada. Gratis, sin API key.')
     +opt('elevenlabs','☁️ ElevenLabs','De pago, requiere API key.')+'</div>';
-  if(!d.running) h+='<div class="phelp" style="color:#fbbf24">Voicebox no responde en '+escapeHtml(d.url||'')+'. <b>La app debe estar abierta</b> — el servidor corre dentro de ella.</div>';
+  if(!d.running) h+='<div class="phelp" style="color:#fbbf24">Voicebox no responde en '+escapeHtml(d.url||'')
+    +'. <b>El servidor de voz vive dentro de la app</b>: con la app cerrada Hydra habla con la voz del navegador '
+    +'aunque la configuración esté bien. Por eso «no usa tu voz».</div>'
+    +'<button class="btn" onclick="voiceStart()">▶ Abrir Voicebox</button><div id="vb-out" class="phelp"></div>';
   else { h+='<div class="phelp" style="color:#34d399">Voicebox activo ✅ — voz local, gratis e ilimitada.</div>';
     const pr=d.profiles||[];
     if(pr.length) h+='<div class="prm"><label>Voz</label><select onchange="setVoice(\''+P+'\',this.value)">'
       +pr.map(p=>'<option'+(p.name===d.selected?' selected':'')+'>'+escapeHtml(p.name)+'</option>').join('')+'</select>'
       +'<div class="phelp">'+pr.map(p=>escapeHtml(p.name)+' ('+escapeHtml(p.language||'?')+')').join(' · ')+'</div></div>'; }
   el.innerHTML=h; }
+/* Abrir la app desde aqui: es el motivo numero uno de "configure la voz y no la usa". */
+async function voiceStart(){ const out=$('#vb-out');
+  if(out) out.textContent=L('Abriendo Voicebox… (tarda unos segundos)','Opening Voicebox… (takes a few seconds)');
+  let d; try{ d=await (await fetch('/voice/local/start',{method:'POST'})).json(); }
+  catch(e){ if(out) out.textContent='Error de red.'; return; }
+  if(!d.ok){ if(out){ out.style.color='#ff5d73'; out.textContent=d.error||'No pude abrirla.'; } return; }
+  if(out){ out.style.color='#34d399'; out.textContent=d.already?L('Ya estaba abierta.','It was already open.'):(d.msg||''); }
+  renderVoice(); setTimeout(()=>speak(L('Ya me oyes con mi voz, '+SIR+'.','You can hear my real voice now, '+SIR+'.')),600); }
 async function setVoice(p,prof){ let r; try{ r=await fetch('/voice/local',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:p,profile:prof||undefined})}); }catch(e){ toast('Error de red'); return; }
   if(r.ok){ ttsServer=(p!==''); toast(p==='voicebox'?'Voz local ✓ (gratis)':(p?'Voz: '+p:'Voz del navegador'));
     renderVoice(); setTimeout(()=>speak(L('Listo '+SIR+', esta es mi voz.','Ready '+SIR+', this is my voice.')),400); }

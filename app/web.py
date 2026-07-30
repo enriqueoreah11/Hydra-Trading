@@ -169,6 +169,17 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
     # el vigilante de esa carpeta: cada cuánto vuelve a mirar y qué vio la última vez
     _ALGO_WATCH_MIN = 10
     _algo_watch: dict = {"last": None, "result": None}
+    # parámetros de los indicadores de Hydra (EMA, SMA, RSI, ATR, R:R…), editados
+    # desde la ventana de BOTS. Se meten DENTRO de strategies.DEFAULTS para que los
+    # lean todos los que ya lo consultan (flota, réplica, panel) sin tocar nada más.
+    try:
+        from . import strategies as _st_boot
+        _sp = json.loads((settings.data_path / "strategy_params.json").read_text())
+        for _k, _v2 in (_sp or {}).items():
+            if _k in _st_boot.DEFAULTS and isinstance(_v2, dict):
+                _st_boot.DEFAULTS[_k] = _st_boot.clamp(_k, {**_st_boot.DEFAULTS[_k], **_v2})
+    except Exception:  # noqa: BLE001
+        pass
     # instrumentos vigilados y su estrategia asignada, editados desde la UI
     _watch: dict = {"symbols": [], "assign": {}}
     try:
@@ -210,6 +221,27 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         except Exception:  # noqa: BLE001 - nunca debe tumbar el arranque
             import logging
             logging.getLogger("web").warning("ollama autostart falló", exc_info=True)
+
+    @app.on_event("startup")
+    async def _autostart_voicebox():
+        """Si la voz elegida es Voicebox, se abre la app al arrancar.
+
+        Sin esto, con la app cerrada la voz cae a la del navegador y no hay ninguna
+        pista de por qué: la configuración estaba bien, faltaba abrirla.
+        """
+        if settings.tts_provider != "voicebox":
+            return
+        import logging
+        lg = logging.getLogger("web")
+        try:
+            from . import tts as tts_mod
+            from . import voicebox_boot
+            if await tts_mod.voicebox_profiles() is not None:
+                return
+            ok, msg = await asyncio.to_thread(voicebox_boot.start)
+            lg.info("voicebox autostart: %s", msg)
+        except Exception:  # noqa: BLE001 - nunca debe tumbar el arranque
+            lg.warning("voicebox autostart falló", exc_info=True)
 
     @app.on_event("startup")
     async def _watch_algo_dir():
@@ -415,6 +447,24 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                 "provider": settings.tts_provider,
                 "profiles": profiles or [], "selected": settings.voicebox_profile,
                 "url": settings.voicebox_url}
+
+    @app.post("/voice/local/start")
+    async def voice_local_start():
+        """Abre Voicebox. El servidor de voz vive dentro de la app: si está cerrada
+        no hay voz, y Hydra cae a la del navegador sin que se sepa por qué."""
+        from . import tts as tts_mod
+        from . import voicebox_boot
+        if await tts_mod.voicebox_profiles() is not None:
+            return {"ok": True, "already": True, "msg": "Voicebox ya estaba abierta"}
+        ok, msg = await asyncio.to_thread(voicebox_boot.start)
+        if not ok:
+            return JSONResponse({"ok": False, "error": msg}, status_code=400)
+        for _ in range(20):                 # hasta ~10 s: la app tarda en abrir
+            await asyncio.sleep(0.5)
+            if await tts_mod.voicebox_profiles() is not None:
+                return {"ok": True, "msg": msg}
+        return {"ok": False, "error": msg + ", pero su servidor aún no responde. "
+                                            "Ábrela a mano y mira que esté activa."}
 
     @app.post("/voice/local")
     async def voice_local_set(request: Request):
@@ -1195,6 +1245,71 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         if not res.get("ok"):
             return JSONResponse(res, status_code=400)
         return res
+
+    # ------------------------------------ indicadores propios de Hydra (EMA/SMA/…)
+
+    _IND_HELP = {
+        "ema_fast": "EMA rápida: el gatillo.",
+        "ema_slow": "EMA lenta: con quién se cruza la rápida.",
+        "sma_trend": "SMA de fondo: decide de qué lado se puede operar.",
+        "touch_atr": "Cuánta holgura (en ATR) cuenta como «tocar» la media.",
+        "lookback": "Velas del canal de ruptura.",
+        "rsi_period": "Periodo del RSI.",
+        "rsi_low": "RSI por debajo = sobreventa.",
+        "rsi_high": "RSI por encima = sobrecompra.",
+        "burst_bars": "Velas en las que se mide el impulso.",
+        "burst_atr": "Cuántos ATR de movimiento cuentan como impulso.",
+        "atr_mult": "Stop loss en múltiplos de ATR.",
+        "rr": "Riesgo:beneficio del objetivo.",
+    }
+
+    @app.get("/strategies/params")
+    async def strategies_params_get():
+        """Los indicadores de Hydra con su valor, su rango y para qué sirven."""
+        from . import strategies as st2
+        out = []
+        for name, params in st2.DEFAULTS.items():
+            rng = st2.TUNABLE.get(name, {})
+            out.append({"id": name, "label": _STRAT_LABEL.get(name, name),
+                        "params": [{"name": k, "value": v,
+                                    "min": rng.get(k, (None, None))[0],
+                                    "max": rng.get(k, (None, None))[1],
+                                    "help": _IND_HELP.get(k, "")}
+                                   for k, v in params.items()]})
+        return {"ok": True, "strategies": out}
+
+    @app.post("/strategies/params")
+    async def strategies_params_set(request: Request):
+        """Cambia los indicadores. Se recortan al rango permitido y se guardan.
+
+        Ojo con lo que NO hace: los brazos de la flota que ya existen conservan los
+        suyos (por eso se puede comparar). Esto manda en lo que se cree de aquí en
+        adelante y en la medición de réplica.
+        """
+        from . import strategies as st2
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        name = str(body.get("strategy") or "")
+        if name not in st2.DEFAULTS:
+            return JSONResponse({"ok": False, "error": "esa estrategia no existe"},
+                                status_code=400)
+        st2.DEFAULTS[name] = st2.clamp(name, {**st2.DEFAULTS[name],
+                                              **(body.get("params") or {})})
+        try:
+            f = settings.data_path / "strategy_params.json"
+            allp = {}
+            if f.is_file():
+                allp = json.loads(f.read_text()) or {}
+            allp[name] = st2.DEFAULTS[name]
+            f.write_text(json.dumps(allp, ensure_ascii=False, indent=1))
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": f"no pude guardar: {exc}"},
+                                status_code=500)
+        store.log("system", "strategy_params",
+                  f"{name}: {json.dumps(st2.DEFAULTS[name], ensure_ascii=False)}")
+        return {"ok": True, "strategy": name, "params": st2.DEFAULTS[name]}
 
     @app.post("/algo/refresh")
     async def algo_refresh():
