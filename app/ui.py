@@ -56,25 +56,17 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 #vstatus{font-size:11px;color:#7ff6ff;background:#06131fcc;border:1px solid #17495d;border-radius:99px;padding:4px 11px;max-width:38vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:none}
 #vstatus b{color:#dffaff}
 /* BOOT */
-#boot{position:fixed;inset:0;z-index:60;background:radial-gradient(900px 700px at 50% 45%,#08202f,#03060c 70%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;transition:opacity .7s}
-#boot.hide{opacity:0;pointer-events:none}
-#boot .bt{font-weight:800;letter-spacing:10px;font-size:38px;color:#5f7387;transition:color .3s,text-shadow .3s}
+/* La pantalla de inicio NO tapa nada: la placa se ve detrás, apagada, y el icono
+   con los ojos rojos lo dibuja el propio lienzo en su sitio definitivo. Aquí solo
+   queda una zona de clic invisible — así al encender no hay ningún salto. */
+#boot{position:fixed;inset:0;z-index:60;background:0;transition:opacity .7s;pointer-events:none}
+#boot.hide{opacity:0}
 @keyframes spin{to{transform:rotate(360deg)}}
-/* APAGADO: el cuerpo en gris y los ojos en rojo en espera. El icono ES el botón,
-   no hay ningún texto más que el nombre. */
-#activate{cursor:pointer;background:0;border:0;padding:0;line-height:0;
-  transition:transform .3s var(--ease-out),filter .3s}
-#activate svg{width:min(148px,34vw);height:auto;filter:drop-shadow(0 0 14px #ff2b3f55)}
-#activate .body{fill:#2a3946;transition:fill .3s}
-#activate .eyes{fill:#ff1028;animation:standby 2.4s ease-in-out infinite}
-@keyframes standby{0%,100%{opacity:.45}50%{opacity:1}}
-#activate:active{transform:scale(.96)}
-@media(hover:hover) and (pointer:fine){
-  #activate:hover{transform:scale(1.05);filter:drop-shadow(0 0 26px #ffc40088)}
-  #activate:hover .body{fill:#7ff6ff}
-  #activate:hover .eyes{fill:#ffc400;animation:none;opacity:1}
-  #boot:has(#activate:hover) .bt{color:#dffaff;text-shadow:0 0 26px #38e6ff}
-}
+/* pointer-events:none a proposito: el raton tiene que llegar al LIENZO para que la
+   cara reaccione al pasar por encima. El clic lo recoge el lienzo y dispara este
+   boton, que sigue existiendo para poder encender con el teclado. */
+#activate{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;
+  background:0;border:0;padding:0;font:inherit;color:transparent}
 /* DRAWER */
 #drawer{position:fixed;top:0;right:0;height:100%;width:min(440px,94vw);z-index:30;background:linear-gradient(180deg,#06121cf5,#04080ef5);border-left:1px solid #12414f;box-shadow:-20px 0 60px #000b;transform:translateX(105%);transition:transform .42s var(--ease-drawer);display:flex;flex-direction:column}
 #drawer.open{transform:none}
@@ -236,13 +228,7 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 <canvas id="wave"></canvas>
 
 <div id="boot">
-  <button id="activate" title="Encender Hydra" aria-label="Encender Hydra">
-    <svg viewBox="0 0 120 120">
-      <g class="body"><path fill-rule="evenodd" d="M60 5 L107.6 32.5 L107.6 87.5 L60 115 L12.4 87.5 L12.4 32.5 Z M60 17.6 L96.7 38.8 L96.7 81.2 L60 102.4 L23.3 81.2 L23.3 38.8 Z"/><path d="M60 23 L65 34.5 L60 41.5 L55 34.5 Z"/><path d="M27.5 62.5 L38 67 L38 78.5 L27.5 72 Z"/><path d="M92.5 62.5 L82 67 L82 78.5 L92.5 72 Z"/><path d="M42 62 L78 62 L78 67.5 L71.5 84 L67 68.5 L63.5 74 L60 67.5 L56.5 74 L53 68.5 L48.5 84 L42 67.5 Z"/><path d="M52 87 L56.5 81.5 L60 85.5 L63.5 81.5 L68 87 L60 96.5 Z"/></g>
-      <g class="eyes"><path d="M26.5 40.5 L54 55 L54 59 L26.5 49 Z"/><path d="M93.5 40.5 L66 55 L66 59 L93.5 49 Z"/></g>
-    </svg>
-  </button>
-  <div class="bt">HYDRA</div>
+  <button id="activate" title="Encender Hydra" aria-label="Encender Hydra"></button>
 </div>
 
 <div id="top">
@@ -251,7 +237,6 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
   </svg> HYDRA</span>
   <span id="vstatus"></span>
   <span class="spacer"></span>
-  <button class="btn ghost" id="b-sistema" title="Sistema: voz, acciones y configuración">⚙ SISTEMA</button>
 </div>
 
 <div id="sistema">
@@ -331,7 +316,8 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     <div class="sysact">
       <button class="btn ghost" id="hud-halt" onclick="doHalt()">&#9208; HALT</button>
       <button class="btn ghost" onclick="openTradeContext()">&#128452; CONTEXT</button>
-      <button class="btn ghost" onclick="$('#b-sistema').click()">&#9881; TODO</button>
+      <button class="btn ghost" onclick="openCalendar()">&#128197; CALENDARIO</button>
+      <button class="btn ghost" id="b-sistema" title="Voz, claves, instrumentos y flota">&#9881; SISTEMA</button>
     </div>
   </div>
 </div>
@@ -348,6 +334,7 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 <script>
 const $=s=>document.querySelector(s);
 let DATA=null, selected=null, halted=false;
+let booted=false;                // false = placa apagada (pantalla de inicio)
 let OPENSYMS=new Set();          // pares con posición abierta (se marcan en verde)
 let INSTR=[];                    // precios de /instruments
 let RING3S=[];                   // el anillo exterior tal como se dibuja
@@ -1100,7 +1087,7 @@ function speakStatus(){ if(!DATA){ speak('Aún cargando.'); return; } const c=DA
   const conn=c.connected?'conectado a cTrader':(c.oauth_ok?'esperando conexión':'sin cuenta conectada');
   speak('Modo '+(c.dry_run?'papel':'real')+', '+conn+'. Balance '+(c.balance!=null?c.balance:'desconocido')+'. '+act+' de '+DATA.agents.length+' agentes activos, '+SIR+'.'); }
 
-$('#activate').onclick=()=>{ $('#boot').classList.add('hide'); setTimeout(()=>$('#boot').style.display='none',700);
+$('#activate').onclick=()=>{ booted=true; $('#boot').classList.add('hide'); setTimeout(()=>$('#boot').style.display='none',700);
   hudStart(); loadVoices(); speak(L('Sistemas en línea, '+SIR+'. Toca Oye Hydra cuando quieras activar el micrófono.','Systems online, '+SIR+'. Tap Oye Hydra to enable the mic.'));
   if(SR) setV('Toca 👂 Oye Hydra para activar la voz');
   if(!ttsServer) setTimeout(()=>toast('💡 Voz neural apagada (suena genérica). Actívala: fly secrets set TTS_PROVIDER=elevenlabs TTS_API_KEY=… ELEVENLABS_VOICE_ID=…'),2500); };
@@ -1463,7 +1450,8 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
   function openHydra(){ const names=(DATA?DATA.agents:[]).map(a=>a.emoji+' '+a.name).join(' · ');
     openInfo('🐉 HYDRA · orquestador','<p class="role">El núcleo que coordina a todos los agentes: recibe sus señales, decide y ejecuta como un solo cerebro.</p><div class="empty">Controla a: '+names+'</div>');
     speak('Hydra en línea, '+SIR+'. Coordino a los '+(DATA?DATA.agents.length:0)+' agentes.'); }
-  cv.addEventListener('click',()=>{ if(hoverI>=0&&RING3S[hoverI]) openMarket(RING3S[hoverI].symbol); else if(hoverC) openTradeContext(); else if(hoverKey==='__hydra') openHydra(); else if(hoverKey) openAgent(hoverKey); else { speakStatus(); toast('HYDRA · '+(DATA?DATA.agents.length:0)+' agentes'); } });
+  cv.addEventListener('click',()=>{ if(!booted){ $('#activate').click(); return; }
+    if(hoverI>=0&&RING3S[hoverI]) openMarket(RING3S[hoverI].symbol); else if(hoverC) openTradeContext(); else if(hoverKey==='__hydra') openHydra(); else if(hoverKey) openAgent(hoverKey); else { speakStatus(); toast('HYDRA · '+(DATA?DATA.agents.length:0)+' agentes'); } });
   function frame(now){
     if(!DATA){ requestAnimationFrame(frame); return; }
     if(dirty||A.length!==(DATA.agents||[]).length) build();
@@ -1516,7 +1504,7 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     hoverI=-1;
     for(let i=0;i<NI;i++){ if(inBox(RING3[i].box)){ hoverI=i; hoverKey=null; hoverC=false; break; } }
 
-    cv.style.cursor=(hoverKey||hoverC)?'pointer':'default';
+    cv.style.cursor=(hoverKey||hoverC||!booted)?'pointer':'default';
     const sel=(typeof selected!=='undefined')?selected:null;         // agente abierto (por click)
     if(sel!==curOpen){ curOpen=sel; openAt=now; }
     const grow=sel?Math.min(1,(now-openAt)/450):0;
@@ -1652,16 +1640,42 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     g.restore();
     drawMark(CX,CY,hyR*0.92,em,eyeCol,blink,1);
     g.save(); g.translate(CX,CY);
-    g.font='700 10px system-ui,sans-serif'; g.textAlign='center'; g.textBaseline='middle';
-    g.fillStyle='rgba('+em+',0.95)'; g.fillText('HYDRA',0,hyR*1.62+22);
-    g.font='8px system-ui,sans-serif'; g.fillStyle='rgba('+hyc+',0.5)';
-    g.fillText(halted?'DETENIDO':'REACTOR EN LÍNEA',0,hyR*1.62+34);
+    if(booted){
+      g.font='700 10px system-ui,sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+      g.fillStyle='rgba('+em+',0.95)'; g.fillText('HYDRA',0,hyR*1.62+22);
+      g.font='8px system-ui,sans-serif'; g.fillStyle='rgba('+hyc+',0.5)';
+      g.fillText(halted?'DETENIDO':'REACTOR EN LÍNEA',0,hyR*1.62+34);
+    }
     g.restore();
+    // ---- PLACA APAGADA (pantalla de inicio) ----
+    // Se dibuja todo y luego se atenúa: así el icono ya está en su sitio final y
+    // al encender no hay ningún salto, solo se ilumina.
+    if(!booted){
+      g.globalCompositeOperation='source-over';
+      g.fillStyle='rgba(3,5,11,0.80)'; g.fillRect(0,0,W,H);
+      g.globalCompositeOperation='lighter';
+      const hr2=Math.max(22,S*0.055), warm=hyHover;
+      const st2=0.4+0.6*Math.pow(0.5+0.5*Math.sin(now*0.0022),2);   // rojo en espera
+      g.strokeStyle=warm?'rgba(255,196,0,0.5)':'rgba(120,150,175,0.22)'; g.lineWidth=1.4;
+      g.beginPath(); g.arc(CX,CY,hr2*1.34,0,7); g.stroke();
+      drawMark(CX,CY,hr2*0.92, warm?'150,225,255':'96,116,136',
+               warm?'255,196,0':'255,16,40', warm?1:st2, 1);
+      g.font='700 12px system-ui,sans-serif'; g.textAlign='center'; g.textBaseline='middle';
+      g.fillStyle=warm?'rgba(223,250,255,0.95)':'rgba(150,170,190,0.5)';
+      try{ g.letterSpacing='9px'; }catch(e){}     // no está en todos los navegadores
+      g.fillText('HYDRA',CX,CY+hr2*1.34+27);
+      try{ g.letterSpacing='0px'; }catch(e){}     // no dejarlo pegado al resto del texto
+      g.font='8px system-ui,sans-serif';
+      g.fillStyle=warm?'rgba(255,196,0,0.7)':'rgba(255,60,80,0.55)';
+      g.fillText(warm?L('PULSA PARA ENCENDER','CLICK TO POWER ON'):L('APAGADO','OFF'),
+                 CX,CY+hr2*1.34+42);
+    }
     // etiquetas (nombres): SOLO del agente señalado o abierto (pantalla más limpia)
     g.font='11px system-ui,sans-serif'; g.textBaseline='middle';
     for(const a of A){ if(a.key!==hoverKey&&a.key!==sel) continue; g.textAlign=a.lalign; g.fillStyle='rgba(220,240,250,0.96)'; g.fillText(a.name.toUpperCase(),a.lx,a.ly); }
     // tooltip al pasar el cursor: rol + con quién colabora + pista de click
     const tip=$('#tip');
+    if(!booted){ tip.classList.remove('show'); requestAnimationFrame(frame); return; }
     if(hoverI>=0&&RING3S[hoverI]){ const r=RING3S[hoverI], sym=String(r.symbol||'');
       const bb=r.box||{x:r.x,y:r.y,w:0,h:0};
       tip.style.left=(bb.x+bb.w+12)+'px'; tip.style.top=(bb.y+bb.h/2)+'px';
