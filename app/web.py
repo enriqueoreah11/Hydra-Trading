@@ -2024,6 +2024,122 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             return JSONResponse(res, status_code=400)
         return res
 
+    # ------------------------------ varias cuentas a la vez (destinos de la orden)
+
+    def _mirror_file():
+        return settings.data_path / "mirror.json"
+
+    def _mirror_conf() -> list[dict]:
+        try:
+            d = json.loads(_mirror_file().read_text())
+            return d if isinstance(d, list) else (d.get("dests") or [])
+        except Exception:  # noqa: BLE001
+            return []
+
+    async def _equities(ids: list[int]) -> dict:
+        """Capital de cada cuenta. Si una no contesta, se queda fuera del cálculo."""
+        out: dict[int, float] = {}
+        for aid in ids:
+            try:
+                t = await asyncio.wait_for(broker.trader(aid), timeout=8)
+                out[int(aid)] = float(t.get("equity") or t.get("balance") or 0)
+            except Exception:  # noqa: BLE001
+                pass
+        return out
+
+    @app.get("/mirror")
+    async def mirror_get():
+        """Las cuentas que ve tu autorización y cómo está configurada cada una."""
+        from . import mirror as mr
+        conf = {int(d.get("account_id") or 0): d for d in _mirror_conf()}
+        accounts = []
+        if broker is not None and broker.client.account_authorized and tokens is not None:
+            try:
+                tok = await tokens.get_access_token()
+                for a in await asyncio.wait_for(broker.list_accounts(tok), timeout=12):
+                    aid = int(a.get("ctidTraderAccountId") or 0)
+                    accounts.append({
+                        "account_id": aid,
+                        "live": bool(a.get("isLive")),
+                        "broker": a.get("brokerTitleShort") or a.get("brokerName") or "",
+                        "main": aid == int(settings.ctrader_account_id or 0),
+                        "conf": conf.get(aid),
+                    })
+            except Exception as exc:  # noqa: BLE001
+                return {"ok": False, "error": str(exc)[:140], "accounts": [],
+                        "dests": _mirror_conf(), "modes": list(mr.MODES)}
+        return {"ok": True, "accounts": accounts, "dests": _mirror_conf(),
+                "modes": list(mr.MODES),
+                "main": int(settings.ctrader_account_id or 0),
+                "dry_run": settings.dry_run,
+                "nota": ("Una autorización cubre las cuentas de ESE cTrader ID. Una "
+                         "cuenta con su propio login (otra prop firm) necesita su "
+                         "propia autorización y aún no se puede añadir aquí.")}
+
+    @app.post("/mirror")
+    async def mirror_set(request: Request):
+        """Guarda los destinos: cuánto manda cada cuenta y con qué nombres."""
+        from . import mirror as mr
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        dests = body.get("dests")
+        if not isinstance(dests, list):
+            return JSONResponse({"ok": False, "error": "falta la lista de destinos"},
+                                status_code=400)
+        clean = []
+        for d in dests[:20]:
+            aid = int(d.get("account_id") or 0)
+            if not aid:
+                continue
+            mode = str(d.get("mode") or "equity").lower()
+            if mode not in mr.MODES:
+                return JSONResponse({"ok": False, "error": f"modo desconocido: {mode}"},
+                                    status_code=400)
+            clean.append({
+                "account_id": aid, "alias": str(d.get("alias") or "")[:40],
+                "enabled": bool(d.get("enabled")), "mode": mode,
+                "value": float(d.get("value") or 0),
+                "suffix": str(d.get("suffix") or "")[:12],
+                "symbols": {str(k).upper()[:20]: str(v)[:24]
+                            for k, v in (d.get("symbols") or {}).items()},
+                "only": [str(x).upper()[:20] for x in (d.get("only") or [])][:40],
+                "never": [str(x).upper()[:20] for x in (d.get("never") or [])][:40],
+            })
+        _mirror_file().write_text(json.dumps(clean, ensure_ascii=False, indent=1))
+        store.log("system", "mirror_conf",
+                  f"{sum(1 for x in clean if x['enabled'])} cuentas activas de {len(clean)}")
+        return {"ok": True, "dests": clean}
+
+    @app.post("/mirror/preview")
+    async def mirror_preview(request: Request):
+        """Qué se mandaría a cada cuenta, ANTES de mandar nada."""
+        from . import manage as mg
+        from . import mirror as mr
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        sym = str(body.get("symbol") or "EURUSD").upper()
+        lots = float(body.get("lots") or 0.01)
+        sl_pips = float(body.get("sl_pips") or 0)
+        dests = _mirror_conf()
+        ids = [int(d.get("account_id") or 0) for d in dests if d.get("enabled")]
+        eq = await _equities(ids) if (broker is not None and
+                                      broker.client.account_authorized) else {}
+        base_eq = 0.0
+        try:
+            base_eq = float((await broker.trader()).get("equity") or 0)
+        except Exception:  # noqa: BLE001
+            pass
+        rows = mr.plan(dests, lots, base_eq, eq, symbol=sym, sl_pips=sl_pips,
+                       pip_value=mr.pip_value_per_lot(sym, mg.pip_size(sym)))
+        return {"ok": True, "symbol": sym, "base_lots": lots, "base_equity": base_eq,
+                "rows": rows,
+                "aviso": ("el valor del pip se calcula en la divisa de cotización: es "
+                          "exacto si esa es la divisa de la cuenta, y aproximado si no")}
+
     # ---------------------------------------- abrir y cerrar A MANO desde la app
     # Es lo que la Open API SÍ permite (junto con mover el stop). Aquí va con freno:
     # confirmación explícita, stop obligatorio, y el modo papel y el HALT por delante.
@@ -2119,6 +2235,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         if settings.dry_run:
             store.log("executor", "order_simulated", {**order, "manual": True}, symbol=sym)
             return {"ok": True, "simulated": True, **order,
+                    "accounts": await _fan_out(sym, side, lots, sl_pips, price, sl, tp),
                     "note": "modo papel: no se envió nada al broker"}
         try:
             await broker.place_market_order(symbol=sym, side=side, volume_units=units,
@@ -2128,7 +2245,54 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             store.log("executor", "order_error", {**order, "error": str(exc)}, symbol=sym)
             return JSONResponse({"ok": False, "error": str(exc)[:140]}, status_code=400)
         store.log("executor", "order_placed", {**order, "manual": True}, symbol=sym)
+        order["accounts"] = await _fan_out(sym, side, lots, sl_pips, price, sl, tp)
         return {"ok": True, **order}
+
+    async def _fan_out(sym, side, lots, sl_pips, price, sl, tp) -> list[dict]:
+        """Manda la MISMA orden a las demás cuentas activadas.
+
+        Cada una con su tamaño y con SU nombre del instrumento. Un fallo en una cuenta
+        no tumba a las demás ni deshace la principal: se devuelve lo que pasó en cada
+        una, porque media réplica silenciosa es peor que una réplica fallida a la vista.
+        """
+        from . import manage as mg
+        from . import mirror as mr
+        dests = [d for d in _mirror_conf() if d.get("enabled")]
+        if not dests:
+            return []
+        eq = await _equities([int(d["account_id"]) for d in dests])
+        base_eq = 0.0
+        try:
+            base_eq = float((await broker.trader()).get("equity") or 0)
+        except Exception:  # noqa: BLE001
+            pass
+        rows = mr.plan(dests, lots, base_eq, eq, symbol=sym, sl_pips=sl_pips,
+                       pip_value=mr.pip_value_per_lot(sym, mg.pip_size(sym)))
+        out = []
+        for r in rows:
+            if r["skip"]:
+                out.append({**r, "status": "sin enviar"})
+                continue
+            if settings.dry_run:
+                out.append({**r, "status": "simulado (modo papel)"})
+                continue
+            if not await broker.client.authorize_account(r["account_id"]):
+                out.append({**r, "status": "esa cuenta no está autorizada por tu token"})
+                continue
+            try:
+                await broker.place_market_order(
+                    symbol=r["symbol"] or sym, side=side, volume_units=r["units"],
+                    stop_loss=sl, take_profit=tp, entry_ref=price,
+                    label="hydra-manual", account_id=r["account_id"])
+                out.append({**r, "status": "enviada"})
+                store.log("executor", "order_mirror",
+                          f"{r['alias']} ({r['account_id']}): {r['lots']} lotes de "
+                          f"{r['symbol'] or sym} — {r['why']}", symbol=sym)
+            except Exception as exc:  # noqa: BLE001
+                out.append({**r, "status": f"error: {str(exc)[:90]}"})
+                store.log("executor", "order_mirror_error",
+                          f"{r['alias']} ({r['account_id']}): {exc}", symbol=sym)
+        return out
 
     @app.get("/setups")
     async def setups(days: float = 30, limit: int = 30):

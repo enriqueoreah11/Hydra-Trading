@@ -330,6 +330,8 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     <div id="sys-vault"></div>
     <div class="slbl"><span class="bi" data-ico="flask"></span>PROPUESTAS (CLAUDE DESKTOP · MCP)</div>
     <div id="sys-props"></div>
+    <div class="slbl"><span class="bi" data-ico="chart"></span>CUENTAS DESTINO (mandar a varias)</div>
+    <div id="sys-mirror"></div>
     <div class="slbl"><span class="bi" data-ico="flag"></span>FLOTA DE ESTRATEGIAS</div>
     <div id="sys-fleet"></div>
   </div>
@@ -511,7 +513,7 @@ function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('sho
 
 $('#b-refresh').onclick=()=>{ toast('Datos actualizados'); load(); }; $('#b-halt').onclick=doHalt; $('#b-demo').onclick=runDemo;
 {const bc=$('#b-cal'); if(bc) bc.onclick=openCalendar;}
-$('#b-sistema').onclick=()=>{ renderSysInfo(); renderSecrets(); renderVault(); renderProps(); renderFleet(); $('#sistema').classList.add('open'); };
+$('#b-sistema').onclick=()=>{ renderSysInfo(); renderMirror(); renderSecrets(); renderVault(); renderProps(); renderFleet(); $('#sistema').classList.add('open'); };
 /* ------- BOTS DE CTRADER: se importan sus parametros del .algo ------- */
 /* El aviso de los dibujos, honesto. Antes decia "lee dibujos a mano" siempre que
    el bot TUVIERA esos parametros; en modo automatico eso es falso, y en combinado
@@ -1196,6 +1198,92 @@ async function setModel(id){ const m=MODELS.find(x=>x.id===id)||{label:id};
   if(r.ok){ toast('Modelo IA: '+m.label+' ✓'); speak(L('Cambié el modelo a '+m.label+', '+SIR+'.','Switched the model to '+m.label+', '+SIR+'.')); load(); setTimeout(renderSysInfo,600); }
   else if(r.status===404){ toast('Falta redesplegar: git pull && fly deploy.'); }
   else { toast('No se pudo cambiar el modelo'); } }
+/* ------- CUENTAS DESTINO -------
+   La misma orden a varias cuentas. No es un copiador que persigue operaciones ajenas:
+   es la MISMA orden enviada a cada cuenta al abrirla. Cada una con SU tamaño y con SU
+   nombre del instrumento, porque las prop firms renombran los simbolos. */
+let MIRROR=null;
+async function renderMirror(){ const box=$('#sys-mirror'); if(!box)return;
+  let d; try{ d=await (await fetch('/mirror')).json(); }catch(e){ box.innerHTML=''; return; }
+  MIRROR=d;
+  const byId={}; (d.dests||[]).forEach(x=>byId[x.account_id]=x);
+  let h='<div class="phelp">'+escapeHtml(String(d.nota||''))+'</div>';
+  if(d.error) h+='<div class="phelp" style="color:#fbbf24">'+escapeHtml(d.error)+'</div>';
+  const acc=(d.accounts||[]).filter(a=>!a.main);
+  if(!acc.length){ box.innerHTML=h+'<div class="empty">'
+      +L('Tu autorización solo ve una cuenta. Vuelve a autorizar en cTrader marcando todas las que quieras usar.',
+         'Your authorisation only sees one account. Re-authorise in cTrader ticking every account you want.')+'</div>'; return; }
+  acc.forEach(a=>{ const c=byId[a.account_id]||{mode:'equity',value:1,enabled:false};
+    const on=!!c.enabled;
+    h+='<div class="wrow" style="align-items:flex-start;flex-wrap:wrap">'
+      +'<span class="wsym" style="min-width:0;flex:1">'+escapeHtml(String(c.alias||a.broker||a.account_id))
+      +'<span class="phelp" style="margin:0;display:block;text-transform:none">#'+a.account_id
+      +' · '+(a.live?L('real','live'):'demo')+'</span></span>'
+      +'<button class="btn '+(on?'':'ghost')+'" style="padding:4px 10px" onclick="mirTog('+a.account_id+')">'
+      +(on?L('activa','on'):L('apagada','off'))+'</button></div>';
+    if(on){ h+='<div style="padding:2px 2px 10px">'
+      +'<div class="prm"><label>'+L('Tamaño','Sizing')+'</label>'
+      +'<select data-m="'+a.account_id+'" onchange="mirSave()">'
+      +(d.modes||[]).map(m=>'<option value="'+m+'"'+(c.mode===m?' selected':'')+'>'
+        +({risk:L('% de riesgo de ESA cuenta','risk % of THAT account'),
+           equity:L('proporcional al capital','proportional to capital'),
+           same:L('mismo lotaje','same lots'),
+           mult:L('multiplicador','multiplier')}[m]||m)+'</option>').join('')+'</select>'
+      +'<div class="phelp">'+L('«% de riesgo» calcula el lotaje con el capital de ESA cuenta y el stop de la orden. Es el modo que no revienta la cuenta pequeña.',
+                               'Risk % sizes from THAT account capital and the order stop.')+'</div></div>'
+      +'<div class="prm"><label>'+L('Valor (% o factor)','Value (% or factor)')+'</label>'
+      +'<input data-v="'+a.account_id+'" value="'+escapeHtml(String(c.value!=null?c.value:1))+'" style="text-transform:none" onchange="mirSave()"></div>'
+      +'<div class="prm"><label>'+L('Sufijo de los símbolos (p. ej. .raw)','Symbol suffix (e.g. .raw)')+'</label>'
+      +'<input data-s="'+a.account_id+'" value="'+escapeHtml(String(c.suffix||''))+'" style="text-transform:none" onchange="mirSave()"></div>'
+      +'<div class="prm"><label>'+L('Renombrar (EURUSD=EURUSD.r, XAUUSD=GOLD)','Rename (EURUSD=EURUSD.r, XAUUSD=GOLD)')+'</label>'
+      +'<input data-t="'+a.account_id+'" value="'+escapeHtml(Object.entries(c.symbols||{}).map(e=>e[0]+'='+e[1]).join(', '))+'" style="text-transform:none" onchange="mirSave()"></div>'
+      +'<div class="prm"><label>'+L('Solo estos símbolos (vacío = todos)','Only these symbols (empty = all)')+'</label>'
+      +'<input data-o="'+a.account_id+'" value="'+escapeHtml((c.only||[]).join(', '))+'" style="text-transform:none" onchange="mirSave()"></div>'
+      +'<div class="prm"><label>'+L('Nunca estos','Never these')+'</label>'
+      +'<input data-n="'+a.account_id+'" value="'+escapeHtml((c.never||[]).join(', '))+'" style="text-transform:none" onchange="mirSave()"></div>'
+      +'</div>'; } });
+  h+='<button class="btn ghost" onclick="mirPreview()">'+ICO('bars',12)+' '+L('Ver qué mandaría a cada una','Preview per account')+'</button>'
+    +'<div id="mir-out" class="phelp"></div>';
+  box.innerHTML=h; }
+function mirDests(){ const out=[];
+  document.querySelectorAll('#sys-mirror [data-m]').forEach(el=>{
+    const id=+el.getAttribute('data-m');
+    const g=(a)=>{ const e=document.querySelector('#sys-mirror ['+a+'="'+id+'"]'); return e?e.value:''; };
+    const tbl={}; g('data-t').split(',').forEach(pair=>{ const kv=pair.split('=');
+      if(kv.length===2&&kv[0].trim()) tbl[kv[0].trim().toUpperCase()]=kv[1].trim(); });
+    const list=(v)=>v.split(',').map(x=>x.trim()).filter(Boolean);
+    out.push({account_id:id, enabled:true, mode:el.value, value:parseFloat(g('data-v'))||0,
+              suffix:g('data-s'), symbols:tbl, only:list(g('data-o')), never:list(g('data-n')),
+              alias:((MIRROR&&(MIRROR.dests||[]).find(x=>x.account_id===id))||{}).alias||''});
+  });
+  // las apagadas se guardan igual, para no perder su configuracion al reactivarlas
+  ((MIRROR&&MIRROR.dests)||[]).forEach(d=>{ if(!out.find(x=>x.account_id===d.account_id))
+    out.push(Object.assign({},d,{enabled:false})); });
+  return out; }
+async function mirSave(){ const d=mirDests();
+  let r; try{ r=await (await fetch('/mirror',{method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({dests:d})})).json(); }catch(e){ toast('Error de red'); return; }
+  if(!r.ok){ toast(r.error||'No se pudo guardar'); return; }
+  toast(L('Destinos guardados','Destinations saved')); if(MIRROR) MIRROR.dests=r.dests; }
+async function mirTog(id){ const cur=mirDests();
+  const row=cur.find(x=>x.account_id===id);
+  if(row) row.enabled=!row.enabled; else cur.push({account_id:id,enabled:true,mode:'equity',value:1});
+  try{ const r=await (await fetch('/mirror',{method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({dests:cur})})).json(); if(r.ok&&MIRROR) MIRROR.dests=r.dests; }
+  catch(e){ toast('Error de red'); return; }
+  renderMirror(); }
+async function mirPreview(){ const out=$('#mir-out'); if(out) out.textContent=L('Calculando…','Working…');
+  let d; try{ d=await (await fetch('/mirror/preview',{method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({symbol:'EURUSD',lots:0.1,sl_pips:30})})).json(); }
+  catch(e){ if(out) out.textContent='Error de red.'; return; }
+  if(!out) return;
+  const rows=d.rows||[];
+  out.innerHTML='<div style="margin-top:4px">'+L('Ejemplo: 0.10 lotes de EURUSD con stop de 30 pips','Example: 0.10 lots of EURUSD, 30-pip stop')+'</div>'
+    +(rows.length?rows.map(r=>'· <b>'+escapeHtml(r.alias)+'</b> ('+escapeHtml(r.symbol)+'): '
+        +(r.skip?('<span style="color:#fbbf24">'+L('no manda','skipped')+'</span>'):('<b>'+r.lots+'</b> '+L('lotes','lots')))
+        +'<br><span style="opacity:.75">'+escapeHtml(r.why)+'</span>').join('<br>')
+      :L('Ninguna cuenta activada.','No accounts enabled.'))
+    +'<div style="opacity:.7;margin-top:4px">'+escapeHtml(String(d.aviso||''))+'</div>'; }
 async function renderSecrets(){ let d; try{ d=await (await fetch('/secrets')).json(); }catch(e){ $('#sys-keys').innerHTML='<div class="empty">No disponible.</div>'; return; }
   let h='';
   if(!d.master_key){ const local=/^(localhost|127\.0\.0\.1)/.test(location.host);

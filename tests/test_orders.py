@@ -23,13 +23,19 @@ class _Client:
     connected = True
     last_error = ""
 
+    def __init__(self):
+        self.authorized = set()
+
+    async def authorize_account(self, aid):
+        self.authorized.add(int(aid))
+        return True
+
 
 class FakeBroker:
     """Broker que APUNTA lo que se le pide, en vez de enviarlo a ningun sitio."""
 
-    client = _Client()
-
     def __init__(self, n_open=0):
+        self.client = _Client()
         self.n_open = n_open
         self.calls = []
 
@@ -47,6 +53,13 @@ class FakeBroker:
     async def candles(self, sym, tf, n):
         return [Candle(ts=0, open=1.1, high=1.1, low=1.1, close=1.1000, volume=1)] * 2
 
+    async def list_accounts(self, token):
+        return [{"ctidTraderAccountId": 1, "isLive": False},
+                {"ctidTraderAccountId": 2, "isLive": True, "brokerTitleShort": "prop"}]
+
+    async def trader(self, account_id=None):
+        return {"equity": 10000 if (account_id or 1) == 1 else 5000, "balance": 0}
+
     async def place_market_order(self, **kw):
         self.calls.append(("order", kw))
         return {"ok": 1}
@@ -59,7 +72,7 @@ class FakeBroker:
 class FakeTokens:
     has_tokens = True
 
-    def get_access_token(self):
+    async def get_access_token(self):
         return "x"
 
 
@@ -149,3 +162,65 @@ def test_closing_in_paper_mode_does_not_reach_the_broker(app):
     c, _, br = app(dry_run=True, n_open=1)
     j = c.post("/positions/77/close", json={}).json()
     assert j["ok"] and j["simulated"] is True and br.calls == []
+
+
+# ---------------------------------------------- varias cuentas a la vez
+
+def test_the_order_is_mirrored_to_the_other_accounts(app, tmp_path):
+    """La segunda cuenta tiene la mitad de capital: le toca la mitad de lotaje."""
+    c, _, br = app(dry_run=False)
+    r = c.post("/mirror", json={"dests": [
+        {"account_id": 2, "alias": "prop", "enabled": True, "mode": "equity",
+         "suffix": ".raw"}]})
+    assert r.json()["ok"]
+    j = c.post("/order", json={**BASE, "confirm": True}).json()
+    envs = [x for x in br.calls if x[0] == "order"]
+    assert len(envs) == 2                       # principal + destino
+    dest = envs[-1][1]
+    assert dest["account_id"] == 2
+    assert dest["volume_units"] == 5000         # 0.1 lotes × (5000/10000)
+    # el sufijo conserva SU forma: los brokers los escriben en minúscula
+    assert dest["symbol"] == "EURUSD.raw"
+    assert j["accounts"][0]["status"] == "enviada"
+
+
+def test_a_disabled_account_gets_nothing(app):
+    c, _, br = app(dry_run=False)
+    c.post("/mirror", json={"dests": [
+        {"account_id": 2, "enabled": False, "mode": "same"}]})
+    c.post("/order", json={**BASE, "confirm": True})
+    assert len([x for x in br.calls if x[0] == "order"]) == 1     # solo la principal
+
+
+def test_risk_mode_uses_that_accounts_capital(app):
+    c, _, br = app(dry_run=False)
+    c.post("/mirror", json={"dests": [
+        {"account_id": 2, "enabled": True, "mode": "risk", "value": 1.0}]})
+    c.post("/order", json={**BASE, "confirm": True})              # stop de 30 pips
+    dest = [x for x in br.calls if x[0] == "order"][-1][1]
+    # 1% de 5000 = 50 USD; 50 / (30 pips × 10) = 0.166 -> 0.17 lotes
+    assert dest["volume_units"] == 17000
+
+
+def test_a_symbol_not_allowed_in_that_account_is_not_sent(app):
+    c, _, br = app(dry_run=False)
+    c.post("/mirror", json={"dests": [
+        {"account_id": 2, "enabled": True, "mode": "same", "never": ["EURUSD"]}]})
+    j = c.post("/order", json={**BASE, "confirm": True}).json()
+    assert len([x for x in br.calls if x[0] == "order"]) == 1
+    assert "no está permitido" in j["accounts"][0]["why"]
+
+
+def test_paper_mode_does_not_mirror_either(app):
+    c, _, br = app(dry_run=True)
+    c.post("/mirror", json={"dests": [
+        {"account_id": 2, "enabled": True, "mode": "same"}]})
+    j = c.post("/order", json={**BASE, "confirm": True}).json()
+    assert br.calls == []
+    assert j["accounts"][0]["status"].startswith("simulado")
+
+
+def test_an_unknown_mode_is_rejected(app):
+    c, _, _ = app()
+    r = c.post("/mirror", json={"dests": [{"account_id": 2, "mode": "loqueSea"}]})
+    assert r.status_code == 400

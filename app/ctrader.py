@@ -72,6 +72,10 @@ class CTraderClient:
         self._connected = asyncio.Event()
         self._stopping = False
         self.account_authorized = False
+        # Cuentas EXTRA autorizadas en esta misma sesión, para mandar la operación a
+        # varias a la vez. Se vacían al reconectar: la autorización vive en la sesión,
+        # y darla por buena tras una caída sería mentira.
+        self.extra_accounts: set[int] = set()
         self.last_error = ""          # último error de conexión/autorización (para diagnóstico)
 
     # ------------------------------------------------------------------ public
@@ -162,6 +166,7 @@ class CTraderClient:
                 log.warning("connection lost (%s); reconnecting in %ss", e, backoff)
             self._connected.clear()
             self.account_authorized = False
+            self.extra_accounts.clear()
             self._fail_pending(ConnectionError("connection lost"))
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 60)
@@ -179,7 +184,29 @@ class CTraderClient:
                 "accessToken": token,
             })
             self.account_authorized = True
+            self.extra_accounts.clear()
             log.info("account %s authorized", self.account_id)
+
+    async def authorize_account(self, account_id: int) -> bool:
+        """Autoriza OTRA cuenta en esta sesión, para poder operarla también.
+
+        Una autorización de cTrader cubre las cuentas de ese cTrader ID: se pide una
+        por cuenta y ya se les pueden mandar órdenes. Si el token no cubre esa cuenta,
+        el servidor lo rechaza y se devuelve False — no se finge que quedó lista.
+        """
+        aid = int(account_id or 0)
+        if not aid or aid == int(self.account_id or 0) or aid in self.extra_accounts:
+            return True
+        token = await self.access_token_provider()
+        try:
+            await self.send(c.ACCOUNT_AUTH_REQ,
+                            {"ctidTraderAccountId": aid, "accessToken": token})
+        except Exception as exc:  # noqa: BLE001
+            log.warning("no pude autorizar la cuenta %s: %s", aid, exc)
+            return False
+        self.extra_accounts.add(aid)
+        log.info("cuenta extra %s autorizada", aid)
+        return True
 
     async def _raw_request(self, payload_type: int, payload: dict) -> dict:
         """send() variant usable during authentication (connection already set)."""

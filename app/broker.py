@@ -66,7 +66,10 @@ class Broker:
         self.client = client
         self.account_id = account_id
         self._symbols_by_name: dict[str, int] = {}
-        self._symbol_info: dict[int, SymbolInfo] = {}
+        # una tabla de símbolos POR CUENTA: en una prop firm el mismo par se llama
+        # distinto (EURUSD.raw), y el id de una cuenta no vale en otra
+        self._symbols_other: dict[int, dict[str, int]] = {}
+        self._symbol_info: dict[tuple, SymbolInfo] = {}
         self._money_digits = 2
 
     # ------------------------------------------------------------- accounts
@@ -76,8 +79,10 @@ class Broker:
                                      {"accessToken": access_token})
         return res.get("ctidTraderAccount", [])
 
-    async def trader(self) -> dict:
-        res = await self.client.send(c.TRADER_REQ, {"ctidTraderAccountId": self.account_id})
+    async def trader(self, account_id: int | None = None) -> dict:
+        """Datos de la cuenta. Con `account_id` se pregunta por OTRA de las tuyas."""
+        res = await self.client.send(c.TRADER_REQ,
+                                     {"ctidTraderAccountId": account_id or self.account_id})
         t = res.get("trader", {})
         md = int(t.get("moneyDigits", 2))
         self._money_digits = md
@@ -90,19 +95,36 @@ class Broker:
 
     # -------------------------------------------------------------- symbols
 
-    async def _load_symbols(self) -> None:
-        res = await self.client.send(c.SYMBOLS_LIST_REQ, {"ctidTraderAccountId": self.account_id})
+    async def _load_symbols(self, account_id: int | None = None) -> None:
+        aid = int(account_id or self.account_id)
+        res = await self.client.send(c.SYMBOLS_LIST_REQ, {"ctidTraderAccountId": aid})
+        table = self._symbols_by_name if aid == int(self.account_id) else \
+            self._symbols_other.setdefault(aid, {})
         for s in res.get("symbol", []):
-            self._symbols_by_name[str(s["symbolName"]).upper()] = int(s["symbolId"])
+            table[str(s["symbolName"]).upper()] = int(s["symbolId"])
 
-    async def symbol_id(self, name: str) -> int:
-        if not self._symbols_by_name:
-            await self._load_symbols()
-        sid = self._symbols_by_name.get(name.upper())
+    def _symbol_table(self, account_id: int | None) -> dict:
+        """CADA cuenta tiene su catálogo. En una prop firm el mismo par puede
+        llamarse EURUSD.raw, así que buscar el id en la lista de otra cuenta daría el
+        símbolo equivocado — o ninguno."""
+        aid = int(account_id or self.account_id)
+        if aid == int(self.account_id):
+            return self._symbols_by_name
+        return self._symbols_other.setdefault(aid, {})
+
+    async def symbol_id(self, name: str, account_id: int | None = None) -> int:
+        table = self._symbol_table(account_id)
+        if not table:
+            await self._load_symbols(account_id)
+            table = self._symbol_table(account_id)
+        return await self._resolve_symbol(name, table)
+
+    async def _resolve_symbol(self, name: str, table: dict) -> int:
+        sid = table.get(name.upper())
         if sid is None:
             # tolerante al formato del broker: EUR/USD, EURUSD.i, EURUSD-RAW, etc.
             key = _norm(name)
-            norm = {_norm(nm): s for nm, s in self._symbols_by_name.items()}
+            norm = {_norm(nm): s for nm, s in table.items()}
             sid = norm.get(key)
             # alias entre brokers: US100 <-> USTEC, XAUUSD <-> GOLD, XTIUSD <-> USOIL, etc.
             if sid is None:
@@ -123,17 +145,18 @@ class Broker:
             raise ValueError(f"symbol {name!r} not found on this account")
         return sid
 
-    def symbol_names(self) -> list[str]:
-        return sorted(self._symbols_by_name.keys())
+    def symbol_names(self, account_id: int | None = None) -> list[str]:
+        return sorted(self._symbol_table(account_id).keys())
 
-    async def symbol_info(self, name: str) -> SymbolInfo:
-        sid = await self.symbol_id(name)
-        if sid not in self._symbol_info:
+    async def symbol_info(self, name: str, account_id: int | None = None) -> SymbolInfo:
+        sid = await self.symbol_id(name, account_id)
+        aid = int(account_id or self.account_id)
+        if (aid, sid) not in self._symbol_info:
             res = await self.client.send(c.SYMBOL_BY_ID_REQ, {
-                "ctidTraderAccountId": self.account_id, "symbolId": [sid]})
+                "ctidTraderAccountId": aid, "symbolId": [sid]})
             s = (res.get("symbol") or [{}])[0]
             # volumes on the wire are in cents of units
-            self._symbol_info[sid] = SymbolInfo(
+            self._symbol_info[(aid, sid)] = SymbolInfo(
                 symbol_id=sid,
                 name=name.upper(),
                 digits=int(s.get("digits", 5)),
@@ -143,7 +166,7 @@ class Broker:
                 step_volume_units=float(s.get("stepVolume", 100_000)) / 100,
                 max_volume_units=float(s.get("maxVolume", 1_000_000_000)) / 100,
             )
-        return self._symbol_info[sid]
+        return self._symbol_info[(aid, sid)]
 
     # -------------------------------------------------------------- candles
 
@@ -212,11 +235,18 @@ class Broker:
 
     async def place_market_order(self, symbol: str, side: str, volume_units: float,
                                  stop_loss: float, take_profit: float | None,
-                                 entry_ref: float, label: str = "brain") -> dict:
-        """Market order with SL/TP expressed as *relative* distances (required by the API)."""
-        info = await self.symbol_info(symbol)
+                                 entry_ref: float, label: str = "brain",
+                                 account_id: int | None = None) -> dict:
+        """Market order with SL/TP expressed as *relative* distances (required by the API).
+
+        `account_id` manda la MISMA orden a otra de tus cuentas (ya autorizada en la
+        sesión). El símbolo se resuelve con el catálogo de la cuenta principal: si un
+        broker distinto lo llamara de otro modo, esa orden fallaría y se vería en su
+        resultado, en vez de colarse con el símbolo equivocado.
+        """
+        info = await self.symbol_info(symbol, account_id)
         payload: dict = {
-            "ctidTraderAccountId": self.account_id,
+            "ctidTraderAccountId": account_id or self.account_id,
             "symbolId": info.symbol_id,
             "orderType": c.ORDER_TYPE_MARKET,
             "tradeSide": c.TRADE_SIDE[side],
