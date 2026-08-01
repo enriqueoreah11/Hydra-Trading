@@ -20,6 +20,9 @@ _last_error: str = ""
 
 
 def available() -> bool:
+    if settings.tts_provider == "local":
+        from . import voice_local
+        return voice_local.available()   # depende de qué haya instalado, no de claves
     if settings.tts_provider == "voicebox":
         return True                      # local: no necesita clave de nada
     return bool(settings.tts_provider and settings.tts_api_key
@@ -195,6 +198,13 @@ async def synth(text: str) -> bytes | None:
         return None
     provider = settings.tts_provider.lower()
     try:
+        if provider == "local":
+            from . import voice_local
+            audio = await voice_local.synth(text)
+            # aquí SÍ se devuelve el audio: lo genera Hydra pero no lo reproduce, así
+            # que el navegador es el único que suena. Con Voicebox es al revés.
+            _last_error = "" if audio else voice_local.last_error()
+            return audio
         if provider == "voicebox":
             return await _voicebox(text)
         if provider == "openai":
@@ -238,6 +248,11 @@ async def diagnose() -> dict:
         "voice_id_set": bool(settings.elevenlabs_voice_id),
         "voice_id": settings.elevenlabs_voice_id or settings.openai_tts_voice,
     }
+    if settings.tts_provider == "local":
+        from . import voice_local
+        return {**info, **await voice_local.diagnose(),
+                "modo": ("la genera Hydra y la reproduce el navegador: no hace falta "
+                         "ninguna app abierta ni ninguna clave")}
     if settings.tts_provider == "voicebox":
         # Local: no hay claves que revisar, solo si la app esta abierta.
         profiles = await voicebox_profiles()

@@ -1458,21 +1458,67 @@ async function renderVoice(){ const el=$('#sys-voice'); if(!el) return;
   let d; try{ const r=await fetch('/voice/local'); if(!r.ok) throw 0; d=await r.json(); }
   catch(e){ el.innerHTML='<div class="phelp" style="color:#fbbf24">Selector de voz no disponible — la app corre código viejo. Reinicia:<br><code>launchctl kickstart -k gui/$(id -u)/com.hydra.trading</code></div>'; return; }
   const P=d.provider||'';
-  const opt=(id,txt,tip)=>'<button class="btn ghost'+(P===id?' on':'')+'" style="padding:5px 9px;margin-right:5px" title="'+tip+'" onclick="setVoice(\''+id+'\')">'+txt+'</button>';
+  let E={}; try{ E=await (await fetch('/voice/engines')).json(); }catch(e){}
+  const opt=(id,ico,txt,tip)=>'<button class="btn ghost'+(P===id?' on':'')+'" style="padding:5px 9px;margin-right:5px" title="'+tip+'" onclick="setVoice(\''+id+'\')">'+ICO(ico,12)+' '+txt+'</button>';
   let h='<div style="margin:2px 0 6px">'
-    +opt('','🌐 Navegador','La voz del sistema. Gratis.')
-    +opt('voicebox','🎙️ Voicebox','Voz local clonada. Gratis, sin API key.')
-    +opt('elevenlabs','☁️ ElevenLabs','De pago, requiere API key.')+'</div>';
-  if(!d.running) h+='<div class="phelp" style="color:#fbbf24">Voicebox no responde en '+escapeHtml(d.url||'')
-    +'. <b>El servidor de voz vive dentro de la app</b>: con la app cerrada Hydra habla con la voz del navegador '
-    +'aunque la configuración esté bien. Por eso «no usa tu voz».</div>'
-    +'<button class="btn" onclick="voiceStart()">▶ Abrir Voicebox</button><div id="vb-out" class="phelp"></div>';
-  else { h+='<div class="phelp" style="color:#34d399">Voicebox activo ✅ — voz local, gratis e ilimitada.</div>';
-    const pr=d.profiles||[];
-    if(pr.length) h+='<div class="prm"><label>Voz</label><select onchange="setVoice(\''+P+'\',this.value)">'
-      +pr.map(p=>'<option'+(p.name===d.selected?' selected':'')+'>'+escapeHtml(p.name)+'</option>').join('')+'</select>'
-      +'<div class="phelp">'+pr.map(p=>escapeHtml(p.name)+' ('+escapeHtml(p.language||'?')+')').join(' · ')+'</div></div>'; }
-  el.innerHTML=h; }
+    +opt('','speaker','Navegador','La voz del sistema. Gratis, pero suena a robot.')
+    +opt('local','chip','Propia','La genera Hydra. Sin otra app abierta, sin clave, sin internet.')
+    +opt('voicebox','mic','Voicebox','Voz clonada. Gratis, pero necesita la app abierta.')
+    +opt('elevenlabs','bolt','ElevenLabs','De pago, requiere API key.')+'</div>';
+  if(P==='local') h+=voiceLocalPanel(E);
+  else if(P==='voicebox'){
+    if(!d.running) h+='<div class="phelp" style="color:#fbbf24">Voicebox no responde en '+escapeHtml(d.url||'')
+      +'. <b>El servidor de voz vive dentro de la app</b>: con la app cerrada Hydra habla con la voz del navegador '
+      +'aunque la configuración esté bien. Por eso «no usa tu voz».</div>'
+      +'<button class="btn" onclick="voiceStart()">▶ Abrir Voicebox</button><div id="vb-out" class="phelp"></div>';
+    else { h+='<div class="phelp" style="color:#34d399">Voicebox activo — voz local, gratis e ilimitada.</div>';
+      const pr=d.profiles||[];
+      if(pr.length) h+='<div class="prm"><label>Voz</label><select onchange="setVoice(\''+P+'\',this.value)">'
+        +pr.map(p=>'<option'+(p.name===d.selected?' selected':'')+'>'+escapeHtml(p.name)+'</option>').join('')+'</select>'
+        +'<div class="phelp">'+pr.map(p=>escapeHtml(p.name)+' ('+escapeHtml(p.language||'?')+')').join(' · ')+'</div></div>'; } }
+  el.innerHTML=h; paintIcons(el); }
+/* La voz propia: qué motor hay, qué voz usa y con qué efecto.
+   Se enseña el estado real de la máquina porque "no se oye mi voz" casi siempre es
+   una de tres cosas concretas, y decir cuál ahorra media hora de adivinar. */
+function voiceLocalPanel(E){
+  const eng=E.activo||'', pi=E.piper||{}, sy=E.say||{};
+  let h='';
+  if(!eng) h+='<div class="phelp" style="color:#ff5d73">No hay ningún motor de voz en esta máquina. '
+    +'Lo más rápido: baja la voz <b>Daniel (Enhanced)</b> en Ajustes del Sistema → Accesibilidad → '
+    +'Contenido hablado → Voz del sistema → Gestionar voces.</div>';
+  else if(eng==='piper') h+='<div class="phelp" style="color:#34d399">Piper activo — red neuronal local. '
+    +'No necesita internet ni ninguna app abierta.</div>';
+  else { h+='<div class="phelp" style="color:#34d399">Voz del Mac activa'+(sy.usaria?' ('+escapeHtml(sy.usaria)+')':'')+'.</div>';
+    if(!(sy.buenas_instaladas||[]).length) h+='<div class="phelp" style="color:#fbbf24">Estás con la voz de serie: suena sintética. '
+      +'Baja <b>Daniel (Enhanced)</b> (unos 100 MB, una vez) y sube de golpe.</div>';
+    if(!(pi.instalado&&(pi.modelos||[]).length)) h+='<div class="phelp">Para la voz buena de verdad, instala Piper: '
+      +'<code>pip install piper-tts</code> y descarga un modelo. <button class="btn ghost" style="padding:3px 7px" onclick="voiceHowto()">Ver los comandos</button></div>'; }
+  const voces=(eng==='piper')?(pi.modelos||[]):(sy.buenas_instaladas||[]).concat((E.voces_say||[]).filter(v=>!(sy.buenas_instaladas||[]).includes(v)));
+  const sel=(eng==='piper')?(pi.usaria||''):(sy.usaria||'');
+  if(voces.length) h+='<div class="prm"><label>Voz</label><select onchange="setVoiceOpt({local_voice:this.value})">'
+    +voces.map(v=>'<option'+(v===sel?' selected':'')+'>'+escapeHtml(v)+'</option>').join('')+'</select></div>';
+  const fx=E.efecto||'jarvis';
+  h+='<div class="prm"><label>Carácter</label><span>'
+    +[['jarvis','JARVIS'],['limpio','Limpia'],['','Cruda']].map(f=>'<button class="btn ghost'+(fx===f[0]?' on':'')
+      +'" style="padding:4px 8px;margin-right:4px" onclick="setVoiceOpt({fx:\''+f[0]+'\'})">'+f[1]+'</button>').join('')+'</span>'
+    +'<div class="phelp">JARVIS = compresión, presencia y una sala muy corta. Es lo que lo hace sonar a él y no a un lector de PDF.</div></div>';
+  if(!E.ffmpeg) h+='<div class="phelp" style="color:#fbbf24">Sin <code>ffmpeg</code> no se aplica el carácter (la voz sale cruda). '
+    +'Se arregla con <code>brew install ffmpeg</code>.</div>';
+  h+='<div style="margin-top:8px"><button class="btn" onclick="voiceTest()">Probar la voz</button>'
+    +'<div id="vl-out" class="phelp"></div></div>';
+  return h; }
+async function voiceTest(){ const out=$('#vl-out'); if(out) out.textContent='Generando…';
+  let d; try{ d=await (await fetch('/voice/engines/test',{method:'POST'})).json(); }
+  catch(e){ if(out) out.textContent='Error de red.'; return; }
+  if(out){ out.style.color=d.ok?'#34d399':'#ff5d73';
+    out.textContent=d.ok?('Listo: '+(d.bytes||0)+' bytes de '+(d.formato||'audio')+'.'):(d.error||'No salió audio.'); }
+  if(d.ok) speak(L('Sistemas en línea, '+SIR+'.','Systems online, '+SIR+'.')); }
+function voiceHowto(){ const out=$('#vl-out'); if(!out) return;
+  out.innerHTML='<div style="margin-top:6px">Pega esto en la terminal, una sola vez:</div>'
+    +'<pre style="white-space:pre-wrap;font-size:11px;line-height:1.5">pip install piper-tts\nmkdir -p ~/Hydra-Trading/data/voices\ncd ~/Hydra-Trading/data/voices\ncurl -LO https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/alan/medium/en_GB-alan-medium.onnx\ncurl -LO https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/alan/medium/en_GB-alan-medium.onnx.json</pre>'; }
+async function setVoiceOpt(o){ try{ await fetch('/voice/local',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(Object.assign({provider:'local'},o))}); }catch(e){ toast('Error de red'); return; }
+  renderVoice(); setTimeout(()=>speak(L('Así sueno ahora, '+SIR+'.','This is how I sound now, '+SIR+'.')),400); }
 /* Abrir la app desde aqui: es el motivo numero uno de "configure la voz y no la usa". */
 async function voiceStart(){ const out=$('#vb-out');
   if(out) out.textContent=L('Abriendo Voicebox… (tarda unos segundos)','Opening Voicebox… (takes a few seconds)');
@@ -1482,7 +1528,7 @@ async function voiceStart(){ const out=$('#vb-out');
   if(out){ out.style.color='#34d399'; out.textContent=d.already?L('Ya estaba abierta.','It was already open.'):(d.msg||''); }
   renderVoice(); setTimeout(()=>speak(L('Ya me oyes con mi voz, '+SIR+'.','You can hear my real voice now, '+SIR+'.')),600); }
 async function setVoice(p,prof){ let r; try{ r=await fetch('/voice/local',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:p,profile:prof||undefined})}); }catch(e){ toast('Error de red'); return; }
-  if(r.ok){ ttsServer=(p!==''); toast(p==='voicebox'?'Voz local ✓ (gratis)':(p?'Voz: '+p:'Voz del navegador'));
+  if(r.ok){ ttsServer=(p!==''); toast(p==='local'?'Voz propia ✓ (sin apps, sin claves)':(p==='voicebox'?'Voz local ✓ (gratis)':(p?'Voz: '+p:'Voz del navegador')));
     renderVoice(); setTimeout(()=>speak(L('Listo '+SIR+', esta es mi voz.','Ready '+SIR+', this is my voice.')),400); }
   else toast('Falta redesplegar'); }
 async function renderLocal(){ const el=$('#sys-local'); if(!el) return;
@@ -2030,8 +2076,8 @@ async function pollBrain(){ const box=$('#hud-brain'); if(!box)return;
       h+='<div class="sysact" style="border:0;padding:6px 0 0"><button class="btn ghost" '
         +'onclick="startLocal()">▶ ENCENDER CEREBRO</button></div>';
   const vp=vo.provider||'';
-  h+=row(L('Voz','Voice'),vp==='voicebox'?'Voicebox':(vp||L('navegador','browser')),
-         vp==='voicebox'?(vo.running?'#34d399':'#ff5d73'):'#5f7387');
+  const vn={'':L('navegador','browser'),'local':L('propia','own'),'voicebox':'Voicebox'}[vp]||vp;
+  h+=row(L('Voz','Voice'),vn,vp==='voicebox'?(vo.running?'#34d399':'#ff5d73'):(vp==='local'?'#34d399':'#5f7387'));
   if(vp==='voicebox') h+=row(L('Perfil','Profile'),vo.selected||'—');
   const rt=(lo.routing||[]).filter(r=>r.brain==='ollama').length;
   if(rt) h+=row(L('En local','Local'),rt+' '+L('agentes','agents'));

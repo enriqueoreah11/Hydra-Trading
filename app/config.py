@@ -101,7 +101,12 @@ class Settings(BaseSettings):
     owner_name: str = "Krauser"              # cómo te llama la app por voz (p.ej. Enrique, Krauser, jefe)
     owner_lang: str = "mix"                  # idioma: "es" | "en" | "mix" (español con términos de trading en inglés)
     # Voz NEURAL por servidor (suena natural, como la de Claude). Requiere una API key.
-    tts_provider: str = ""                   # "" (navegador) | "voicebox" | "openai" | "elevenlabs"
+    tts_provider: str = ""                   # "" (navegador) | "local" | "voicebox" | "openai" | "elevenlabs"
+    # "local": la genera la propia Hydra (Piper o el `say` del Mac). Sin otra app
+    # abierta, sin clave y sin internet. Es la opción por defecto recomendada.
+    local_voice: str = ""                    # modelo de Piper o voz de `say`; vacío = la mejor que haya
+    voice_fx: str = "jarvis"                 # "jarvis" | "limpio" | "" (sin efecto)
+    voice_speed: float = 0.98                # <1 = más pausado, que es como habla JARVIS
     # Voicebox: estudio de voz LOCAL (Kokoro/Qwen3-TTS). Gratis, sin API key y sin
     # internet. Requiere la app abierta: el servidor corre dentro de ella.
     voicebox_url: str = "http://127.0.0.1:17493"
