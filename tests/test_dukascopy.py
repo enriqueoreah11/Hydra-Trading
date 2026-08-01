@@ -85,3 +85,26 @@ def test_weekends_are_not_requested():
 def test_no_ticks_no_candles():
     assert dk.to_candles([], 60) == []
     assert dk.to_candles([{"ts": 1, "bid": 1, "ask": 1, "vol": 0}], 0) == []
+
+
+def test_resume_starts_at_the_last_stored_bar_not_after_it():
+    """La última vela guardada pudo quedarse a medias: se vuelve a pedir su hora."""
+    last = dt.datetime(2024, 1, 2, 10, 30, tzinfo=dt.timezone.utc).timestamp()
+    now = dt.datetime(2024, 1, 2, 13, 5, tzinfo=dt.timezone.utc).timestamp()
+    hs = dk.resume_hours(last, 900, now)
+    # incluida la hora de la última vela Y la hora en curso: la que está a medias se
+    # vuelve a pedir en la siguiente pasada y se sobreescribe con la completa
+    assert [h.hour for h in hs] == [10, 11, 12, 13]
+
+
+def test_resume_stops_when_there_is_nothing_new():
+    now = dt.datetime(2024, 1, 2, 10, 20, tzinfo=dt.timezone.utc).timestamp()
+    assert dk.resume_hours(now, 900, now) == []
+    assert dk.resume_hours(0, 900, now) == []          # sin nada guardado, no adivina
+
+
+def test_resume_works_in_batches_when_you_are_months_behind():
+    last = dt.datetime(2023, 1, 1, tzinfo=dt.timezone.utc).timestamp()
+    now = dt.datetime(2024, 1, 1, tzinfo=dt.timezone.utc).timestamp()
+    hs = dk.resume_hours(last, 900, now, max_hours=100)
+    assert len(hs) == 100                              # por tandas, no mil de golpe

@@ -151,3 +151,19 @@ def test_combinations_with_too_few_trades_are_discarded():
     cs = trending(900)
     r = optimize.optimize(cs, "donchian", steps=2, horizon=40, min_trades=10000)
     assert r["evaluated"] == 0 and r["top"] == []
+
+
+def test_symbol_and_timeframe_from_the_file_name():
+    assert history.from_filename(
+        "EURUSD_Candlestick_15_M_BID_01.01.2024-31.12.2024.csv") == ("EURUSD", "M15")
+    assert history.from_filename(
+        "XAUUSD_Candlestick_1_H_BID_01.01.2020-01.01.2024.csv") == ("XAUUSD", "H1")
+    assert history.from_filename("EURUSD_M15.csv") == ("EURUSD", "M15")
+    assert history.from_filename("eurusd-m15-2024.csv") == ("EURUSD", "M15")
+    assert history.from_filename("XAUUSD H1.csv") == ("XAUUSD", "H1")
+
+
+def test_an_unclear_name_is_not_guessed():
+    """Meter EURUSD como si fuera XAUUSD no se detecta luego: mejor no adivinar."""
+    assert history.from_filename("descarga final (2).csv") == ("", "")
+    assert history.from_filename("GBPUSD.csv") == ("", "")     # falta la temporalidad

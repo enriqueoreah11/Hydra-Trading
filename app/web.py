@@ -2350,6 +2350,58 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                 "columns": info.get("columns"),
                 "total": _candles_db().count(sym, t)}
 
+    @app.post("/data/import-folder")
+    async def data_import_folder(request: Request):
+        """Importa TODOS los CSV de una carpeta de golpe.
+
+        El símbolo y la temporalidad salen del nombre del archivo (reconoce el formato
+        de Dukascopy y los habituales). El que no se pueda deducir NO se importa: se
+        devuelve en `sin_identificar` para que lo subas a mano diciendo qué es. Meter
+        EURUSD como si fuera XAUUSD no se detecta después.
+        """
+        from . import history as hist
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        d = Path(str(body.get("dir") or "")).expanduser()
+        if not d.is_dir():
+            return JSONResponse({"ok": False, "error": f"no existe la carpeta {d}"},
+                                status_code=400)
+
+        def work() -> dict:
+            done, unknown, failed, added = [], [], [], 0
+            files = sorted([f for f in d.rglob("*")
+                            if f.is_file() and f.suffix.lower() in (".csv", ".txt")])
+            for f in files[:400]:
+                sym, tf = hist.from_filename(f.name)
+                try:
+                    rows, info = hist.parse_csv(f.read_text("utf-8", "replace"))
+                except Exception as exc:  # noqa: BLE001
+                    failed.append({"file": f.name, "error": str(exc)[:90]})
+                    continue
+                if not rows:
+                    failed.append({"file": f.name,
+                                   "error": info.get("error") or "sin velas"})
+                    continue
+                tf = tf or hist.infer_tf(rows)
+                if not sym or not tf:
+                    unknown.append({"file": f.name, "bars": len(rows),
+                                    "symbol": sym, "tf": tf})
+                    continue
+                n = _candles_db().add(sym, tf, rows)
+                added += n
+                done.append({"file": f.name, "symbol": sym, "tf": tf,
+                             "read": len(rows), "added": n})
+            return {"ok": True, "dir": str(d), "files": len(files), "added": added,
+                    "imported": done[:100], "sin_identificar": unknown[:40],
+                    "failed": failed[:20]}
+
+        res = await asyncio.to_thread(work)
+        store.log("system", "data_import_folder",
+                  f"{res['added']} velas de {len(res['imported'])} archivos en {d}")
+        return res
+
     @app.delete("/data/{symbol}")
     async def data_drop(symbol: str, tf: str = ""):
         n = _candles_db().drop(symbol, tf)
@@ -2430,6 +2482,117 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         return {"ok": True, "symbol": sym, "tf": tf, "hours": len(hours),
                 "nota": ("va en segundo plano; mira /data/download/status. Los ticks se "
                          "convierten a velas y NO se guardan")}
+
+    # ---- mantener el histórico al día: traer SOLO las velas nuevas de lo que ya tienes
+
+    _AUTO_MIN = 30
+    _auto: dict = {"last": None, "added": 0, "msg": "", "running": False}
+
+    def _auto_on() -> bool:
+        try:
+            return (settings.data_path / "data_auto.txt").read_text().strip() == "1"
+        except Exception:  # noqa: BLE001
+            return False
+
+    @app.get("/data/auto")
+    async def data_auto_get():
+        return {"ok": True, "enabled": _auto_on(), "minutes": _AUTO_MIN, **_auto}
+
+    @app.post("/data/auto")
+    async def data_auto_set(request: Request):
+        """Enciende o apaga que Hydra vaya trayendo las velas nuevas sola."""
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        on = bool(body.get("enabled"))
+        (settings.data_path / "data_auto.txt").write_text("1" if on else "0")
+        store.log("system", "data_auto", "encendida" if on else "apagada")
+        return {"ok": True, "enabled": on}
+
+    async def _auto_update_once(max_hours: int = 240) -> dict:
+        """Completa cada serie guardada desde su última vela hasta ahora.
+
+        Solo actualiza lo que YA tienes: no se inventa símbolos ni temporalidades. Y no
+        pisa una descarga manual en marcha, que iría a los mismos archivos.
+        """
+        import time as _t
+        from . import dukascopy as dk
+        from . import history as hist
+        if _dl["running"]:
+            return {"ok": False, "error": "hay una descarga manual en marcha"}
+        db = _candles_db()
+        added_total, touched = 0, []
+        for ser in db.inventory():
+            secs = hist._TF_SECONDS.get(ser["tf"])
+            if not secs:
+                continue
+            hours = dk.resume_hours(ser["to_ts"], secs, _t.time(), max_hours)
+            if not hours:
+                continue
+            digits = dk.digits_for(ser["symbol"])
+            ticks: list[dict] = []
+            try:
+                import httpx
+                async with httpx.AsyncClient(timeout=30) as http:
+                    for h in hours:
+                        try:
+                            r = await http.get(dk.url_for(ser["symbol"], h))
+                            if r.status_code == 200 and r.content:
+                                ticks += dk.decode(r.content, h.timestamp(), digits)
+                        except Exception:  # noqa: BLE001 - una hora perdida no corta
+                            pass
+            except Exception as exc:  # noqa: BLE001
+                return {"ok": False, "error": str(exc)[:120]}
+            if not ticks:
+                continue
+            cs = dk.to_candles(sorted(ticks, key=lambda t: t["ts"]), secs)
+            n = await asyncio.to_thread(db.add, ser["symbol"], ser["tf"], cs)
+            added_total += n
+            if n:
+                touched.append(f"{ser['symbol']} {ser['tf']} +{n}")
+        return {"ok": True, "added": added_total, "series": touched}
+
+    @app.post("/data/auto/run")
+    async def data_auto_run():
+        """Trae ahora mismo lo que falte, sin esperar al reloj."""
+        res = await _auto_update_once()
+        if res.get("ok"):
+            _auto.update({"last": time.time(), "added": res["added"],
+                          "msg": ", ".join(res["series"]) or "nada nuevo"})
+        return res
+
+    @app.on_event("startup")
+    async def _watch_data():
+        """Cada media hora completa el histórico que ya tienes, si está encendido."""
+        import logging
+        lg = logging.getLogger("web")
+
+        async def loop():
+            while True:
+                await asyncio.sleep(_AUTO_MIN * 60)
+                if not _auto_on():
+                    continue
+                try:
+                    _auto["running"] = True
+                    res = await _auto_update_once()
+                    _auto.update({"last": time.time(),
+                                  "added": res.get("added") or 0,
+                                  "msg": (", ".join(res.get("series") or [])
+                                          or res.get("error") or "nada nuevo")})
+                    if res.get("added"):
+                        lg.info("histórico al día: %s", _auto["msg"])
+                except asyncio.CancelledError:
+                    raise
+                except Exception:  # noqa: BLE001 - nunca tumba la app
+                    lg.warning("actualización de histórico falló", exc_info=True)
+                finally:
+                    _auto["running"] = False
+
+        try:
+            asyncio.create_task(loop(), name="data-auto")
+        except Exception:  # noqa: BLE001
+            lg.warning("no se pudo arrancar la actualización de histórico", exc_info=True)
 
     @app.post("/backtest/run")
     async def backtest_run(request: Request):

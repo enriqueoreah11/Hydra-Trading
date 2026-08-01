@@ -94,6 +94,28 @@ def to_candles(ticks: list[dict], tf_seconds: int) -> list[dict]:
     return out
 
 
+def resume_hours(last_ts: float, tf_seconds: int, now_ts: float,
+                 max_hours: int = 720) -> list[dt.datetime]:
+    """Desde qué hora hay que seguir bajando para completar una serie.
+
+    Se empieza en la ÚLTIMA vela guardada, no en la siguiente: esa vela pudo quedarse
+    a medias (se guardó con la hora incompleta), y al reimportarla se sobreescribe con
+    la versión completa. Reimportar no duplica, así que repetir una hora es gratis y
+    perderla no.
+
+    `max_hours` acota cada pasada: si llevas meses sin actualizar, se hace por tandas
+    en vez de intentar mil horas de golpe y bloquear la app.
+    """
+    if not last_ts or tf_seconds <= 0:
+        return []
+    start = dt.datetime.fromtimestamp(float(last_ts), dt.timezone.utc)
+    end = dt.datetime.fromtimestamp(float(now_ts), dt.timezone.utc)
+    if end <= start:
+        return []
+    hs = hours_between(start, end)
+    return hs[:max(1, max_hours)]
+
+
 def hours_between(start: dt.datetime, end: dt.datetime) -> list[dt.datetime]:
     """Las horas a pedir. Se saltan sábado y domingo: el mercado está cerrado y esos
     archivos vienen vacíos — pedirlos es tiempo tirado."""

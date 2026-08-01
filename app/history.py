@@ -136,6 +136,36 @@ def infer_tf(rows: list[dict]) -> str:
     return best if diff is not None and diff <= max(1, common * 0.2) else ""
 
 
+# Cómo nombra Dukascopy sus exportaciones:
+#   EURUSD_Candlestick_15_M_BID_01.01.2024-31.12.2024.csv
+# y cómo lo nombra casi todo el mundo:
+#   EURUSD_M15.csv, eurusd-m15-2024.csv, XAUUSD H1.csv
+_DUKA = re.compile(r"^([A-Za-z0-9./]+)[_ -]candlestick[_ -](\d+)[_ -]([mhdw])", re.I)
+_PLAIN = re.compile(r"^([A-Za-z0-9./]{3,12})[ _-]+(m|h|d|w)\s*(\d+)", re.I)
+_PLAIN2 = re.compile(r"^([A-Za-z0-9./]{3,12})[ _-]+(\d+)\s*(m|h|d|w)\b", re.I)
+
+
+def from_filename(name: str) -> tuple[str, str]:
+    """(símbolo, temporalidad) deducidos del nombre del archivo, o ("", "").
+
+    Se deduce, no se adivina: si el nombre no lo dice claro se devuelve vacío y que lo
+    ponga el usuario. Importar EURUSD como si fuera XAUUSD no se detecta luego.
+    """
+    base = str(name or "").rsplit("/", 1)[-1]
+    base = base.rsplit(".", 1)[0] if "." in base else base
+    m = _DUKA.match(base)
+    if m:
+        sym, n, unit = m.group(1), m.group(2), m.group(3).upper()
+        return sym.replace(".", "").upper(), f"{unit}{int(n)}"
+    m = _PLAIN.match(base)
+    if m:
+        return m.group(1).replace(".", "").upper(), f"{m.group(2).upper()}{int(m.group(3))}"
+    m = _PLAIN2.match(base)
+    if m:
+        return m.group(1).replace(".", "").upper(), f"{m.group(3).upper()}{int(m.group(2))}"
+    return "", ""
+
+
 class CandleDB:
     """Las velas viven en su propio archivo: son muchas y no deben competir con el
     diario ni engordar la copia de seguridad del cerebro."""

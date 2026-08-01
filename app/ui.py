@@ -907,6 +907,7 @@ async function renderBotsPanel(){ const seq=++MBSEQ;
 let BTSYM='', BTTF='M15';
 async function renderData(){ const box=$('#mb-data'); if(!box)return;
   let d; try{ d=await (await fetch('/data/status')).json(); }catch(e){ box.innerHTML=''; return; }
+  try{ Object.assign(d, await (await fetch('/data/auto')).json()); }catch(e){}
   const ser=d.series||[];
   let h='<div class="slbl" style="margin:16px 0 4px">'+L('HISTÓRICO PARA BACKTEST','HISTORY FOR BACKTESTING')+'</div>'
     +'<div class="phelp">'+escapeHtml(String(d.consejo||''))+'</div>'
@@ -923,12 +924,39 @@ async function renderData(){ const box=$('#mb-data'); if(!box)return;
     +'<input id="dt-tf" placeholder="M15" style="max-width:70px" value="">'
     +'<input type="file" id="dt-f" accept=".csv,.txt" style="flex:1;background:#08131d;color:#9fe6ff;border:1px solid #17495d;border-radius:8px;padding:6px 8px;font-size:11.5px">'
     +'<button class="btn ghost" onclick="dataUp()">'+L('Importar','Import')+'</button></div>'
+    +'<div class="phelp" style="margin-top:8px">'+L('…o importa una carpeta entera (el símbolo y la temporalidad salen del nombre del archivo):','…or import a whole folder:')+'</div>'
+    +'<div class="wadd"><input id="dt-dir" placeholder="/Users/tu/Downloads/dukascopy" style="text-transform:none">'
+    +'<button class="btn" onclick="dataFolder()">'+L('Importar carpeta','Import folder')+'</button></div>'
     +'<div class="ssec" style="margin:6px 0">'
+    +'<button class="btn '+(d.enabled?'':'ghost')+'" onclick="dataAuto('+(d.enabled?'false':'true')+')">'
+    +(d.enabled?L('✔ trayendo las nuevas sola','✔ keeping itself updated'):L('mantener al día solo','keep it updated'))+'</button>'
     +'<button class="btn ghost" onclick="dataDl()">'+ICO('refresh',12)+' '+L('Descargar de Dukascopy','Download from Dukascopy')+'</button>'
     +'<button class="btn ghost" onclick="btRun()">'+ICO('bars',12)+' '+L('Backtest','Backtest')+'</button>'
     +'<button class="btn ghost" onclick="btOpt()">'+ICO('bolt',12)+' '+L('Buscar mejores parámetros','Optimise parameters')+'</button>'
     +'</div><div id="dt-out" class="phelp"></div>';
+  if(d.enabled) h+='<div class="phelp">'+L('Cada '+(d.minutes||30)+' min completa lo que ya tienes desde su última vela. ','Every '+(d.minutes||30)+' min it tops up what you already have. ')
+    +(d.last?(L('Último repaso','last pass')+': '+ctxAgo(d.last)+' · '+escapeHtml(String(d.msg||''))):L('aún no ha corrido','not run yet'))+'</div>';
   box.innerHTML=h; }
+async function dataAuto(on){
+  try{ await fetch('/data/auto',{method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({enabled:on})}); }catch(e){ toast('Error de red'); return; }
+  toast(on?L('Se mantendrá al día sola','It will keep itself updated'):L('Actualización automática apagada','Auto-update off'));
+  if(on){ fetch('/data/auto/run',{method:'POST'}); }      // y trae lo que falte ya
+  renderData(); }
+async function dataFolder(){ const out=$('#dt-out'), el=$('#dt-dir');
+  if(!el||!el.value){ out.textContent=L('Escribe la carpeta.','Type the folder.'); return; }
+  out.style.color=''; out.textContent=L('Leyendo la carpeta…','Reading the folder…');
+  let d; try{ d=await (await fetch('/data/import-folder',{method:'POST',
+        headers:{'content-type':'application/json'},body:JSON.stringify({dir:el.value})})).json(); }
+  catch(e){ out.textContent='Error de red.'; return; }
+  if(!d.ok){ out.style.color='#ff5d73'; out.textContent=d.error||''; return; }
+  let h='<b>'+d.added+'</b> '+L('velas nuevas de','new bars from')+' '+(d.imported||[]).length+'/'+d.files+' '+L('archivos','files');
+  (d.imported||[]).slice(0,8).forEach(x=>{ h+='<br>· '+escapeHtml(x.symbol)+' '+escapeHtml(x.tf)+': +'+x.added; });
+  if((d.sin_identificar||[]).length) h+='<br><span style="color:#fbbf24">'
+    +L('sin identificar (súbelos a mano diciendo qué son): ','not identified (upload by hand): ')
+    +d.sin_identificar.slice(0,5).map(x=>escapeHtml(x.file)).join(', ')+'</span>';
+  (d.failed||[]).slice(0,3).forEach(x=>{ h+='<br><span style="color:#ff5d73">✗ '+escapeHtml(x.file)+': '+escapeHtml(x.error)+'</span>'; });
+  out.innerHTML=h; renderData(); }
 async function dataDrop(sym,tf){ if(!confirm('¿Quitar las velas de '+sym+' '+tf+'?')) return;
   await fetch('/data/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf),{method:'DELETE'});
   renderData(); }
