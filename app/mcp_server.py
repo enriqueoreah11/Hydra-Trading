@@ -8,6 +8,11 @@ Claude Desktop, dices "revisa Hydra", y Claude llama estas herramientas.
 
 Ventaja: cero tokens de la API de Anthropic. Usas tu suscripción.
 
+Además de leer el diario, desde aquí se puede **hacer backtest sobre tu propio
+histórico** (`data_status`, `backtest_run`, `backtest_optimize`). Se mide sobre el
+mismo archivo de velas que usa la app, no sobre una fuente remota: un backtest solo
+sirve si da el mismo resultado dentro de tres meses.
+
 Reglas de seguridad (deliberadas, no las relajes):
   - NINGUNA herramienta coloca órdenes, mueve stops ni cambia el lotaje en vivo.
     Eso queda en tu mano, en el navegador.
@@ -40,6 +45,26 @@ def store() -> Store:
     if _store is None:
         _store = Store(Path(settings.data_dir) / "brain.db")
     return _store
+
+
+_cdb: dict = {"db": None}
+
+
+def _candles_file() -> Path:
+    return Path(settings.data_dir) / "candles.db"
+
+
+def _candles():
+    """El MISMO archivo de velas que usa la app.
+
+    A propósito: lo que mides desde Claude Desktop tiene que ser exactamente el
+    histórico con el que opera Hydra. Dos almacenes distintos darían dos verdades.
+    """
+    from . import history
+
+    if _cdb["db"] is None:
+        _cdb["db"] = history.CandleDB(_candles_file())
+    return _cdb["db"]
 
 
 # ------------------------------------------------------------------- lectura
@@ -243,6 +268,88 @@ def propose_change(changes: dict, rationale: str, hypothesis_id: int = 0) -> dic
 
 
 # ------------------------------------------------------------------ mercado
+
+@mcp.tool()
+def data_status() -> dict:
+    """Qué histórico de velas tiene Hydra guardado: símbolos, temporalidades, cuántas
+    velas y desde cuándo. Mira esto ANTES de pedir un backtest: si el símbolo no está
+    aquí, no hay nada que medir y hay que importarlo o descargarlo primero."""
+    db = _candles()
+    inv = db.inventory()
+    return {"ok": True, "mb": round(_candles_file().stat().st_size / 1e6, 2)
+            if _candles_file().exists() else 0,
+            "series": inv, "bars": sum(x["bars"] for x in inv),
+            "nota": "las velas son de TU descarga: el mismo backtest da el mismo "
+                    "resultado hoy y dentro de tres meses"}
+
+
+@mcp.tool()
+def list_strategies() -> dict:
+    """Las estrategias que Hydra sabe simular, con sus parámetros por defecto y el
+    rango permitido de cada uno (lo que `backtest_optimize` puede recorrer)."""
+    from . import strategies
+    return {"estrategias": sorted(strategies.STRATEGIES),
+            "por_defecto": strategies.DEFAULTS,
+            "rangos": {k: {p: list(v) for p, v in rng.items()}
+                       for k, rng in strategies.TUNABLE.items()}}
+
+
+@mcp.tool()
+def backtest_run(symbol: str, tf: str = "H1", strategy: str = "donchian",
+                 params: dict | None = None, horizon: int = 60) -> dict:
+    """Backtest de una estrategia sobre el histórico guardado, medido en múltiplos de R.
+
+    Reglas del motor, para que interpretes bien el resultado:
+      - Peor caso intrabar: si en la misma vela se tocan stop y objetivo, cuenta el stop.
+      - Una posición a la vez: no se encadenan señales solapadas.
+      - En R, no en dinero: el resultado no depende del lotaje ni de la cuenta.
+
+    `params` vacío usa los valores por defecto de esa estrategia.
+    """
+    from . import optimize as opt
+    from . import strategies
+    sym, t = symbol.upper(), tf.upper()
+    cs = _candles().series(sym, t)
+    if not cs:
+        return {"ok": False, "error": f"no hay velas de {sym} {t} guardadas",
+                "disponible": _candles().inventory()}
+    p = dict(params or strategies.DEFAULTS.get(strategy, {}))
+    res = opt.run(cs, strategy, p, int(horizon))
+    res.update({"symbol": sym, "tf": t, "strategy": strategy, "params": p,
+                "bars": len(cs)})
+    return res
+
+
+@mcp.tool()
+def backtest_optimize(symbol: str, tf: str = "H1", strategy: str = "donchian",
+                      steps: int = 3, horizon: int = 60, split: float = 0.7,
+                      top: int = 8, min_trades: int = 10) -> dict:
+    """Prueba combinaciones de parámetros y las ordena por lo que hicieron FUERA de
+    muestra: se busca en la primera parte del histórico y se puntúa en la última, que
+    el motor no vio.
+
+    Lee las dos cifras juntas. Si una combinación luce mucho mejor dentro que fuera,
+    está ajustada al ruido — no la propongas para real por bonito que sea el número
+    de dentro. `steps` alto multiplica las combinaciones: empieza por 3.
+    """
+    from . import optimize as opt
+    sym, t = symbol.upper(), tf.upper()
+    cs = _candles().series(sym, t)
+    if not cs:
+        return {"ok": False, "error": f"no hay velas de {sym} {t} guardadas",
+                "disponible": _candles().inventory()}
+    res = opt.optimize(cs, strategy, int(steps), int(horizon), float(split),
+                       int(top), int(min_trades))
+    res.update({"symbol": sym, "tf": t})
+    return res
+
+
+@mcp.tool()
+def list_setups(days: float = 30, limit: int = 40) -> dict:
+    """Los setups acumulados: los que capturó Hydra y los que reportan tus cBots.
+    Sirve para comparar lo que el bot ve en vivo con lo que sale en el backtest."""
+    return {"ok": True, "days": days, "setups": store().setups(float(days), int(limit))}
+
 
 @mcp.tool()
 def get_market(symbol: str, timeframe: str = "H1") -> dict:

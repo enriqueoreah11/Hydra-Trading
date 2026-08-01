@@ -79,8 +79,48 @@ La separación **Estratega / Auditor** es lo que evita el sobreajuste.
 `query_journal`, `get_metrics`, `list_postmortems`, `list_hypotheses`,
 `list_proposals`, `get_market`.
 
+**Backtest sobre tu histórico:** `data_status`, `list_strategies`,
+`backtest_run`, `backtest_optimize`, `list_setups`.
+
 **Escritura (con compuerta):** `record_postmortem`, `open_hypothesis`,
 `propose_change`.
+
+## 6. Backtesting desde Claude Desktop
+
+Las herramientas de backtest miden sobre **tus velas** (`data/candles.db`, el mismo
+archivo que usa la app), no sobre una fuente remota. Eso es lo que hace que el
+resultado sea reproducible: el mismo backtest da el mismo número hoy y dentro de
+tres meses.
+
+Una sesión típica, en lenguaje normal dentro de Claude Desktop:
+
+> *"Mira qué histórico tengo, corre un backtest de donchian en EURUSD M15 y luego
+> optimiza los parámetros. Dime si la mejora aguanta fuera de muestra."*
+
+Claude encadena `data_status` → `backtest_run` → `backtest_optimize` y te lee el
+resultado. Lo que hay que mirar de cada combinación son **las dos cifras**:
+`in_sample` (donde se buscó) y `out_of_sample` (el tramo que el motor no vio). Si
+lucen muy distintas, esa combinación está ajustada al ruido — no va a real.
+
+El motor cuenta el **peor caso intrabar** (si en la misma vela se tocan stop y
+objetivo, cuenta el stop) y mantiene **una posición a la vez**. Ambas cosas bajan
+los números respecto a un backtest ingenuo; es a propósito.
+
+### Sobre los "MCP de TradingView"
+
+Circulan vídeos que enseñan backtests hechos en minutos con un puente MCP a
+TradingView y capturas de resultados espectaculares. Dos cosas, por separado:
+
+- **La velocidad es real, y no viene del MCP.** Lo rápido es que el modelo escriba
+  el código del backtest — que es exactamente lo que ya está aquí. El MCP solo
+  transporta datos.
+- **Las capturas no son evidencia.** Un panel con un Sharpe altísimo, sin código,
+  sin datos y sin periodo, no se puede comprobar. No cambies nada por eso.
+
+Un puente a TradingView sirve como **vía alternativa** para mirar un gráfico o
+contrastar una serie que no tengas descargada. La base reproducible sigue siendo
+tu histórico local: es tuyo, no cambia, no tiene límite de peticiones y se puede
+auditar.
 
 ## Autonomía real sin API (opcional)
 
