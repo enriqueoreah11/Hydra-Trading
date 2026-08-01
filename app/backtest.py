@@ -9,8 +9,15 @@ from __future__ import annotations
 from .broker import Candle
 
 
-def simulate_trade(candles: list[Candle], entry_idx: int, direction: str,
-                   entry: float, sl: float, tp: float, horizon: int) -> float | None:
+def simulate_trade_detail(candles: list[Candle], entry_idx: int, direction: str,
+                          entry: float, sl: float, tp: float,
+                          horizon: int) -> tuple[float, int] | None:
+    """Resuelve la operacion y dice TAMBIEN en que vela se cerro.
+
+    El indice de salida importa para medir de verdad: sin el, un backtest encadena
+    señales solapadas y cuenta operaciones que el bot nunca habria podido abrir,
+    porque ya tenia una viva.
+    """
     risk = abs(entry - sl)
     if risk <= 0:
         return None
@@ -19,18 +26,24 @@ def simulate_trade(candles: list[Candle], entry_idx: int, direction: str,
         bar = candles[i]
         if direction == "buy":
             if bar.low <= sl:                       # peor caso primero
-                return -1.0
+                return -1.0, i
             if bar.high >= tp:
-                return abs(tp - entry) / risk
+                return abs(tp - entry) / risk, i
         else:  # sell
             if bar.high >= sl:
-                return -1.0
+                return -1.0, i
             if bar.low <= tp:
-                return abs(entry - tp) / risk
+                return abs(entry - tp) / risk, i
     # sin resolver dentro del horizonte: cerrar al ultimo cierre
     exit_price = candles[end].close
     signed = (exit_price - entry) if direction == "buy" else (entry - exit_price)
-    return signed / risk
+    return signed / risk, end
+
+
+def simulate_trade(candles: list[Candle], entry_idx: int, direction: str,
+                   entry: float, sl: float, tp: float, horizon: int) -> float | None:
+    got = simulate_trade_detail(candles, entry_idx, direction, entry, sl, tp, horizon)
+    return None if got is None else got[0]
 
 
 def sample_indices(n_candles: int, samples: int, warmup: int, horizon: int) -> list[int]:

@@ -2294,6 +2294,191 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                           f"{r['alias']} ({r['account_id']}): {exc}", symbol=sym)
         return out
 
+    # --------------------------------- histórico propio: importar y hacer backtest
+
+    _cdb: dict = {"db": None}
+
+    def _candles_db():
+        from . import history as hist
+        if _cdb["db"] is None:
+            _cdb["db"] = hist.CandleDB(settings.data_path / "candles.db")
+        return _cdb["db"]
+
+    @app.get("/data/status")
+    async def data_status():
+        """Qué histórico hay guardado y cuánto ocupa.
+
+        El tamaño va delante a propósito: las velas ocupan poco (un año de M15 de un
+        símbolo es cosa de un mega), pero conviene verlo antes de bajarse diez años de
+        M1 de veinte instrumentos.
+        """
+        db = _candles_db()
+        f = settings.data_path / "candles.db"
+        inv = db.inventory()
+        return {"ok": True, "mb": round(f.stat().st_size / 1e6, 2) if f.exists() else 0,
+                "series": inv, "bars": sum(x["bars"] for x in inv),
+                "consejo": ("guarda VELAS, no ticks: los ticks se agregan al bajarlos y "
+                            "se tiran. M15/H1/H4 para todo, y M1 solo de lo que pruebes "
+                            "de verdad")}
+
+    @app.post("/data/import")
+    async def data_import(request: Request, symbol: str = "", tf: str = ""):
+        """Sube un CSV de velas. Reimportar el mismo archivo no duplica nada."""
+        from . import history as hist
+        raw = await request.body()
+        if not raw:
+            return JSONResponse({"ok": False, "error": "archivo vacío"}, status_code=400)
+        rows, info = await asyncio.to_thread(
+            hist.parse_csv, raw.decode("utf-8", "replace"))
+        if not rows:
+            return JSONResponse({"ok": False, "error": info.get("error") or "sin velas",
+                                 "info": info}, status_code=400)
+        sym = (symbol or "").upper().strip()
+        if not sym:
+            return JSONResponse({"ok": False, "error": "dime de qué símbolo es"},
+                                status_code=400)
+        t = (tf or hist.infer_tf(rows) or "").upper()
+        if not t:
+            return JSONResponse({"ok": False, "error": "no pude deducir la temporalidad: "
+                                                       "dímela (M15, H1…)"},
+                                status_code=400)
+        added = await asyncio.to_thread(_candles_db().add, sym, t, rows)
+        store.log("system", "data_import",
+                  f"{sym} {t}: {added} velas nuevas de {len(rows)} leídas")
+        return {"ok": True, "symbol": sym, "tf": t, "read": len(rows),
+                "added": added, "skipped": info.get("skipped"),
+                "columns": info.get("columns"),
+                "total": _candles_db().count(sym, t)}
+
+    @app.delete("/data/{symbol}")
+    async def data_drop(symbol: str, tf: str = ""):
+        n = _candles_db().drop(symbol, tf)
+        store.log("system", "data_drop", f"{symbol} {tf or '(todo)'}: {n} velas fuera")
+        return {"ok": True, "removed": n}
+
+    _dl: dict = {"running": False, "msg": "", "done": 0, "total": 0}
+
+    @app.get("/data/download/status")
+    async def data_download_status():
+        return {"ok": True, **_dl}
+
+    @app.post("/data/download")
+    async def data_download(request: Request):
+        """Baja histórico de Dukascopy y lo guarda YA EN VELAS.
+
+        Los ticks no se guardan: se agregan al vuelo y se tiran. Un año de ticks de un
+        par son decenas de millones de filas; las velas del mismo año, un megabyte.
+        """
+        import datetime as _dt
+        from . import dukascopy as dk
+        from . import history as hist
+        if _dl["running"]:
+            return JSONResponse({"ok": False, "error": "ya hay una descarga en marcha"},
+                                status_code=409)
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        sym = str(body.get("symbol") or "").upper().strip()
+        tf = str(body.get("tf") or "M15").upper()
+        days = int(body.get("days") or 30)
+        if not sym:
+            return JSONResponse({"ok": False, "error": "falta el símbolo"},
+                                status_code=400)
+        secs = hist._TF_SECONDS.get(tf)
+        if not secs:
+            return JSONResponse({"ok": False, "error": f"temporalidad desconocida: {tf}"},
+                                status_code=400)
+        end = _dt.datetime.now(_dt.timezone.utc).replace(minute=0, second=0, microsecond=0)
+        start = end - _dt.timedelta(days=max(1, min(3650, days)))
+        hours = dk.hours_between(start, end)
+        digits = dk.digits_for(sym)
+
+        async def work():
+            import httpx
+            _dl.update({"running": True, "done": 0, "total": len(hours),
+                        "msg": f"{sym} {tf}: {len(hours)} horas"})
+            saved = fails = 0
+            try:
+                async with httpx.AsyncClient(timeout=30) as http:
+                    buf: list[dict] = []
+                    for i, h in enumerate(hours):
+                        try:
+                            r = await http.get(dk.url_for(sym, h))
+                            if r.status_code == 200 and r.content:
+                                buf += dk.decode(r.content, h.timestamp(), digits)
+                        except Exception:  # noqa: BLE001 - una hora perdida no corta
+                            fails += 1
+                        _dl["done"] = i + 1
+                        # se vuelca cada 24 horas de ticks para no acumular memoria
+                        if len(buf) > 400000 or i == len(hours) - 1:
+                            cs = dk.to_candles(sorted(buf, key=lambda t: t["ts"]), secs)
+                            saved += await asyncio.to_thread(
+                                _candles_db().add, sym, tf, cs)
+                            buf = []
+                            _dl["msg"] = f"{sym} {tf}: {saved} velas"
+                store.log("system", "data_download",
+                          f"{sym} {tf}: {saved} velas nuevas, {fails} horas fallidas")
+                _dl["msg"] = (f"{sym} {tf}: {saved} velas nuevas"
+                              + (f", {fails} horas sin datos" if fails else ""))
+            except Exception as exc:  # noqa: BLE001
+                _dl["msg"] = f"error: {str(exc)[:120]}"
+            finally:
+                _dl["running"] = False
+
+        asyncio.create_task(work())
+        return {"ok": True, "symbol": sym, "tf": tf, "hours": len(hours),
+                "nota": ("va en segundo plano; mira /data/download/status. Los ticks se "
+                         "convierten a velas y NO se guardan")}
+
+    @app.post("/backtest/run")
+    async def backtest_run(request: Request):
+        """Backtest de UNA estrategia sobre tu histórico, en múltiplos de R."""
+        from . import optimize as opt
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        sym = str(body.get("symbol") or "").upper()
+        tf = str(body.get("tf") or settings.timeframe).upper()
+        strat = str(body.get("strategy") or "donchian")
+        cs = await asyncio.to_thread(_candles_db().series, sym, tf)
+        if not cs:
+            return JSONResponse({"ok": False, "error": f"no tengo velas de {sym} {tf}: "
+                                                       "impórtalas o descárgalas"},
+                                status_code=400)
+        from . import strategies as st3
+        params = body.get("params") or st3.DEFAULTS.get(strat, {})
+        res = await asyncio.to_thread(opt.run, cs, strat, params,
+                                      int(body.get("horizon") or 60))
+        if not res.get("ok"):
+            return JSONResponse(res, status_code=400)
+        res.update({"symbol": sym, "tf": tf, "strategy": strat, "params": params,
+                    "bars": len(cs)})
+        return res
+
+    @app.post("/backtest/optimize")
+    async def backtest_optimize(request: Request):
+        """Prueba combinaciones y las ordena por lo que hicieron FUERA de muestra."""
+        from . import optimize as opt
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        sym = str(body.get("symbol") or "").upper()
+        tf = str(body.get("tf") or settings.timeframe).upper()
+        strat = str(body.get("strategy") or "donchian")
+        cs = await asyncio.to_thread(_candles_db().series, sym, tf)
+        if not cs:
+            return JSONResponse({"ok": False, "error": f"no tengo velas de {sym} {tf}"},
+                                status_code=400)
+        res = await asyncio.to_thread(
+            opt.optimize, cs, strat, int(body.get("steps") or 3),
+            int(body.get("horizon") or 60), float(body.get("split") or 0.7),
+            int(body.get("top") or 8), int(body.get("min_trades") or 10))
+        res.update({"symbol": sym, "tf": tf})
+        return res
+
     @app.get("/setups")
     async def setups(days: float = 30, limit: int = 30):
         """Los setups que se van acumulando, del bot y de Hydra, en un solo sitio."""

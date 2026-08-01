@@ -893,11 +893,106 @@ async function renderBotsPanel(){ const seq=++MBSEQ;
   // la carpeta y tus bots: los pinta renderBots, que es quien sabe de esto
   h+='<div id="mb-work"><div class="empty">'+L('Cargando…','Loading…')+'</div></div>';
   h+='<div id="mb-log"></div>';
+  h+='<div id="mb-data"></div>';
   h+='<div id="mb-ind"></div>';
   box.innerHTML=h;
   renderBots('#mb-work');
   renderShadow();
+  renderData();
   renderInd(); }
+/* ------- HISTORICO Y BACKTEST -------
+   Se guardan VELAS, no ticks: un año de M15 de un simbolo es cosa de un mega y los
+   ticks son decenas de millones de filas. Al descargar de Dukascopy se agregan al
+   vuelo y el tick se tira. */
+let BTSYM='', BTTF='M15';
+async function renderData(){ const box=$('#mb-data'); if(!box)return;
+  let d; try{ d=await (await fetch('/data/status')).json(); }catch(e){ box.innerHTML=''; return; }
+  const ser=d.series||[];
+  let h='<div class="slbl" style="margin:16px 0 4px">'+L('HISTÓRICO PARA BACKTEST','HISTORY FOR BACKTESTING')+'</div>'
+    +'<div class="phelp">'+escapeHtml(String(d.consejo||''))+'</div>'
+    +'<div class="phelp">'+L('Guardado','Stored')+': <b>'+(d.bars||0)+'</b> '+L('velas','bars')
+    +' · '+(d.mb||0)+' MB</div>';
+  ser.slice(0,10).forEach(x=>{ const f=new Date((x.from_ts||0)*1000), t=new Date((x.to_ts||0)*1000);
+    h+='<div class="wrow"><span class="wsym" style="min-width:0;flex:1">'+escapeHtml(x.symbol)+' '+escapeHtml(x.tf)
+      +'<span class="phelp" style="margin:0;display:block;text-transform:none">'
+      +f.toLocaleDateString()+' → '+t.toLocaleDateString()+'</span></span>'
+      +'<span class="phelp" style="margin:0;text-align:right">'+x.bars+' '+L('velas','bars')+'</span>'
+      +'<span class="wx" title="Quitar" onclick="dataDrop(\''+x.symbol+'\',\''+x.tf+'\')">✕</span></div>'; });
+  h+='<div class="phelp" style="margin-top:8px">'+L('Sube tu CSV descargado (fecha, open, high, low, close):','Upload your downloaded CSV:')+'</div>'
+    +'<div class="wadd"><input id="dt-sym" placeholder="EURUSD" style="max-width:110px">'
+    +'<input id="dt-tf" placeholder="M15" style="max-width:70px" value="">'
+    +'<input type="file" id="dt-f" accept=".csv,.txt" style="flex:1;background:#08131d;color:#9fe6ff;border:1px solid #17495d;border-radius:8px;padding:6px 8px;font-size:11.5px">'
+    +'<button class="btn ghost" onclick="dataUp()">'+L('Importar','Import')+'</button></div>'
+    +'<div class="ssec" style="margin:6px 0">'
+    +'<button class="btn ghost" onclick="dataDl()">'+ICO('refresh',12)+' '+L('Descargar de Dukascopy','Download from Dukascopy')+'</button>'
+    +'<button class="btn ghost" onclick="btRun()">'+ICO('bars',12)+' '+L('Backtest','Backtest')+'</button>'
+    +'<button class="btn ghost" onclick="btOpt()">'+ICO('bolt',12)+' '+L('Buscar mejores parámetros','Optimise parameters')+'</button>'
+    +'</div><div id="dt-out" class="phelp"></div>';
+  box.innerHTML=h; }
+async function dataDrop(sym,tf){ if(!confirm('¿Quitar las velas de '+sym+' '+tf+'?')) return;
+  await fetch('/data/'+encodeURIComponent(sym)+'?tf='+encodeURIComponent(tf),{method:'DELETE'});
+  renderData(); }
+async function dataUp(){ const f=$('#dt-f'), out=$('#dt-out');
+  const sym=($('#dt-sym')||{}).value||'', tf=($('#dt-tf')||{}).value||'';
+  if(!sym){ out.textContent=L('Dime de qué símbolo es.','Which symbol is it?'); return; }
+  if(!f||!f.files||!f.files[0]){ out.textContent=L('Elige el archivo.','Pick the file.'); return; }
+  out.style.color=''; out.textContent=L('Leyendo…','Reading…');
+  let d; try{ d=await (await fetch('/data/import?symbol='+encodeURIComponent(sym)+'&tf='+encodeURIComponent(tf),
+        {method:'POST',body:f.files[0]})).json(); }
+  catch(e){ out.textContent='Error de red.'; return; }
+  if(!d.ok){ out.style.color='#ff5d73'; out.textContent=d.error||''; return; }
+  out.style.color='#34d399';
+  out.textContent=d.symbol+' '+d.tf+': '+d.added+' '+L('velas nuevas de','new bars out of')+' '+d.read
+    +(d.skipped?(' · '+d.skipped+' '+L('filas descartadas','rows skipped')):'');
+  BTSYM=d.symbol; BTTF=d.tf; renderData(); }
+async function dataDl(){ const out=$('#dt-out');
+  const sym=(($('#dt-sym')||{}).value||BTSYM||'').toUpperCase();
+  const tf=(($('#dt-tf')||{}).value||BTTF||'M15').toUpperCase();
+  if(!sym){ out.textContent=L('Escribe el símbolo (p. ej. EURUSD).','Type the symbol.'); return; }
+  const days=parseInt(prompt(L('¿Cuántos días hacia atrás?','How many days back?'),'60')||'0');
+  if(!days) return;
+  let d; try{ d=await (await fetch('/data/download',{method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({symbol:sym,tf:tf,days:days})})).json(); }
+  catch(e){ out.textContent='Error de red.'; return; }
+  if(!d.ok){ out.style.color='#fbbf24'; out.textContent=d.error||''; return; }
+  out.style.color=''; out.textContent=L('Descargando '+d.hours+' horas en segundo plano…','Downloading '+d.hours+' hours in the background…');
+  const t=setInterval(async()=>{ let st; try{ st=await (await fetch('/data/download/status')).json(); }catch(e){ return; }
+    out.textContent=(st.running?(L('Descargando','Downloading')+' '+st.done+'/'+st.total+' · '):'')+(st.msg||'');
+    if(!st.running){ clearInterval(t); renderData(); } },1500); }
+async function btRun(){ const out=$('#dt-out');
+  const sym=(($('#dt-sym')||{}).value||BTSYM||'').toUpperCase();
+  const tf=(($('#dt-tf')||{}).value||BTTF||'M15').toUpperCase();
+  const st=prompt(L('¿Qué estrategia? (donchian, rsi_fade, momentum_burst, ema_trend, ma_pullback)','Which strategy?'),'donchian');
+  if(!st) return;
+  out.style.color=''; out.textContent=L('Corriendo…','Running…');
+  let d; try{ d=await (await fetch('/backtest/run',{method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({symbol:sym,tf:tf,strategy:st})})).json(); }
+  catch(e){ out.textContent='Error de red.'; return; }
+  if(!d.ok){ out.style.color='#fbbf24'; out.textContent=d.error||''; return; }
+  const col=(d.expectancy_r||0)>0?'#34d399':'#ff5d73';
+  out.innerHTML='<b>'+escapeHtml(st)+'</b> · '+escapeHtml(sym)+' '+escapeHtml(tf)+' ('+d.bars+' velas)<br>'
+    +d.trades+' '+L('operaciones','trades')+' · '+L('acierto','win')+' '+d.win_pct+'%'
+    +' · <b style="color:'+col+'">'+d.expectancy_r+'R</b> '+L('por operación','per trade')
+    +'<br>'+L('total','total')+' '+d.total_r+'R · '+L('peor racha','worst run')+' '+d.max_dd_r+'R'; }
+async function btOpt(){ const out=$('#dt-out');
+  const sym=(($('#dt-sym')||{}).value||BTSYM||'').toUpperCase();
+  const tf=(($('#dt-tf')||{}).value||BTTF||'M15').toUpperCase();
+  const st=prompt(L('¿Qué estrategia optimizo?','Which strategy?'),'donchian');
+  if(!st) return;
+  out.style.color=''; out.textContent=L('Probando combinaciones… (puede tardar)','Trying combinations…');
+  let d; try{ d=await (await fetch('/backtest/optimize',{method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({symbol:sym,tf:tf,strategy:st,steps:3,top:5})})).json(); }
+  catch(e){ out.textContent='Error de red.'; return; }
+  if(!d.ok){ out.style.color='#fbbf24'; out.textContent=d.error||''; return; }
+  let h='<b>'+escapeHtml(st)+'</b>: '+d.combos+' '+L('combinaciones','combinations')+', '
+    +d.evaluated+' '+L('con operaciones suficientes','with enough trades')+'<br>';
+  (d.top||[]).forEach(t=>{ const i=t.in_sample, o=t.out_of_sample;
+    const col=(o.expectancy_r||0)>0?'#34d399':'#ff5d73';
+    h+='· '+escapeHtml(JSON.stringify(t.params))+'<br>'
+      +'<span style="opacity:.8">'+L('dentro','in')+': '+i.expectancy_r+'R ('+i.trades+') · '
+      +'<b style="color:'+col+'">'+L('FUERA','OUT')+': '+(o.expectancy_r==null?'—':o.expectancy_r+'R')+' ('+o.trades+')</b></span><br>'; });
+  h+='<span style="opacity:.7">'+escapeHtml(String(d.aviso||''))+'</span>';
+  out.innerHTML=h; }
 /* ------- REGISTRO DEL BOT (los CSV) -------
    El bot anota cada analisis en un CSV que nadie mira porque hay que ir a buscarlo.
    Hydra lo lee sola cada pocos minutos, solo lo nuevo, y lo guarda en el contexto
