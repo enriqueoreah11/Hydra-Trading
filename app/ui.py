@@ -1646,7 +1646,11 @@ async function renderVoice(){ const el=$('#sys-voice'); if(!el) return;
     const pr=d.profiles||[];
     if(pr.length) h+='<div class="prm"><label>Voz</label><select onchange="setVoice(\'voicebox\',this.value)">'
       +pr.map(p=>'<option'+(p.name===d.selected?' selected':'')+'>'+escapeHtml(p.name)+'</option>').join('')+'</select>'
-      +'<div class="phelp">'+pr.map(p=>escapeHtml(p.name)+' ('+escapeHtml(p.language||'?')+')').join(' · ')+'</div></div>'; }
+      +'<div class="phelp">'+pr.map(p=>escapeHtml(p.name)+' ('+escapeHtml(p.language||'?')+')').join(' · ')+'</div></div>';
+    else h+='<div class="phelp" style="color:#fbbf24">Voicebox responde pero no me da ningún perfil de voz. '
+      +'Ábrela y comprueba que tienes al menos uno creado.</div>'; }
+  h+='<div style="margin-top:6px"><button class="btn" onclick="voiceTest()">Probar mi voz</button></div>'
+    +(d.running?'<div id="vb-out" class="phelp"></div>':'');
   el.innerHTML=h; paintIcons(); }
 /* Abrir la app desde aqui: es el motivo numero uno de "configure la voz y no la usa". */
 async function voiceStart(){ const out=$('#vb-out');
@@ -1667,10 +1671,30 @@ async function setVoice(p,prof){ let r; try{ r=await fetch('/voice/local',{metho
 let vbTried=false;
 async function voiceAutoStart(){ if(vbTried) return; vbTried=true;
   try{ const d=await (await fetch('/voice/local')).json();
+    /* Se marca YA que la voz de servidor está elegida. `ttsServer` solo se ponía
+       al volver /agents, y hasta entonces valía false: la PRIMERA frase —justo la
+       de bienvenida— salía siempre con la voz del navegador aunque todo estuviera
+       bien. Eso solo era «la voz no funciona» a ojos de cualquiera. */
+    if(d.provider) ttsServer=true;
     if(d.running) return;                     // ya estaba: nada que hacer
     await fetch('/voice/local/start',{method:'POST'});
   }catch(e){}
   setTimeout(()=>{ const el=$('#sys-voice'); if(el&&el.innerHTML) renderVoice(); },1200); }
+/* Probar la voz y DECIR qué pasó. Es lo único que convierte «no usa mi voz» en un
+   motivo concreto: la app cerrada, el perfil que no existe, o que sí sonó. */
+async function voiceTest(){ const out=$('#vb-out'); if(out){ out.style.color='#5f7387'; out.textContent='Probando…'; }
+  let d; try{ d=await (await fetch('/tts/health')).json(); }
+  catch(e){ if(out) out.textContent='Error de red.'; return; }
+  if(!out) return;
+  if(d.ok){ out.style.color='#34d399';
+    out.textContent='Sonó con tu voz'+(d.voice_id?(' ('+d.voice_id+')'):'')+'. '
+      +(d.sono_en_el_mac?'La reprodujo Voicebox en las bocinas del Mac.':''); }
+  else { out.style.color='#ff5d73';
+    out.innerHTML=escapeHtml(d.error||'No pude usar tu voz.')
+      +(d.profiles&&d.profiles.length?('<br><span style="opacity:.8">Perfiles que tiene Voicebox: '
+        +d.profiles.map(escapeHtml).join(', ')+'</span>'):'')
+      +(d.respuesta_voicebox?('<br><span style="opacity:.6;font-size:10px">'
+        +escapeHtml(String(d.respuesta_voicebox).slice(0,180))+'</span>'):''); } }
 async function renderLocal(){ const el=$('#sys-local'); if(!el) return;
   let d; try{ d=await (await fetch('/llm/local')).json(); }catch(e){ el.innerHTML=''; return; }
   const P=d.provider||'anthropic';
