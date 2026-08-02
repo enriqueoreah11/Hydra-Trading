@@ -210,16 +210,11 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
     # voz elegida desde la UI
     try:
         _v = json.loads((settings.data_path / "voice.json").read_text())
-        if _v.get("provider") in ("", "local", "voicebox", "openai", "elevenlabs"):
+        if _v.get("provider") in ("", "voicebox"):
             settings.tts_provider = _v["provider"]
         if _v.get("profile"):
             settings.voicebox_profile = str(_v["profile"])
-        if _v.get("fx") in ("jarvis", "limpio", ""):
-            settings.voice_fx = _v["fx"]
-        if _v.get("local_voice") is not None:
-            settings.local_voice = str(_v["local_voice"])
-        if _v.get("speed"):
-            settings.voice_speed = max(0.5, min(2.0, float(_v["speed"])))
+
     except Exception:  # noqa: BLE001
         pass
 
@@ -531,43 +526,16 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         except Exception:  # noqa: BLE001
             body = {}
         prov = body.get("provider", "")
-        if prov not in ("", "local", "voicebox", "openai", "elevenlabs"):
+        if prov not in ("", "voicebox"):
             return JSONResponse({"ok": False, "error": "proveedor inválido"}, status_code=400)
         settings.tts_provider = prov
         if body.get("profile"):
             settings.voicebox_profile = str(body["profile"])[:80]
-        if body.get("fx") in ("jarvis", "limpio", ""):
-            settings.voice_fx = body["fx"]
-        if body.get("local_voice") is not None:
-            settings.local_voice = str(body["local_voice"])[:200]
-        if body.get("speed"):
-            settings.voice_speed = max(0.5, min(2.0, float(body["speed"])))
+
         (settings.data_path / "voice.json").write_text(json.dumps(
-            {"provider": prov, "profile": settings.voicebox_profile,
-             "fx": settings.voice_fx, "local_voice": settings.local_voice,
-             "speed": settings.voice_speed}))
+            {"provider": prov, "profile": settings.voicebox_profile}))
         store.log("system", "tts_provider", f"voz: {prov or 'navegador'} ({settings.voicebox_profile})")
-        return {"ok": True, "provider": prov, "profile": settings.voicebox_profile,
-                "fx": settings.voice_fx, "local_voice": settings.local_voice,
-                "speed": settings.voice_speed}
-
-    @app.get("/voice/engines")
-    async def voice_engines():
-        """Qué motores de voz LOCALES hay instalados en esta máquina y cuál se usaría.
-
-        Es lo primero que hay que mirar cuando "no se oye la voz que configuré": dice
-        si falta el motor, si falta la voz buena o si solo falta ffmpeg para el efecto.
-        """
-        from . import voice_local
-        return {"ok": True, **voice_local.engines(),
-                "voces_say": voice_local.say_voices(),
-                "instalar": voice_local.INSTALL}
-
-    @app.post("/voice/engines/test")
-    async def voice_engines_test():
-        """Genera una frase de prueba con el motor local y dice qué salió."""
-        from . import voice_local
-        return await voice_local.diagnose()
+        return {"ok": True, "provider": prov, "profile": settings.voicebox_profile}
 
     @app.post("/llm/test")
     async def llm_test():
@@ -1032,10 +1000,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                 return Response(status_code=204)
             # devolvemos el motivo real para poder diagnosticar (la UI lo muestra)
             raise HTTPException(503, tts_mod.last_error() or "TTS neural no configurado")
-        # el motor local devuelve WAV cuando no hay ffmpeg para pasarlo a mp3;
-        # anunciarlo mal hace que algunos navegadores no lo toquen y parezca que no hay voz
-        from . import voice_local
-        return Response(content=audio, media_type=voice_local.mime(audio))
+        return Response(content=audio, media_type="audio/mpeg")
 
     @app.post("/agent/{key}/params")
     async def set_agent_params(key: str, request: Request):
