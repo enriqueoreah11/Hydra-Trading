@@ -323,8 +323,8 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     <div id="sys-vault"></div>
     <div class="slbl"><span class="bi" data-ico="flask"></span>PROPUESTAS (CLAUDE DESKTOP · MCP)</div>
     <div id="sys-props"></div>
-    <div class="slbl"><span class="bi" data-ico="chart"></span>CUENTAS DESTINO (mandar a varias)</div>
-    <div id="sys-mirror"></div>
+    <!-- CUENTAS DESTINO se mudó a la ventana CUENTAS: todo lo de cuentas en un
+         solo sitio. Aquí solo queda el estado de conexión. -->
     <!-- La FLOTA DE ESTRATEGIAS se mudo a la ventana BOTS: bots y estrategias son lo
          mismo (lo que ejecuta), y aqui solo queda la configuracion general de la app. -->
   </div>
@@ -367,7 +367,11 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
   <div class="hd"><div class="e" id="acc-icon"></div>
     <div><h2>CUENTAS</h2><div class="role">Tus cuentas de cTrader y cu&aacute;l usa Hydra</div></div>
     <div class="x" onclick="closeWins()">&#10005;</div></div>
-  <div class="sbody"><div id="sys-accounts"><div class="empty">&hellip;</div></div></div>
+  <div class="sbody">
+    <div id="sys-accounts"><div class="empty">&hellip;</div></div>
+    <div class="slbl" style="margin:16px 0 4px"><span class="bi" data-ico="chart"></span>MANDAR A VARIAS A LA VEZ</div>
+    <div id="sys-mirror"><div class="empty">&hellip;</div></div>
+  </div>
 </div>
 
 <!-- CEREBRO Y VOZ: se abre pulsando su ventana del tablero. Todo lo de pensar y
@@ -562,7 +566,7 @@ function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('sho
 
 $('#b-refresh').onclick=()=>{ toast('Datos actualizados'); load(); }; $('#b-halt').onclick=doHalt; $('#b-demo').onclick=runDemo;
 {const bc=$('#b-cal'); if(bc) bc.onclick=openCalendar;}
-$('#b-sistema').onclick=()=>{ renderSysInfo(); renderMirror(); renderSecrets(); renderVault(); renderProps(); $('#sistema').classList.add('open'); };
+$('#b-sistema').onclick=()=>{ renderSysInfo(); renderSecrets(); renderVault(); renderProps(); $('#sistema').classList.add('open'); };
 /* ------- BOTS DE CTRADER: se importan sus parametros del .algo ------- */
 /* El aviso de los dibujos, honesto. Antes decia "lee dibujos a mano" siempre que
    el bot TUVIERA esos parametros; en modo automatico eso es falso, y en combinado
@@ -1786,7 +1790,7 @@ async function setProvider(p,m){ pick('#sys-local',p&&('setProvider(\''+p+'\''))
    estado y no configuracion. */
 let ACCS=null;
 function openAccWin(){ const ic=$('#acc-icon'); if(ic) ic.innerHTML=ICO('archive',26,'#7ff6ff');
-  openWin('#accwin'); loadAccounts(); }
+  openWin('#accwin'); loadAccounts(); renderMirror(); paintIcons(); }
 async function pollAccounts(){ const box=$('#hud-acc'); if(!box)return;
   let d; try{ d=await (await fetch('/accounts')).json(); }catch(e){ return; }
   ACCS=d;
@@ -1819,8 +1823,8 @@ async function loadAccounts(){ let d; try{ d=await (await fetch('/accounts')).js
     +'<a class="btn" href="/oauth/login" style="display:inline-block;margin-top:8px;text-decoration:none">Conectar cTrader</a>'; return; }
   const eti=a=>(String(a.name||'').trim()||('#'+a.id));
   const opts=d.accounts.map(a=>'<option value="'+a.id+'" data-env="'+(a.live?'live':'demo')+'"'+(a.id==d.current?' selected':'')+'>'+escapeHtml(eti(a))+' · '+(a.live?'LIVE ⚠️':'DEMO')+(a.name?(' · #'+a.id):'')+(a.login?' · login '+a.login:'')+'</option>').join('');
-  el.innerHTML='<div class="phelp">Hydra opera con <b>una</b> cuenta: la que elijas aquí. Para mandar los trades '
-    +'a varias a la vez, eso se configura en Sistema → Cuentas destino.</div>'
+  el.innerHTML='<div class="phelp">Hydra opera con <b>una</b> cuenta: la que elijas aquí. Para mandar '
+    +'la misma orden a varias, es la sección de abajo.</div>'
     +'<div class="prm"><label>Cuenta que usa Hydra</label><select id="acc-sel">'+opts+'</select>'
     +'<div class="phelp">Usa una <b>DEMO</b> para practicar; LIVE opera con dinero real.</div></div>'
     +'<button class="btn" onclick="selectAccount()">Usar esta cuenta</button>'
