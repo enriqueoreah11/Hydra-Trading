@@ -1380,13 +1380,14 @@ async function setLang(lg){ try{ await fetch('/lang',{method:'POST',headers:{'Co
   if(recog){ try{ recog.lang=voiceLang(); if(running)recog.stop(); }catch(_){} }
   toast(L('Idioma: '+({es:'Español',mix:'Español + inglés',en:'English'}[lg]), 'Language: '+({es:'Spanish',mix:'Spanish + English',en:'English'}[lg])));
   speak(L('Listo, hablaré así.','Done, I will speak like this.')); renderSysInfo(); }
-/* Los modelos actuales. El de Opus estaba en la generación anterior (4.8) y por eso
-   no se veía el salto: aquí se pide por nombre exacto, no por «el último». */
+/* Los modelos actuales, de MENOS a MÁS capaz: izquierda = más barato y rápido,
+   derecha = más inteligente y más caro. El de Opus estaba en la generación anterior
+   (4.8) y por eso no se veía el salto: aquí se pide por nombre exacto. */
 const MODELS=[
   {id:'claude-haiku-4-5-20251001',label:'Haiku 4.5',hint:'el más barato (~20-30x menos que Opus)'},
   {id:'claude-fable-5',label:'Fable 5',hint:'rápido y económico, para el volumen'},
   {id:'claude-sonnet-5',label:'Sonnet 5',hint:'balance costo/calidad (recomendado)'},
-  {id:'claude-opus-5',label:'Opus 5',hint:'el más capaz y el más caro'}];
+  {id:'claude-opus-5',label:'Opus 5',hint:'el más capaz — y el más caro'}];
 async function setModel(id){ const m=MODELS.find(x=>x.id===id)||{label:id};
   let r; try{ r=await fetch('/model',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:id})}); }catch(e){ toast('Error de red'); return; }
   if(r.ok){ toast('Modelo IA: '+m.label+' ✓'); speak(L('Cambié el modelo a '+m.label+', '+SIR+'.','Switched the model to '+m.label+', '+SIR+'.')); load(); setTimeout(renderCV,600); }
@@ -1632,11 +1633,22 @@ async function renderLocal(){ const el=$('#sys-local'); if(!el) return;
       h+='<div class="phelp" style="color:#fbbf24">Ollama no responde en '+escapeHtml(d.url||'')
         +'. Bájalo en <b>ollama.com</b>, ábrelo (queda en la barra de arriba) y corre <code>ollama pull qwen3:8b</code>.</div>';
     }
+    /* Lo importante que hay que decir aqui: NO se ha parado nada. El hibrido sigue
+       funcionando con Claude mientras el local no esta — pero eso cuesta, y el
+       hibrido se eligio para no gastar, asi que se ve cuantas veces ha pasado. */
+    if(P!=='anthropic') h+='<div class="phelp">Mientras tanto <b>todo va con Claude</b>: no se ha parado ningún análisis. '
+      +'Funciona, pero se paga — que es justo lo que el híbrido evita.</div>';
   }
   else { h+='<div class="phelp" style="color:#34d399">Ollama activo ✅ — lo que corra en local es gratis e ilimitado.</div>';
     if((d.models||[]).length) h+='<div class="prm"><label>Modelo local</label><select id="olm" onchange="setProvider(\''+P+'\',this.value)">'
       +d.models.map(m=>'<option'+(m===d.selected?' selected':'')+'>'+escapeHtml(m)+'</option>').join('')+'</select></div>';
     h+='<button class="btn ghost" onclick="testLocal()">🧪 Probar modelo</button><div id="lm-test"></div>'; }
+  // el contador solo aparece si de verdad ha pasado: un cero permanente es ruido
+  const fb=d.fallbacks||{};
+  if(fb.n) h+='<div class="phelp" style="color:#fbbf24;margin-top:6px">'
+    +fb.n+' llamada'+(fb.n>1?'s':'')+' que tocaban al cerebro local acabaron en Claude '
+    +'porque no respondía'+(fb.last_role?(' (la última, '+escapeHtml(String(fb.last_role))+')'):'')
+    +'. Enciéndelo y vuelven a ser gratis.</div>';
   const rt=d.routing||[];
   if(rt.length){ h+='<div class="phelp" style="margin-top:6px">Quién usa qué:</div>'
     +rt.map(r=>'<div class="cfg"><span>'+escapeHtml(r.label)+' <span style="opacity:.55">· '+escapeHtml(r.why)+'</span></span> <b style="color:'+(r.brain==='ollama'?'#34d399':'#7ff6ff')+'">'+(r.brain==='ollama'?(ICO('chip',11)+' local'):(ICO('archive',11)+' Claude'))+'</b></div>').join(''); }

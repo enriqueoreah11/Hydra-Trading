@@ -99,6 +99,12 @@ async def _ask_ollama(system: str, user: str, schema: dict | None,
     return text
 
 
+# Cuántas veces se ha tenido que tirar de Claude porque el cerebro local no estaba.
+# Se CUENTA a propósito: el modo híbrido se elige para no gastar, así que si acaba
+# gastando hay que poder verlo, no enterarse en la factura.
+fallbacks: dict = {"n": 0, "last": "", "last_role": "", "last_ts": 0.0}
+
+
 async def ask(system: str, user: str, schema: dict | None = None,
               max_tokens: int = 8000, role: str = "") -> dict | str:
     """One-shot call. With `schema`, the response is schema-validated JSON.
@@ -106,10 +112,28 @@ async def ask(system: str, user: str, schema: dict | None = None,
     `role` es la clave del agente que llama (analyst, reviewer, architect…). En
     modo híbrido decide qué cerebro le toca: local para el volumen, Claude para
     el juicio. Ver Settings.brain_for().
+
+    Si el cerebro local no responde (Ollama cerrado, el Mac dormido, el modelo sin
+    descargar) NO se cae la llamada: se sigue con Claude. Un analista que deja de
+    analizar es peor que un análisis que cuesta unos centavos — pero se cuenta en
+    `fallbacks` y se ve en la app, porque el híbrido se eligió para no gastar.
     """
     lang = _LANG.get(settings.owner_lang, _LANG["mix"])
     if settings.brain_for(role) == "ollama":
-        return await _ask_ollama(lang + "\n\n" + system, user, schema, max_tokens)
+        try:
+            return await _ask_ollama(lang + "\n\n" + system, user, schema, max_tokens)
+        except Exception as exc:  # noqa: BLE001 - da igual por qué; lo que importa es seguir
+            import time as _t
+
+            if not (settings.anthropic_api_key or "").strip():
+                # sin Claude detrás no hay a dónde caer: se dice qué falta de verdad
+                raise RuntimeError(
+                    f"el cerebro local no respondió ({str(exc)[:120]}) y no hay "
+                    "ANTHROPIC_API_KEY para continuar") from None
+            fallbacks.update({"n": fallbacks["n"] + 1, "last": str(exc)[:160],
+                              "last_role": role, "last_ts": _t.time()})
+            log.warning("cerebro local caído en %s (%s): sigo con Claude",
+                        role or "?", str(exc)[:120])
     kwargs: dict = {
         "model": settings.model,
         "max_tokens": max_tokens,

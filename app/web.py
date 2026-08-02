@@ -24,9 +24,10 @@ from .store import Store
 
 # Modelos disponibles desde la UI, del más barato al más caro.
 # El costo por 1M tokens es aproximado (entrada/salida) y solo sirve de guía.
-# Esta lista es una LISTA BLANCA: /model rechaza lo que no esté aquí. Por eso hay que
-# tocarla al salir una generación nueva — si solo se cambiara la de la interfaz, el
-# botón nuevo daría error y parecería que el modelo no existe.
+# De MENOS a MÁS capaz, que es como se pintan en la app. Esta lista es una LISTA
+# BLANCA: /model rechaza lo que no esté aquí, así que hay que tocarla al salir una
+# generación nueva — si solo se cambiara la de la interfaz, el botón nuevo daría
+# "modelo desconocido" al pulsarlo.
 MODELS: dict[str, dict] = {
     "claude-haiku-4-5-20251001": {"label": "Haiku 4.5", "tier": "económico",
                                   "hint": "el más barato (~20-30x menos que Opus)"},
@@ -35,7 +36,7 @@ MODELS: dict[str, dict] = {
     "claude-sonnet-5": {"label": "Sonnet 5", "tier": "balance",
                         "hint": "balance costo/calidad (recomendado)"},
     "claude-opus-5": {"label": "Opus 5", "tier": "máximo",
-                      "hint": "el más capaz y el más caro"},
+                      "hint": "el más capaz — y el más caro"},
 }
 
 
@@ -462,6 +463,8 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
     async def llm_local_status():
         """¿Hay un Ollama corriendo en local? Lista sus modelos descargados."""
         import httpx
+
+        from . import llm as _llm
         try:
             async with httpx.AsyncClient(timeout=4) as cli:
                 r = await cli.get(settings.ollama_url.rstrip("/") + "/api/tags")
@@ -469,6 +472,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                 models = [m.get("name", "") for m in r.json().get("models", [])]
             return {"ok": True, "running": True, "provider": settings.llm_provider,
                     "models": models, "selected": settings.ollama_model,
+                    "fallbacks": dict(_llm.fallbacks),
                     "routing": _routing()}
         except Exception as exc:  # noqa: BLE001
             from . import ollama_boot
@@ -476,6 +480,8 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                     "error": f"{exc}"[:160], "url": settings.ollama_url,
                     "installed": bool(ollama_boot.binary() or ollama_boot.app_bundle()),
                     "boot": ollama_boot.state,
+                    # cuántas veces se acabó pagando por no tener el local en pie
+                    "fallbacks": dict(_llm.fallbacks),
                     "routing": _routing()}
 
     def _routing() -> list[dict]:
