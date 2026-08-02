@@ -2969,7 +2969,9 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         import logging as _lg
         if broker is None or not broker.client.account_authorized:
             return {"ok": False, "error": "conecta cTrader", "rows": []}
-        lim = max(1, min(60, int(limit)))
+        # 500: la cinta pide 12, pero la vista detallada tira de aquí y con 60 se
+        # quedaba corta a poco historial que haya
+        lim = max(1, min(500, int(limit)))
         rows: list[dict] = []
         try:
             pos = await asyncio.wait_for(broker.positions(), timeout=12)
@@ -3005,6 +3007,22 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                 "n_open": sum(1 for r in rows if r["state"] == "open"),
                 "n_closed": len(closed),
                 "pnl_closed": round(sum(r["pnl"] or 0 for r in closed), 2)}
+
+    @app.get("/trades/history")
+    async def trades_history(days: float = 30, limit: int = 200):
+        """El historial completo con su resumen, para la vista detallada.
+
+        Es `/trades/recent` con más ventana y, sobre todo, con las cuentas hechas:
+        cuánto neto, con qué estrategia y en qué instrumento. Sin eso hay que sumar
+        a ojo, que es como no tenerlo.
+        """
+        from . import tradestats
+
+        d = await trades_recent(days=max(0.5, min(365.0, float(days))),
+                                limit=max(1, min(500, int(limit))))
+        if not d.get("ok"):
+            return d
+        return {**d, "resumen": tradestats.summarize(d.get("rows") or [])}
 
     @app.get("/bots/live")
     async def bots_live(days: float = 7):

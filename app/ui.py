@@ -461,9 +461,20 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 </div>
 
 <div id="toast"></div><div id="banner" style="display:none"></div>
-<div id="trades">
+<div id="trades" onclick="openTradesWin()" style="cursor:pointer" title="Ver el historial completo y las cuentas por estrategia">
   <div class="thd"><span>OPERACIONES</span><span id="tr-sum"></span></div>
   <div class="tbd" id="tr-body"><div class="empty" style="padding:6px 2px;font-size:10.5px">&hellip;</div></div>
+</div>
+
+<!-- Historial detallado: se abre pulsando la cinta de operaciones. -->
+<div id="trwin" class="modalwin">
+  <div class="hd"><div class="e" id="tw-icon"></div>
+    <div><h2>HISTORIAL</h2><div class="role" id="tw-sub">Todo lo operado y c&oacute;mo sali&oacute;</div></div>
+    <div class="x" onclick="closeWins()">&#10005;</div></div>
+  <div class="sbody">
+    <div class="ssec" id="tw-days" style="margin:0 0 10px"></div>
+    <div id="tw-body"><div class="empty">&hellip;</div></div>
+  </div>
 </div>
 
 <script>
@@ -2207,6 +2218,62 @@ async function posClose(id,sym,pct){
    lotaje y resultado. Las CERRADAS traen dinero real; las ABIERTAS se marcan como
    abiertas y sin cifra — la Open API no manda el flotante y calcularlo a ojo daria
    un numero que parece bueno y no lo es. */
+/* ------- HISTORIAL DETALLADO -------
+   La cinta de abajo enseña lo último; aquí está TODO, con las cuentas hechas por
+   estrategia y por instrumento. Sumar a ojo doce filas es como no tenerlas. */
+let TWDAYS=30;
+function openTradesWin(){ const ic=$('#tw-icon'); if(ic) ic.innerHTML=ICO('bars',26,'#7ff6ff');
+  openWin('#trwin'); renderTradesWin(); }
+function twDays(n){ TWDAYS=n; renderTradesWin(); }
+function num(v,signo){ if(v==null) return '—';
+  return (signo&&v>0?'+':'')+Number(v).toFixed(2); }
+async function renderTradesWin(){ const box=$('#tw-body'); if(!box)return;
+  $('#tw-days').innerHTML=[7,30,90,365].map(n=>'<button class="btn ghost'+(TWDAYS===n?' on':'')
+    +'" style="padding:5px 10px" onclick="twDays('+n+')">'+(n===365?'1 año':n+' días')+'</button>').join('');
+  box.innerHTML='<div class="empty">Leyendo tu historial…</div>';
+  let d; try{ d=await (await fetch('/trades/history?days='+TWDAYS+'&limit=300')).json(); }
+  catch(e){ box.innerHTML='<div class="empty" style="color:#ff5d73">Error de red.</div>'; return; }
+  if(!d.ok){ box.innerHTML='<div class="empty" style="color:#fbbf24">'+escapeHtml(d.error||'No disponible')+'</div>'; return; }
+  const s=d.resumen||{}, rows=d.rows||[];
+  const col=v=>v==null?'#9fd8ea':(v>0?'#34d399':(v<0?'#ff5d73':'#9fd8ea'));
+  const sub=$('#tw-sub'); if(sub) sub.textContent=(s.n_closed||0)+' cerradas · '+(s.n_open||0)+' abiertas';
+  /* El resultado y el % de aciertos van JUNTOS y en ese orden: una estrategia puede
+     acertar el 80% y perder dinero, y ver el porcentaje solo engaña. */
+  let h='<div class="cfg"><span>Resultado neto</span> <b style="color:'+col(s.net)+';font-size:15px">'
+    +num(s.net,true)+'</b></div>'
+    +'<div class="cfg"><span>Aciertos</span> <b>'+(s.win_pct==null?'—':s.win_pct+'%')
+    +' <span style="opacity:.6;font-weight:400">de '+(s.n_closed||0)+'</span></b></div>'
+    +'<div class="cfg"><span>Media ganadora / perdedora</span> <b><span style="color:#34d399">'
+    +num(s.avg_win)+'</span> / <span style="color:#ff5d73">'+num(s.avg_loss)+'</span></b></div>'
+    +'<div class="cfg"><span>Mejor / peor</span> <b>'+num(s.best)+' / '+num(s.worst)+'</b></div>'
+    +'<div class="cfg"><span>Peor racha</span> <b style="color:'+col(s.max_dd)+'">'+num(s.max_dd)+'</b></div>'
+    +'<div class="phelp" style="margin:-4px 0 8px">Lo que se llegó a caer desde el mejor momento. '
+    +'Es lo que de verdad hay que aguantar, y no sale de mirar el total.</div>';
+  // la nota del servidor YA dice "no cuentan en el resultado": repetirlo aqui lo
+  // decia dos veces en la misma frase
+  if(s.n_open) h+='<div class="phelp" style="color:#fbbf24">'+s.n_open+(s.n_open===1?' abierta':' abiertas')
+    +' ('+s.open_lots+(s.open_lots===1?' lote':' lotes')+') — '+escapeHtml(String(s.nota||''))+'.</div>';
+  const tabla=(titulo,gs)=>{ if(!(gs||[]).length) return '';
+    return '<div class="slbl" style="margin:14px 0 4px">'+titulo+'</div>'
+      +gs.map(g=>'<div class="wrow"><span class="wsym" style="min-width:0;flex:1">'+escapeHtml(g.key)
+        +'<span class="phelp" style="margin:0;display:block;text-transform:none">'+g.n+(g.n===1?' op · ':' ops · ')
+        +(g.win_pct==null?'—':g.win_pct+'% aciertos')+' · media '+num(g.avg)+'</span></span>'
+        +'<b style="color:'+col(g.net)+';flex:0 0 auto">'+num(g.net,true)+'</b></div>').join(''); };
+  h+=tabla('POR ESTRATEGIA',s.by_strategy)+tabla('POR INSTRUMENTO',s.by_symbol);
+  h+='<div class="slbl" style="margin:14px 0 4px">OPERACIONES ('+rows.length+')</div>';
+  if(!rows.length) h+='<div class="empty">Sin operaciones en esta ventana de tiempo.</div>';
+  h+=rows.map(r=>{ const abierta=r.state==='open';
+    const buy=String(r.side||'').toUpperCase().indexOf('BUY')>=0;
+    const sc=buy?'#34d399':'#ff5d73';
+    return '<div class="wrow"><span class="sd" style="color:#02141b;background:'+sc
+      +';flex:0 0 auto;margin-right:6px">'+(buy?'BUY':'SELL')+'</span>'
+      +'<span class="wsym" style="min-width:0;flex:1">'+escapeHtml(String(r.symbol||'—'))
+      +'<span class="phelp" style="margin:0;display:block;text-transform:none">'
+      +escapeHtml(String(r.strategy||''))+' · '+(r.lots>=0.01?r.lots.toFixed(2)+' lot':(r.units||0)+' u')
+      +(r.ts?(' · '+ctxAgo(r.ts)):'')+'</span></span>'
+      +'<b style="flex:0 0 auto;color:'+(abierta?'#fbbf24':col(r.pnl))+'">'
+      +(abierta?'abierta':num(r.pnl,true))+'</b></div>'; }).join('');
+  box.innerHTML=h; }
 async function pollTrades(){ const box=$('#tr-body'), wrap=$('#trades'); if(!box)return;
   let d; try{ d=await (await fetch('/trades/recent?days=3&limit=12')).json(); }catch(e){ return; }
   const sum=$('#tr-sum');
