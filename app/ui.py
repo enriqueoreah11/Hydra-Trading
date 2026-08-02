@@ -361,6 +361,15 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
   <div class="sbody"><div id="sys-watch"><div class="empty">&hellip;</div></div></div>
 </div>
 
+<!-- CUENTAS: todo lo de cuentas vive aqui, no en Configuracion. Alli solo queda si
+     cTrader esta conectado, que es estado, no configuracion. -->
+<div id="accwin" class="modalwin">
+  <div class="hd"><div class="e" id="acc-icon"></div>
+    <div><h2>CUENTAS</h2><div class="role">Tus cuentas de cTrader y cu&aacute;l usa Hydra</div></div>
+    <div class="x" onclick="closeWins()">&#10005;</div></div>
+  <div class="sbody"><div id="sys-accounts"><div class="empty">&hellip;</div></div></div>
+</div>
+
 <!-- CEREBRO Y VOZ: se abre pulsando su ventana del tablero. Todo lo de pensar y
      hablar vive AQUI y no en Configuracion, que se habia convertido en el cajon
      donde acababa todo. -->
@@ -422,10 +431,9 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     <div class="hudhd"><span class="dot"></span>ESTADO</div>
     <div class="sysbox" id="hud-sys"></div>
   </div>
-  <div id="hudP" class="hud">
-    <div class="hudhd"><span class="dot"></span>OPERANDO<span class="tf" id="hud-pos-n"></span></div>
-    <div class="posbox" id="hud-pos"><div class="empty" style="padding:4px 2px;font-size:10.5px">…</div></div>
-  </div>
+  <!-- La ventana OPERANDO se quitó: las posiciones abiertas ya salen en la cinta de
+       abajo, y tenerlas en dos sitios solo le quitaba sitio a esta columna. El
+       sondeo sigue corriendo, que es de donde salen los símbolos con posición. -->
   <div id="hudB" class="hud" onclick="openCVWin()" style="cursor:pointer" title="Cambiar el modelo, el cerebro local y la voz">
     <div class="hudhd"><span class="dot"></span>CEREBRO Y VOZ</div>
     <div class="sysbox" id="hud-brain"><div class="empty" style="padding:4px 2px;font-size:10.5px">…</div></div>
@@ -437,6 +445,10 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
   <div id="hudI" class="hud" onclick="openInstWin()" style="cursor:pointer" title="Ver, añadir y quitar instrumentos">
     <div class="hudhd"><span class="dot"></span>INSTRUMENTOS<span class="tf" id="hud-instr-n"></span></div>
     <div class="posbox" id="hud-instr"><div class="empty" style="padding:4px 2px;font-size:10.5px">…</div></div>
+  </div>
+  <div id="hudAcc" class="hud" onclick="openAccWin()" style="cursor:pointer" title="Tus cuentas de cTrader y cu&aacute;l usa Hydra">
+    <div class="hudhd"><span class="dot"></span>CUENTAS<span class="tf" id="hud-acc-n"></span></div>
+    <div class="posbox" id="hud-acc"><div class="empty" style="padding:4px 2px;font-size:10.5px">…</div></div>
   </div>
   <div class="spacer-v"></div>
 </div>
@@ -1336,9 +1348,7 @@ async function renderWatch(){ const box=$('#sys-watch'); if(!box)return;
           +'<span class="phelp" style="margin:0;flex:1">'+escapeHtml(r.note||'referencia')+'</span>'
           +'<span class="wx" title="Fijo: siempre vigilado" style="cursor:default">'+ICO('lock',12,'#8aa')+'</span></div>';
         return; }
-      const pr=ccyPair(r.symbol);
       h+='<div class="wrow"><span class="wsym">'
-        +(pr?'<span style="color:#7ff6ff;margin-right:5px">'+pr+'</span>':'')
         +escapeHtml(r.symbol)+'</span>'
         +av.map(a=>'<span class="chip2'+(on.indexOf(a.id)>=0?' on':'')+'" title="'+escapeHtml(JSON.stringify(a.params))
           +'" onclick="wTog(\''+r.symbol+'\',\''+a.id+'\')">'+escapeHtml(a.label)+'</span>').join('')
@@ -1605,15 +1615,14 @@ function renderSysInfo(){ if(!DATA){ $('#sys-info').innerHTML='<div class="empty
           +'<code>cd ~/Hydra-Trading &amp;&amp; .venv/bin/pip install -U certifi</code><br>y reinicia la app.'
         : 'Revisa que el entorno (DEMO/LIVE) coincida con la cuenta.')+'</div>';
   }
-  if(!c.oauth_ok) h+='<a class="btn" href="/oauth/login" style="display:inline-block;margin:10px 0;text-decoration:none">🔌 Conectar mi cuenta de cTrader</a>';
-  if(c.oauth_ok) h+='<a class="btn ghost" href="/oauth/login" style="display:inline-block;margin:8px 0;text-decoration:none">🔄 Reconectar cTrader (actualizar cuentas)</a>';
-  if(c.oauth_ok) h+='<div id="sys-accounts" class="empty">Cargando cuentas…</div>';
+  if(!c.oauth_ok) h+='<a class="btn" href="/oauth/login" style="display:inline-block;margin:10px 0;text-decoration:none">Conectar mi cuenta de cTrader</a>';
+  // elegir cuenta se hace en la ventana CUENTAS del tablero; aqui solo el estado
+  if(c.oauth_ok) h+='<div class="phelp">Tus cuentas y cuál usa Hydra: ventana <b>CUENTAS</b> del tablero.</div>';
   h+='<button class="btn ghost" onclick="ctraderDiag()">'+ICO('stethos',12)+' Diagnóstico cTrader</button><div id="sys-diag"></div>';
   // el modelo, el cerebro local y la voz viven ahora en la ventana CEREBRO Y VOZ
   h+='<div class="cfg"><span>Anthropic key</span> <b>'+(c.has_anthropic?'puesta ✅':'falta ❌')+'</b></div>';
   h+='<div class="empty" style="margin-top:12px">Los ajustes se cambian con <code>fly secrets set …</code> y luego <code>fly deploy</code>.</div>';
-  $('#sys-info').innerHTML=h;
-  if(c.oauth_ok) loadAccounts(); }
+  $('#sys-info').innerHTML=h; }
 /* Ventana CEREBRO Y VOZ. Se abre pulsando su ventana del tablero, igual que
    instrumentos y bots. Junta lo que PIENSA (modelo, cerebro local) con lo que
    HABLA (voz, idioma, micrófono): son las dos mitades de cómo te contesta, y
@@ -1760,13 +1769,53 @@ async function setProvider(p,m){ pick('#sys-local',p&&('setProvider(\''+p+'\''))
   let r; try{ r=await fetch('/llm/local',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:p,ollama_model:m||undefined})}); }catch(e){ toast('Error de red'); return; }
   if(r.ok){ toast(p==='ollama'?'Cerebro local ✓ (gratis)':'Cerebro en la nube ✓'); speak(L(p==='ollama'?'Cambié al cerebro local, '+SIR+'. Ya no gasta créditos.':'Cerebro en la nube, '+SIR+'.','Switched brain, '+SIR+'.')); renderLocal(); load(); }
   else toast('Falta redesplegar'); }
+/* ------- CUENTAS -------
+   Se abre pulsando su ventana del tablero, como instrumentos y bots. Todo lo de
+   cuentas vive aqui; en Configuracion solo queda si cTrader esta conectado, que es
+   estado y no configuracion. */
+let ACCS=null;
+function openAccWin(){ const ic=$('#acc-icon'); if(ic) ic.innerHTML=ICO('archive',26,'#7ff6ff');
+  openWin('#accwin'); loadAccounts(); }
+async function pollAccounts(){ const box=$('#hud-acc'); if(!box)return;
+  let d; try{ d=await (await fetch('/accounts')).json(); }catch(e){ return; }
+  ACCS=d;
+  const n=$('#hud-acc-n');
+  if(!d.ok||!(d.accounts||[]).length){
+    if(n) n.textContent='—';
+    box.innerHTML='<div class="empty" style="padding:4px 2px;font-size:10.5px">'
+      +L('Conecta tu cuenta de cTrader.','Connect your cTrader account.')+'</div>'; return; }
+  const acc=d.accounts;
+  if(n) n.textContent=acc.length+(acc.length===1?' CUENTA':' CUENTAS');
+  /* La que usa Hydra va PRIMERO y marcada. Con varias cuentas conectadas, saber
+     cual esta operando de verdad es lo unico que hay que poder ver de un vistazo. */
+  const orden=acc.slice().sort((a,b)=>(b.id==d.current)-(a.id==d.current));
+  box.innerHTML=orden.slice(0,5).map(a=>{ const usa=a.id==d.current, live=!!a.live;
+    const col=usa?(live?'#ff5d73':'#34d399'):'#3d5a6b';
+    return '<div class="prow" style="border-left-color:'+col+'">'
+      +'<span class="sd" style="color:#02141b;background:'+col+'">'+(live?'REAL':'DEMO')+'</span>'
+      +'<span class="sy">#'+escapeHtml(String(a.id))+'</span>'
+      +'<span class="vl">'+(usa?('<b style="color:'+col+'">'+L('LA QUE USA','IN USE')+'</b>')
+                               :(a.login?('login '+escapeHtml(String(a.login))):''))+'</span></div>'; }).join('')
+    +(acc.length>5?('<div class="phelp" style="margin:2px 0 0">'+(acc.length-5)+' '+L('más','more')+'</div>'):'')
+    +'<div class="phelp" style="margin:4px 0 0;text-align:right">'+L('pulsa para cambiar ▸','click to switch ▸')+'</div>'; }
 async function loadAccounts(){ let d; try{ d=await (await fetch('/accounts')).json(); }catch(e){ return; }
   const el=$('#sys-accounts'); if(!el) return;
-  if(!d.ok||!(d.accounts||[]).length){ el.innerHTML='No pude listar tus cuentas'+(d&&d.reason?': '+escapeHtml(d.reason):'.'); return; }
+  if(!d.ok||!(d.accounts||[]).length){ el.innerHTML='<div class="empty">No pude listar tus cuentas'+(d&&d.reason?': '+escapeHtml(d.reason):'.')+'</div>'
+    +'<a class="btn" href="/oauth/login" style="display:inline-block;margin-top:8px;text-decoration:none">Conectar cTrader</a>'; return; }
   const opts=d.accounts.map(a=>'<option value="'+a.id+'" data-env="'+(a.live?'live':'demo')+'"'+(a.id==d.current?' selected':'')+'>#'+a.id+' · '+(a.live?'LIVE ⚠️':'DEMO')+(a.login?' · login '+a.login:'')+'</option>').join('');
-  el.innerHTML='<div class="prm"><label>Cuenta que usa Hydra</label><select id="acc-sel">'+opts+'</select>'
-    +'<div class="phelp">Elige tu cuenta. Usa una <b>DEMO</b> para practicar; LIVE opera con dinero real.</div></div>'
-    +'<button class="btn" onclick="selectAccount()">✓ Usar esta cuenta</button>'; }
+  el.innerHTML='<div class="phelp">Hydra opera con <b>una</b> cuenta: la que elijas aquí. Para mandar los trades '
+    +'a varias a la vez, eso se configura en Sistema → Cuentas destino.</div>'
+    +'<div class="prm"><label>Cuenta que usa Hydra</label><select id="acc-sel">'+opts+'</select>'
+    +'<div class="phelp">Usa una <b>DEMO</b> para practicar; LIVE opera con dinero real.</div></div>'
+    +'<button class="btn" onclick="selectAccount()">Usar esta cuenta</button>'
+    +'<div class="slbl" style="margin:14px 0 4px">TODAS TUS CUENTAS ('+d.accounts.length+')</div>'
+    +d.accounts.map(a=>'<div class="wrow"><span class="wsym">#'+escapeHtml(String(a.id))
+      +'<span class="phelp" style="margin:0;display:block;text-transform:none">'
+      +(a.live?'REAL — dinero de verdad':'DEMO — práctica')
+      +(a.login?(' · login '+escapeHtml(String(a.login))):'')+'</span></span>'
+      +(a.id==d.current?'<span class="phelp" style="margin:0;color:#34d399">la que usa ✓</span>':'')+'</div>').join('')
+    +'<a class="btn ghost" href="/oauth/login" style="display:inline-block;margin-top:10px;text-decoration:none">'
+    +'Reconectar cTrader (actualizar cuentas)</a>'; }
 async function selectAccount(){ const sel=$('#acc-sel'); if(!sel) return; const o=sel.options[sel.selectedIndex]; const id=+o.value, env=o.getAttribute('data-env');
   if(env==='live' && !confirm('⚠️ Es una cuenta REAL (LIVE): opera con dinero real. Para practicar usa una DEMO. ¿Continuar?')) return;
   toast('Cambiando de cuenta…');
@@ -1845,8 +1894,9 @@ function svgCal(size,col){ const c=col||'#7ff6ff', s=size||22;
     +'<path d="M3.2 9.4h17.6" stroke="'+c+'" stroke-width="1.3" opacity=".85"/>'
     +'<path d="M8 3.2v3.4M16 3.2v3.4" stroke="'+c+'" stroke-width="1.5" stroke-linecap="round"/>'
     +dots+'</svg>'; }
-/* Los pares se identifican por sus DOS monedas: EURJPY -> €¥. Mas rapido de leer
-   que seis letras, y es lo que se pidio. Si no conozco un signo, va el codigo. */
+/* Ya NO se pintan los signos de moneda delante del par: EURJPY se lee mejor asi,
+   sin "€¥" estorbando. La tabla se queda porque sigue sirviendo para DETECTAR que
+   un simbolo es un cruce de divisas, que es lo que le pone el icono de Forex. */
 const CCY_SIGN={USD:'$',EUR:'€',JPY:'¥',GBP:'£',CHF:'₣',AUD:'A$',NZD:'N$',CAD:'C$',
   MXN:'M$',CNY:'¥',CNH:'¥',SEK:'kr',NOK:'kr',DKK:'kr',PLN:'zł',HUF:'Ft',CZK:'Kč',
   TRY:'₺',ZAR:'R',RUB:'₽',INR:'₹',KRW:'₩',BRL:'R$',SGD:'S$',HKD:'HK$',THB:'฿',ILS:'₪'};
@@ -1981,15 +2031,18 @@ function renderHudInstr(d){ const box=$('#hud-instr'); if(!box)return;
   const n=$('#hud-instr-n'); if(n) n.textContent=order.length+(pinned.length?(' · '+pinned.length+' fijo'+(pinned.length>1?'s':'')):'');
   if(!order.length){ box.innerHTML='<div class="empty" style="padding:4px 2px;font-size:10.5px">'
       +L('Ninguno vigilado. Pulsa para añadir.','None watched. Click to add.')+'</div>'; return; }
-  box.innerHTML=order.map(sym=>{ const r=by[sym]||{}, fx=pinned.indexOf(sym)>=0;
+  /* Cinco y ya. Así esta ventana mide siempre lo mismo y deja sitio a las de abajo;
+     los demás se ven enteros al pulsarla, que es adonde hay que ir para tocarlos. */
+  const MAX=5, resto=order.length-MAX;
+  box.innerHTML=order.slice(0,MAX).map(sym=>{ const r=by[sym]||{}, fx=pinned.indexOf(sym)>=0;
     const up=(r.change_pct||0)>=0, col=r.price==null?'#5f7387':(up?'#34d399':'#ff5d73');
-    const pr=ccyPair(sym);
     return '<div class="prow" style="border-left-color:'+col+'">'
-      +'<span class="sy">'+(pr?'<span style="color:#7ff6ff;margin-right:5px">'+pr+'</span>':'')
-      +escapeHtml(sym)+(fx?' '+ICO('lock',11,'#8aa'):'')+'</span>'
+      +'<span class="sy">'+escapeHtml(sym)+(fx?' '+ICO('lock',11,'#8aa'):'')+'</span>'
       +'<span class="vl" style="color:'+col+'">'
       +(r.price==null?L('sin datos','no data')
         :(r.price+' · '+(up?'+':'')+Number(r.change_pct||0).toFixed(2)+'%'))+'</span></div>'; }).join('')
+    // se DICE cuántos quedan fuera: si no, cinco de doce parecen todos los que hay
+    +(resto>0?('<div class="phelp" style="margin:2px 0 0">+'+resto+' '+L('más','more')+'</div>'):'')
     +'<div class="phelp" style="margin:4px 0 0;text-align:right">'+L('pulsa para editar ▸','click to edit ▸')+'</div>'; }
 async function pollInstruments(){
   let d; try{ d=await (await fetch('/instruments')).json(); }catch(e){ return; }
@@ -2095,10 +2148,15 @@ function renderSessions(){ const box=$('#hud-ses'); if(!box)return; let open=0,h
   const key=SESSIONS.filter(isOpenNow).map(s=>s.n).join('|');
   if(key!==SESKEY){ SESKEY=key; pollNews(); } }
 let SESKEY='';
-async function pollPositions(){ const box=$('#hud-pos'); if(!box)return;
+/* Ya no hay ventana OPERANDO, pero esto SIGUE corriendo: de aqui sale OPENSYMS,
+   los simbolos con posicion abierta, que el resto del tablero usa para marcarlos.
+   Si se hubiera borrado con la ventana, se habrian apagado esas marcas sin que
+   nadie relacionara una cosa con la otra. */
+async function pollPositions(){
   let d; try{ d=await (await fetch('/positions')).json(); }catch(e){ return; }
   const rows=Array.isArray(d)?d:[];
   OPENSYMS=new Set(rows.map(p=>String(p.symbol||'').toUpperCase()));
+  const box=$('#hud-pos'); if(!box) return;          // la ventana ya no existe
   const n=$('#hud-pos-n'); if(n) n.textContent=rows.length?rows.length+' '+L('ABIERTAS','OPEN'):'—';
   if(!rows.length){ box.innerHTML='<div class="empty" style="padding:4px 2px;font-size:10.5px">'
       +L('Ninguna posición abierta.','No open positions.')+'</div>'; return; }
@@ -2218,14 +2276,16 @@ function hudStart(){ document.querySelectorAll('.hudcol .hud').forEach((e,i)=>se
   // terminen de entrar para medirlas donde de verdad se quedan.
   [900,1800].forEach(t=>setTimeout(()=>window.pcbRewire&&window.pcbRewire(),t));
   setTimeout(()=>{const t=$('#tape');if(t)t.classList.add('in');},140);
-  renderSessions(); pollPositions(); pollInstruments(); pollNews(); renderHudSys(); pollBrain(); pollTape(); pollBots(); pollTrades();
+  renderSessions(); pollPositions(); pollInstruments(); pollNews(); renderHudSys(); pollBrain(); pollTape(); pollBots(); pollTrades(); pollAccounts();
   // Voicebox se abre al arrancar, no cuando ya hace falta hablar: tarda unos
   // segundos en levantar su servidor y así la primera frase ya sale con tu voz
   if(speakOn) setTimeout(voiceAutoStart,1500);
   setInterval(renderSessions,30000); setInterval(pollPositions,20000);
   setInterval(pollInstruments,30000); setInterval(refreshNews,1800000);
   setInterval(pollBrain,60000); setInterval(pollTape,6000);
-  setInterval(pollBots,20000); setInterval(pollTrades,25000); }
+  setInterval(pollBots,20000); setInterval(pollTrades,25000);
+  setInterval(pollAccounts,120000); }   // las cuentas no cambian solas: cada 2 min sobra
+
 /* Ventana BOTS: solo los que están HACIENDO algo — operando o analizando.
    "Analiza" sale de trade_context (el bot mira aunque no abra), "opera" de las
    posiciones abiertas. El que no reporta y no tiene posiciones, no aparece. */
