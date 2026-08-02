@@ -306,15 +306,8 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
       <span class="chip" id="c-bal">balance —</span>
       <span class="chip" id="c-pb">playbook —</span>
     </div>
-    <div class="slbl">VOZ</div>
-    <div class="ssec">
-      <button class="btn ghost" id="b-mic" title="Hablar (clic, o di “Oye Hydra”)"><span class="bi" data-ico="mic"></span>Hablar</button>
-      <button class="btn ghost" id="b-wake" title="Palabra mágica"><span class="bi" data-ico="ear"></span>Oye Hydra</button>
-      <button class="btn ghost" id="b-mute" title="Dejar de oír el micrófono ahora"><span class="bi" data-ico="mute"></span>No oír</button>
-      <button class="btn ghost" id="b-clap" title="Activar aplaudiendo 2 veces"><span class="bi" data-ico="clap"></span>Aplauso</button>
-      <button class="btn ghost on" id="b-speak" title="Voz de respuesta"><span class="bi" data-ico="speaker"></span>Voz</button>
-      <button class="btn ghost on" id="b-sfx" title="Sonidos de encendido, pausa y apagado" onclick="sfxToggle()"><span class="bi" data-ico="sliders"></span>Sonidos</button>
-    </div>
+    <!-- Los botones de voz se mudaron a la ventana CEREBRO Y VOZ, con el resto de
+         lo que habla y lo que piensa. -->
     <div class="slbl">ACCIONES</div>
     <div class="ssec">
       <button class="btn" id="b-demo"><span class="bi" data-ico="play"></span>Demo</button>
@@ -332,8 +325,8 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     <div id="sys-props"></div>
     <div class="slbl"><span class="bi" data-ico="chart"></span>CUENTAS DESTINO (mandar a varias)</div>
     <div id="sys-mirror"></div>
-    <div class="slbl"><span class="bi" data-ico="flag"></span>FLOTA DE ESTRATEGIAS</div>
-    <div id="sys-fleet"></div>
+    <!-- La FLOTA DE ESTRATEGIAS se mudo a la ventana BOTS: bots y estrategias son lo
+         mismo (lo que ejecuta), y aqui solo queda la configuracion general de la app. -->
   </div>
 </div>
 
@@ -366,6 +359,32 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     <div><h2>INSTRUMENTOS</h2><div class="role">Qu&eacute; vigila Hydra y con qu&eacute; estrategia</div></div>
     <div class="x" onclick="closeWins()">&#10005;</div></div>
   <div class="sbody"><div id="sys-watch"><div class="empty">&hellip;</div></div></div>
+</div>
+
+<!-- CEREBRO Y VOZ: se abre pulsando su ventana del tablero. Todo lo de pensar y
+     hablar vive AQUI y no en Configuracion, que se habia convertido en el cajon
+     donde acababa todo. -->
+<div id="cvwin" class="modalwin">
+  <div class="hd"><div class="e" id="cv-icon"></div>
+    <div><h2>CEREBRO Y VOZ</h2><div class="role">Qu&eacute; modelo piensa y con qu&eacute; voz te habla</div></div>
+    <div class="x" onclick="closeWins()">&#10005;</div></div>
+  <div class="sbody">
+    <div class="slbl"><span class="bi" data-ico="mic"></span>MICR&Oacute;FONO Y SONIDO</div>
+    <div class="ssec">
+      <button class="btn ghost" id="b-mic" title="Hablar (clic, o di &ldquo;Oye Hydra&rdquo;)"><span class="bi" data-ico="mic"></span>Hablar</button>
+      <button class="btn ghost" id="b-wake" title="Palabra m&aacute;gica"><span class="bi" data-ico="ear"></span>Oye Hydra</button>
+      <button class="btn ghost" id="b-mute" title="Dejar de o&iacute;r el micr&oacute;fono ahora"><span class="bi" data-ico="mute"></span>No o&iacute;r</button>
+      <button class="btn ghost" id="b-clap" title="Activar aplaudiendo 2 veces"><span class="bi" data-ico="clap"></span>Aplauso</button>
+      <button class="btn ghost on" id="b-speak" title="Voz de respuesta"><span class="bi" data-ico="speaker"></span>Voz</button>
+      <button class="btn ghost on" id="b-sfx" title="Sonidos de encendido, pausa y apagado" onclick="sfxToggle()"><span class="bi" data-ico="sliders"></span>Sonidos</button>
+    </div>
+    <div class="slbl"><span class="bi" data-ico="speaker"></span>C&Oacute;MO TE HABLA</div>
+    <div id="cv-say"></div>
+    <div id="sys-voice"></div>
+    <div class="slbl"><span class="bi" data-ico="chip"></span>QU&Eacute; CEREBRO PIENSA</div>
+    <div id="cv-model"></div>
+    <div id="sys-local"></div>
+  </div>
 </div>
 
 <div id="stage"><canvas id="corefx"></canvas><div id="tip"></div></div>
@@ -407,11 +426,11 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     <div class="hudhd"><span class="dot"></span>OPERANDO<span class="tf" id="hud-pos-n"></span></div>
     <div class="posbox" id="hud-pos"><div class="empty" style="padding:4px 2px;font-size:10.5px">…</div></div>
   </div>
-  <div id="hudB" class="hud">
+  <div id="hudB" class="hud" onclick="openCVWin()" style="cursor:pointer" title="Cambiar el modelo, el cerebro local y la voz">
     <div class="hudhd"><span class="dot"></span>CEREBRO Y VOZ</div>
     <div class="sysbox" id="hud-brain"><div class="empty" style="padding:4px 2px;font-size:10.5px">…</div></div>
   </div>
-  <div id="hudBots" class="hud">
+  <div id="hudBots" class="hud" onclick="openBots()" style="cursor:pointer" title="Ver, a&ntilde;adir y quitar bots y estrategias">
     <div class="hudhd"><span class="dot"></span>BOTS<span class="tf" id="hud-bots-n"></span></div>
     <div class="posbox" id="hud-bots"><div class="empty" style="padding:4px 2px;font-size:10.5px">…</div></div>
   </div>
@@ -513,7 +532,7 @@ function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('sho
 
 $('#b-refresh').onclick=()=>{ toast('Datos actualizados'); load(); }; $('#b-halt').onclick=doHalt; $('#b-demo').onclick=runDemo;
 {const bc=$('#b-cal'); if(bc) bc.onclick=openCalendar;}
-$('#b-sistema').onclick=()=>{ renderSysInfo(); renderMirror(); renderSecrets(); renderVault(); renderProps(); renderFleet(); $('#sistema').classList.add('open'); };
+$('#b-sistema').onclick=()=>{ renderSysInfo(); renderMirror(); renderSecrets(); renderVault(); renderProps(); $('#sistema').classList.add('open'); };
 /* ------- BOTS DE CTRADER: se importan sus parametros del .algo ------- */
 /* El aviso de los dibujos, honesto. Antes decia "lee dibujos a mano" siempre que
    el bot TUVIERA esos parametros; en modo automatico eso es falso, y en combinado
@@ -810,11 +829,12 @@ async function botsLive(tgt){ const box=$(tgt||'#bots-live'); if(!box)return;
       +'<span class="phelp" style="margin:0">'+escapeHtml((b.symbols||[]).slice(0,5).join(', '))+'</span>'
       +'</span></div>'; });
   box.innerHTML=h; }
-/* ------- MÓDULO «BOTS» DE LA PLACA -------
-   Los cBots no son un ajuste: son parte de la ejecución. Este panel es su puesto
-   de mando — quién está vivo, qué hace cada uno, qué entiende Hydra de él y si
-   sus señales coinciden. El trabajo fino (los 297 parámetros, importar a mano)
-   sigue en el taller de SISTEMA para no duplicar nada. */
+/* ------- VENTANA «BOTS» -------
+   Los cBots no son un ajuste: son parte de la ejecución. Esta ventana es su sitio
+   ENTERO y el único — se abre pulsando la ventana BOTS del tablero, igual que la de
+   instrumentos, y desde aquí se añaden y se quitan tanto los cBots como las
+   estrategias de Hydra. En Configuración ya no hay nada de esto: allí solo queda lo
+   general de la app. Tenerlo en dos sitios era lo que hacía dudar de cuál mandaba. */
 let MBSEQ=0;
 /* Ir a una seccion de ESTA ventana. La configuracion de los bots ya no vive en
    Configuracion: alli solo queda lo general de la app. */
@@ -854,6 +874,7 @@ async function renderBotsPanel(){ const seq=++MBSEQ;
   let h='<div class="ssec" style="margin:0 0 10px">'
     +'<button class="btn ghost" style="padding:5px 10px" onclick="mbGo(\'#mb-live\')">'+ICO('play',12)+' '+L('En marcha','Running')+'</button>'
     +'<button class="btn ghost" style="padding:5px 10px" onclick="mbGo(\'#mb-work\')">'+ICO('chip',12)+' '+L('Mis bots','My bots')+'</button>'
+    +'<button class="btn ghost" style="padding:5px 10px" onclick="mbGo(\'#mb-fleet\')">'+ICO('flag',12)+' '+L('Estrategias','Strategies')+'</button>'
     +'<button class="btn ghost" style="padding:5px 10px" onclick="mbGo(\'#mb-ind\')">'+ICO('bars',12)+' '+L('Indicadores','Indicators')+'</button>'
     +'</div>';
   h+='<div id="mb-live"><div class="slbl" style="margin:2px 0 4px">'
@@ -892,11 +913,13 @@ async function renderBotsPanel(){ const seq=++MBSEQ;
   h+='</div>';
   // la carpeta y tus bots: los pinta renderBots, que es quien sabe de esto
   h+='<div id="mb-work"><div class="empty">'+L('Cargando…','Loading…')+'</div></div>';
+  h+='<div id="mb-fleet"></div>';
   h+='<div id="mb-log"></div>';
   h+='<div id="mb-data"></div>';
   h+='<div id="mb-ind"></div>';
   box.innerHTML=h;
   renderBots('#mb-work');
+  renderFleet('#mb-fleet');
   renderShadow();
   renderData();
   renderInd(); }
@@ -1236,13 +1259,21 @@ async function wDel(sym){ const r=await fetch('/watchlist',{method:'POST',
   const d=await r.json();
   if(!d.ok){ toast(d.error||'No se pudo quitar'); return; }
   toast(sym+' fuera de la vigilancia'); renderWatch(); load(); pollInstruments(); }
-async function renderFleet(){ let d; try{ d=await (await fetch('/fleet')).json(); }catch(e){ $('#sys-fleet').innerHTML='<div class="empty">Falta redesplegar.</div>'; return; }
+/* La flota vive en la ventana de BOTS, no en Configuracion: una estrategia es lo
+   mismo que un bot — algo que EJECUTA — y tenerla entre las claves y la voz la
+   escondia. `FLEETT` recuerda donde pintarla para que los botones puedan repintar
+   sin volver a pasarselo. */
+let FLEETT='#mb-fleet';
+async function renderFleet(tgt){ if(tgt) FLEETT=tgt;
+  const box=$(FLEETT); if(!box) return;
+  let d; try{ d=await (await fetch('/fleet')).json(); }catch(e){ box.innerHTML='<div class="empty">Falta redesplegar.</div>'; return; }
   const lb=d.leaderboard||[];
-  let h='<div class="phelp">N estrategias corriendo en paralelo en <b>papel</b>. El 👑 <b>champion</b> nunca se ajusta: es el control. Si las variantes no le ganan, la «mejora» era ruido. Todo el R es <b>neto de costos</b>.</div>';
-  h+='<button class="btn" onclick="fleetSeed()">➕ Crear flota</button> '
-    +'<button class="btn ghost" onclick="fleetCycle()">▶ Correr ciclo</button>'
-    +(lb.length?' <button class="btn ghost" onclick="fleetClear()">🗑 Borrar</button>':'')+'<div id="fl-out"></div>';
-  if(!lb.length){ h+='<div class="empty">Flota vacía. Dale a «Crear flota».</div>'; $('#sys-fleet').innerHTML=h; return; }
+  let h='<div class="slbl" style="margin:16px 0 4px">'+ICO('flag',12)+' ESTRATEGIAS DE HYDRA (FLOTA)</div>'
+    +'<div class="phelp">Estas NO son tus cBots: son las estrategias propias de Hydra corriendo en paralelo en <b>papel</b>. El 👑 <b>champion</b> nunca se ajusta: es el control. Si las variantes no le ganan, la «mejora» era ruido. Todo el R es <b>neto de costos</b>.</div>';
+  h+='<button class="btn" onclick="fleetSeed()">'+ICO('play',12)+' Crear flota</button> '
+    +'<button class="btn ghost" onclick="fleetCycle()">'+ICO('refresh',12)+' Correr ciclo</button>'
+    +(lb.length?' <button class="btn ghost" onclick="fleetClear()">Borrar ✕</button>':'')+'<div id="fl-out"></div>';
+  if(!lb.length){ h+='<div class="empty">Flota vacía. Dale a «Crear flota».</div>'; box.innerHTML=h; return; }
   h+='<div style="overflow-x:auto;margin-top:8px"><table style="width:100%;border-collapse:collapse;font-size:12px">'
     +'<tr style="opacity:.6;text-align:right"><th style="text-align:left">Arm</th><th>Ops</th><th>R neto</th><th>Edge</th><th>Costo</th><th>Win%</th><th>vs 👑</th></tr>';
   lb.forEach(r=>{ const vs=(r.vs_champion==null)?'—':(r.vs_champion>=0?'+':'')+r.vs_champion.toFixed(1);
@@ -1258,7 +1289,7 @@ async function renderFleet(){ let d; try{ d=await (await fetch('/fleet')).json()
     rv.slice(0,6).forEach(r=>{ const ok=r.verdict==='no_change';
       h+='<div class="cfg" style="align-items:flex-start"><span>'+escapeHtml(r.arm)+'</span> <b style="color:'+(ok?'#8aa':'#fbbf24')+'">'+escapeHtml(r.verdict)+' '+(r.confidence||0)+'%</b></div>'
         +'<div class="phelp" style="margin:-6px 0 6px">'+escapeHtml((r.reasoning||'').slice(0,180))+'</div>'; }); }
-  $('#sys-fleet').innerHTML=h; }
+  box.innerHTML=h; }
 async function fleetSeed(){ if(!confirm('Crear la flota? Si ya existe una, se reemplaza.')) return;
   $('#fl-out').innerHTML='<div class="empty">Creando…</div>';
   const r=await fetch('/fleet/seed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reset:true,per_strategy:5})});
@@ -1442,18 +1473,28 @@ function renderSysInfo(){ if(!DATA){ $('#sys-info').innerHTML='<div class="empty
   if(c.oauth_ok) h+='<a class="btn ghost" href="/oauth/login" style="display:inline-block;margin:8px 0;text-decoration:none">🔄 Reconectar cTrader (actualizar cuentas)</a>';
   if(c.oauth_ok) h+='<div id="sys-accounts" class="empty">Cargando cuentas…</div>';
   h+='<button class="btn ghost" onclick="ctraderDiag()">'+ICO('stethos',12)+' Diagnóstico cTrader</button><div id="sys-diag"></div>';
-  h+='<div class="cfg"><span>Modelo IA</span> <span>'+MODELS.map(m=>'<button class="btn ghost'+((c.model||'')===m.id?' on':'')+'" style="padding:5px 9px;margin-left:5px" title="'+m.hint+'" onclick="setModel(\''+m.id+'\')">'+m.label+'</button>').join('')+'</span></div>';
-  h+='<div class="phelp" style="margin:-4px 0 8px">'+((MODELS.find(m=>m.id===(c.model||''))||{}).hint||'')+'. Menos capaz = más barato. El costo se reduce también subiendo <b>«analiza cada (min)»</b> del agente Analista.</div>';
-  h+='<div id="sys-local"></div>';
-  h+='<div class="cfg"><span>Voz neural</span> <b>'+(c.tts_server?'activa ✅':'navegador')+'</b> · <a href="/tts/health" target="_blank" style="color:#7ff6ff">diagnóstico</a></div>';
-  h+='<div id="sys-voice"></div>';
-  h+='<div class="cfg"><span>Te llama</span> <b>'+(c.owner_name||'Krauser')+'</b></div>';
-  h+='<div class="cfg"><span>Idioma</span> <span>'+['es','mix','en'].map(lg=>'<button class="btn ghost'+((c.owner_lang||'mix')===lg?' on':'')+'" style="padding:5px 9px;margin-left:5px" onclick="setLang(\''+lg+'\')">'+({es:'ES',mix:'ES+EN',en:'EN'}[lg])+'</button>').join('')+'</span></div>';
+  // el modelo, el cerebro local y la voz viven ahora en la ventana CEREBRO Y VOZ
   h+='<div class="cfg"><span>Anthropic key</span> <b>'+(c.has_anthropic?'puesta ✅':'falta ❌')+'</b></div>';
   h+='<div class="empty" style="margin-top:12px">Los ajustes se cambian con <code>fly secrets set …</code> y luego <code>fly deploy</code>.</div>';
   $('#sys-info').innerHTML=h;
-  renderLocal(); renderVoice();
   if(c.oauth_ok) loadAccounts(); }
+/* Ventana CEREBRO Y VOZ. Se abre pulsando su ventana del tablero, igual que
+   instrumentos y bots. Junta lo que PIENSA (modelo, cerebro local) con lo que
+   HABLA (voz, idioma, micrófono): son las dos mitades de cómo te contesta, y
+   estaban repartidas entre Configuración y ningún sitio. */
+function openCVWin(){ const ic=$('#cv-icon'); if(ic) ic.innerHTML=ICO('chip',26,'#7ff6ff');
+  openWin('#cvwin'); renderCV(); }
+function renderCV(){ const c=(DATA&&DATA.core)||{};
+  const say=$('#cv-say');
+  if(say){ let h='<div class="cfg"><span>Voz neural</span> <b>'+(c.tts_server?'activa ✅':'navegador')+'</b> · <a href="/tts/health" target="_blank" style="color:#7ff6ff">diagnóstico</a></div>';
+    h+='<div class="cfg"><span>Te llama</span> <b>'+escapeHtml(String(c.owner_name||'Krauser'))+'</b></div>';
+    h+='<div class="cfg"><span>Idioma</span> <span>'+['es','mix','en'].map(lg=>'<button class="btn ghost'+((c.owner_lang||'mix')===lg?' on':'')+'" style="padding:5px 9px;margin-left:5px" onclick="setLang(\''+lg+'\')">'+({es:'ES',mix:'ES+EN',en:'EN'}[lg])+'</button>').join('')+'</span></div>';
+    say.innerHTML=h; }
+  const md=$('#cv-model');
+  if(md){ let h='<div class="cfg"><span>Modelo IA</span> <span>'+MODELS.map(m=>'<button class="btn ghost'+((c.model||'')===m.id?' on':'')+'" style="padding:5px 9px;margin-left:5px" title="'+m.hint+'" onclick="setModel(\''+m.id+'\')">'+m.label+'</button>').join('')+'</span></div>';
+    h+='<div class="phelp" style="margin:-4px 0 8px">'+((MODELS.find(m=>m.id===(c.model||''))||{}).hint||'')+'. Menos capaz = más barato. El costo se reduce también subiendo <b>«analiza cada (min)»</b> del agente Analista.</div>';
+    md.innerHTML=h; }
+  renderLocal(); renderVoice(); }
 async function renderVoice(){ const el=$('#sys-voice'); if(!el) return;
   let d; try{ const r=await fetch('/voice/local'); if(!r.ok) throw 0; d=await r.json(); }
   catch(e){ el.innerHTML='<div class="phelp" style="color:#fbbf24">Selector de voz no disponible — la app corre código viejo. Reinicia:<br><code>launchctl kickstart -k gui/$(id -u)/com.hydra.trading</code></div>'; return; }
@@ -1476,7 +1517,7 @@ async function renderVoice(){ const el=$('#sys-voice'); if(!el) return;
       if(pr.length) h+='<div class="prm"><label>Voz</label><select onchange="setVoice(\''+P+'\',this.value)">'
         +pr.map(p=>'<option'+(p.name===d.selected?' selected':'')+'>'+escapeHtml(p.name)+'</option>').join('')+'</select>'
         +'<div class="phelp">'+pr.map(p=>escapeHtml(p.name)+' ('+escapeHtml(p.language||'?')+')').join(' · ')+'</div></div>'; } }
-  el.innerHTML=h; paintIcons(el); }
+  el.innerHTML=h; paintIcons(); }
 /* La voz propia: qué motor hay, qué voz usa y con qué efecto.
    Se enseña el estado real de la máquina porque "no se oye mi voz" casi siempre es
    una de tres cosas concretas, y decir cuál ahorra media hora de adivinar. */
@@ -1534,11 +1575,12 @@ async function setVoice(p,prof){ let r; try{ r=await fetch('/voice/local',{metho
 async function renderLocal(){ const el=$('#sys-local'); if(!el) return;
   let d; try{ d=await (await fetch('/llm/local')).json(); }catch(e){ el.innerHTML=''; return; }
   const P=d.provider||'anthropic';
-  const opt=(id,txt,tip)=>'<button class="btn ghost'+(P===id?' on':'')+'" style="padding:5px 9px;margin-right:5px" title="'+tip+'" onclick="setProvider(\''+id+'\')">'+txt+'</button>';
+  // iconos propios, no emojis del sistema: aqui tambien
+  const opt=(id,ico,txt,tip)=>'<button class="btn ghost'+(P===id?' on':'')+'" style="padding:5px 9px;margin-right:5px" title="'+tip+'" onclick="setProvider(\''+id+'\')">'+ICO(ico,12)+' '+txt+'</button>';
   let h='<div class="cfg"><span>Cerebro</span></div><div style="margin:2px 0 6px">'
-    +opt('anthropic','☁️ Nube','Todo con Claude. Sin instalar nada.')
-    +opt('hybrid','⚡ Híbrido','El volumen en local (gratis), el juicio con Claude. Recomendado.')
-    +opt('ollama','💻 Local','Todo en tu Mac. Costo cero.')+'</div>';
+    +opt('anthropic','archive','Nube','Todo con Claude. Sin instalar nada.')
+    +opt('hybrid','bolt','Híbrido','El volumen en local (gratis), el juicio con Claude. Recomendado.')
+    +opt('ollama','chip','Local','Todo en tu Mac. Costo cero.')+'</div>';
   if(!d.running){
     if(d.installed){   // está instalado pero apagado: se enciende desde aquí
       h+='<div class="phelp" style="color:#fbbf24">Cerebro local apagado. Enciéndelo sin abrir la terminal:</div>'
@@ -1557,7 +1599,7 @@ async function renderLocal(){ const el=$('#sys-local'); if(!el) return;
     h+='<button class="btn ghost" onclick="testLocal()">🧪 Probar modelo</button><div id="lm-test"></div>'; }
   const rt=d.routing||[];
   if(rt.length){ h+='<div class="phelp" style="margin-top:6px">Quién usa qué:</div>'
-    +rt.map(r=>'<div class="cfg"><span>'+escapeHtml(r.label)+' <span style="opacity:.55">· '+escapeHtml(r.why)+'</span></span> <b style="color:'+(r.brain==='ollama'?'#34d399':'#7ff6ff')+'">'+(r.brain==='ollama'?'💻 local':'☁️ Claude')+'</b></div>').join(''); }
+    +rt.map(r=>'<div class="cfg"><span>'+escapeHtml(r.label)+' <span style="opacity:.55">· '+escapeHtml(r.why)+'</span></span> <b style="color:'+(r.brain==='ollama'?'#34d399':'#7ff6ff')+'">'+(r.brain==='ollama'?(ICO('chip',11)+' local'):(ICO('archive',11)+' Claude'))+'</b></div>').join(''); }
   el.innerHTML=h; }
 async function startLocal(){ const b=$('#ol-go'), o=$('#ol-out');
   if(b){ b.disabled=true; b.textContent='Encendiendo…'; }
