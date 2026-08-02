@@ -207,14 +207,19 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                                 for k, vs in _w["assign"].items()}
     except Exception:  # noqa: BLE001
         pass
-    # voz elegida desde la UI
+    # Voz elegida desde la UI. Un proveedor que ya no existe (por ejemplo el motor
+    # local que hubo un tiempo, o uno de pago retirado) NO puede dejar a Hydra muda:
+    # se ignora y se usa Voicebox. Dejar el valor huérfano hacía que `available()`
+    # devolviera False y la app hablara con la voz del navegador sin decir por qué.
+    VOCES_VALIDAS = ("", "voicebox")
+    if settings.tts_provider not in VOCES_VALIDAS:
+        settings.tts_provider = "voicebox"
     try:
         _v = json.loads((settings.data_path / "voice.json").read_text())
-        if _v.get("provider") in ("", "voicebox"):
-            settings.tts_provider = _v["provider"]
+        _p = _v.get("provider")
+        settings.tts_provider = _p if _p in VOCES_VALIDAS else "voicebox"
         if _v.get("profile"):
             settings.voicebox_profile = str(_v["profile"])
-
     except Exception:  # noqa: BLE001
         pass
 
