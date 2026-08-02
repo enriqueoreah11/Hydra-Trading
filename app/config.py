@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     algo_dir: str = ""
     # carpeta donde tus bots escriben sus CSV de análisis (registro "shadow")
     shadow_dir: str = ""
+    # Si la carpeta de los .algo es un repo, se hace `git pull` sola antes de cada
+    # relectura: los ajustes que se hagan fuera (otra conversación, otro equipo)
+    # llegan sin pulsar nada. Un fallo de red no para nada: se sigue con lo de disco.
+    algo_auto_pull: bool = True
 
     ctrader_client_id: str = ""
     ctrader_client_secret: str = ""

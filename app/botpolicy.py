@@ -99,8 +99,16 @@ def from_params(parsed: dict) -> dict:
                 break
 
     def val(key, default=None):
+        """TU valor manda sobre el de fábrica.
+
+        `value` lo pone el .cbotset que subes; `default` viene del .algo. Gestionar
+        con el de fábrica teniendo tú otro puesto es el fallo silencioso de todo
+        esto: no da error, simplemente mueve el stop donde no toca.
+        """
         p = found.get(key)
-        return default if p is None else p.get("default")
+        if p is None:
+            return default
+        return p["value"] if p.get("value") is not None else p.get("default")
 
     be_trigger = _num(val("be_trigger"))
     tr_dist = _num(val("tr_distance"))

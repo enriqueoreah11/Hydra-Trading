@@ -316,7 +316,12 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                     # SOLO refresca los bots ya elegidos: los nuevos se suben de uno
                     # en uno desde la lista. La carpeta tiene decenas y una lista
                     # completa no sirve de nada.
+                    # si la carpeta es un repo, primero se trae lo que haya en
+                    # GitHub: los ajustes que se hagan fuera llegan solos
+                    if settings.algo_auto_pull:
+                        await _git_pull_quiet()
                     res = await asyncio.to_thread(_algo_scan_once, True, "")
+                    pres = await asyncio.to_thread(_presets_from_folder)
                     _algo_watch["last"] = time.time()
                     _algo_watch["result"] = {
                         "ok": bool(res.get("ok")),
@@ -325,6 +330,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                         "updated": len(res.get("updated") or []),
                         "unchanged": res.get("unchanged") or 0,
                         "failed": len(res.get("failed") or []),
+                        "presets": len(pres.get("aplicados") or []),
                     }
                     n = (_algo_watch["result"]["added"]
                          + _algo_watch["result"]["updated"])
@@ -1260,6 +1266,112 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                 pass
         return known
 
+    def _preset_stored(src_path: str) -> dict:
+        """Los valores del .cbotset que ya se guardaron para ese .algo."""
+        for jf in _bots_dir().glob("*.json"):
+            try:
+                j = json.loads(jf.read_text())
+            except Exception:  # noqa: BLE001
+                continue
+            if j.get("src_path") == src_path and j.get("preset_values"):
+                return j
+        return {}
+
+    def _preset_beside(f: Path) -> tuple[dict, str]:
+        """Un .cbotset junto al .algo, con su mismo nombre.
+
+        Es lo que permite que los ajustes vengan del REPO: guardas el preset al lado
+        del bot, haces git pull, y Hydra los recoge sola. Se buscan también en la
+        raíz de la carpeta, porque cTrader deja el .algo en bin/Debug pero el preset
+        suele quedar arriba.
+        """
+        from . import cbotset as cbs
+
+        base = _algo_dir()
+        candidatos = [f.with_suffix(".cbotset")]
+        if base and base.is_dir():
+            candidatos += [base / f"{f.stem}.cbotset",
+                           base / f.stem / f"{f.stem}.cbotset"]
+        for c in candidatos:
+            try:
+                if c.is_file():
+                    return cbs.parse(c.read_bytes()), str(c)
+            except Exception:  # noqa: BLE001 - un preset roto no corta el escaneo
+                continue
+        return {}, ""
+
+    def _preset_apply(parsed: dict, f: Path) -> None:
+        """Pone TUS valores sobre los de fábrica recién leídos del .algo.
+
+        Manda el que subiste a mano; si no hay, el que esté junto al .algo (el del
+        repo). Sin esto, recompilar el bot borraría tus ajustes en silencio.
+        """
+        from . import cbotset as cbs
+
+        prev = _preset_stored(str(f))
+        vals, origen = prev.get("preset_values"), prev.get("preset_file", "")
+        if not vals:
+            leido, ruta = _preset_beside(f)
+            vals, origen = leido.get("values"), ruta
+        if not vals:
+            return
+        rep = cbs.apply_to(parsed, vals)
+        parsed.update({"preset_values": vals, "preset_file": origen,
+                       "preset_report": rep,
+                       "preset_ts": prev.get("preset_ts") or time.time()})
+
+    def _presets_from_folder() -> dict:
+        """Recoge los .cbotset de la carpeta y los aplica a los bots que ya tienes.
+
+        Va por NOMBRE, no por ruta, porque un bot subido a mano no guarda de qué
+        archivo salió. Sin esto los presets del repo no llegaban justo a los bots que
+        más se suben a mano — que son todos, desde que subir es lo principal.
+        """
+        from . import cbotset as cbs
+
+        d = _algo_dir()
+        if not (d and d.is_dir()):
+            return {"ok": False, "error": "no hay carpeta de bots puesta"}
+        presets: dict[str, Path] = {}
+        for f in d.rglob("*.cbotset"):
+            presets.setdefault("".join(c for c in f.stem.lower() if c.isalnum()), f)
+        if not presets:
+            return {"ok": True, "aplicados": [], "sin_preset": [], "fallidos": [],
+                    "n_presets": 0}
+
+        aplicados, sin_preset, fallidos = [], [], []
+        for jf in _bots_dir().glob("*.json"):
+            try:
+                j = json.loads(jf.read_text())
+            except Exception:  # noqa: BLE001
+                continue
+            claves = {"".join(c for c in str(x).lower() if c.isalnum())
+                      for x in (j.get("name"), jf.stem, j.get("type_label")) if x}
+            pf = next((presets[k] for k in claves if k in presets), None)
+            if pf is None:
+                sin_preset.append(j.get("name") or jf.stem)
+                continue
+            try:
+                leido = cbs.parse(pf.read_bytes())
+            except cbs.CbotsetError as exc:
+                fallidos.append({"bot": j.get("name"), "error": str(exc)[:120]})
+                continue
+            rep = cbs.apply_to(j, leido["values"])
+            j.update({"preset_values": leido["values"], "preset_file": str(pf),
+                      "preset_report": rep, "preset_ts": time.time()})
+            jf.write_text(json.dumps(j, ensure_ascii=False, indent=1))
+            aplicados.append({"bot": j.get("name") or jf.stem, "preset": pf.name,
+                              "cambiados": rep["n_changed"],
+                              "sueltos": rep["n_unmatched"],
+                              "sospechoso": rep["suspect"]})
+        return {"ok": True, "aplicados": aplicados, "sin_preset": sin_preset,
+                "fallidos": fallidos, "n_presets": len(presets)}
+
+    @app.post("/algo/presets")
+    async def algo_presets():
+        """Aplica los .cbotset que haya en la carpeta, sin hacer pull."""
+        return await asyncio.to_thread(_presets_from_folder)
+
     def _algo_scan_once(only_known: bool = False, only_file: str = "") -> dict:
         """Lee .algo de la carpeta y guarda sus parámetros.
 
@@ -1342,6 +1454,10 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             parsed.update({"imported_ts": _t.time(), "file_bytes": st.st_size,
                            "src_path": str(f), "src_mtime": int(st.st_mtime),
                            "type_label": parsed.get("name"), "name": f.stem})
+            # TUS valores sobreviven al recompilado. Sin esto, cada vez que tocas el
+            # bot en cTrader y se recompila, el .algo vuelve con los de fábrica y
+            # Hydra pasaría a gestionar con ellos sin decir nada.
+            _preset_apply(parsed, f)
             safe = "".join(c for c in f.stem
                            if c.isalnum() or c in "-_ ")[:60].strip() or "bot"
             dest = _bots_dir() / f"{safe}.json"
@@ -1589,6 +1705,136 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             store.log("system", "algo_clear", f"{n} bots quitados de la lista")
         return {"ok": True, "removed": n}
 
+    def _bot_file(name: str) -> Path:
+        """La ficha de ese bot, buscándolo por identificador O por nombre visible.
+
+        Hacen falta las dos vías porque los dos caminos de alta bautizan distinto: el
+        escaneo de carpeta conserva los espacios del archivo ("Confluence Bot") y la
+        subida a mano los quita ("ConfluenceBot"). Buscar solo por uno daba 404 a la
+        mitad de los bots según cómo hubieran entrado.
+
+        OJO: `_bot_json` (más abajo) devuelve el contenido ya leído. Son dos cosas
+        distintas y confundirlas no falla hasta que revienta en ejecución.
+        """
+        safe = "".join(c for c in name if c.isalnum() or c in "-_ ")[:60].strip()
+        exacto = _bots_dir() / f"{safe}.json"
+        if exacto.is_file():
+            return exacto
+        pedido = "".join(c for c in name.lower() if c.isalnum())
+        for jf in _bots_dir().glob("*.json"):
+            if "".join(c for c in jf.stem.lower() if c.isalnum()) == pedido:
+                return jf
+            try:
+                visible = str(json.loads(jf.read_text()).get("name") or "")
+            except Exception:  # noqa: BLE001
+                continue
+            if "".join(c for c in visible.lower() if c.isalnum()) == pedido:
+                return jf
+        return exacto                     # no existe: quien llama devuelve 404
+
+    @app.post("/algo/bots/{name}/preset")
+    async def algo_preset_up(name: str, request: Request):
+        """Sube el .cbotset de ese bot: los valores que TÚ tienes puestos.
+
+        El .algo solo trae los de fábrica. Sin esto, Hydra gestiona las posiciones
+        con números que no usas — y no da ningún error, simplemente mueve el stop
+        donde no toca.
+        """
+        from . import cbotset as cbs
+
+        f = _bot_file(name)
+        if not f.is_file():
+            return JSONResponse({"ok": False, "error": f"no tengo el bot {name}"},
+                                status_code=404)
+        raw = await request.body()
+        try:
+            leido = cbs.parse(raw)
+        except cbs.CbotsetError as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        j = json.loads(f.read_text())
+        rep = cbs.apply_to(j, leido["values"])
+        j.update({"preset_values": leido["values"], "preset_file": "(subido a mano)",
+                  "preset_report": rep, "preset_ts": time.time()})
+        f.write_text(json.dumps(j, ensure_ascii=False, indent=1))
+        store.log("system", "cbotset",
+                  f"{name}: {rep['n_matched']} valores tuyos, {rep['n_changed']} "
+                  f"distintos del de fábrica")
+        return {"ok": True, "bot": name, "format": leido["format"], **rep}
+
+    @app.delete("/algo/bots/{name}/preset")
+    async def algo_preset_del(name: str):
+        """Quita tus valores y vuelve a los de fábrica del .algo."""
+        f = _bot_file(name)
+        if not f.is_file():
+            return JSONResponse({"ok": False, "error": "no existe"}, status_code=404)
+        j = json.loads(f.read_text())
+        for k in ("preset_values", "preset_file", "preset_report", "preset_ts"):
+            j.pop(k, None)
+        for g in j.get("groups") or []:
+            for p in g.get("params") or []:
+                p.pop("value", None)
+                p.pop("from_preset", None)
+        f.write_text(json.dumps(j, ensure_ascii=False, indent=1))
+        return {"ok": True, "bot": name}
+
+    def _repo_root() -> Path | None:
+        """La raíz del repo que contiene la carpeta de bots, o None si no lo es."""
+        d = _algo_dir()
+        if not (d and d.is_dir()):
+            return None
+        if (d / ".git").exists():
+            return d
+        # el .algo suele estar en un subdirectorio del repo (bin/Debug, Sources…)
+        return next((p for p in d.parents if (p / ".git").exists()), None)
+
+    async def _git_pull_quiet() -> str:
+        """`git pull` sin ruido. Devuelve la salida, o "" si no hay repo.
+
+        Un fallo aquí (sin red, conflicto, credenciales) NO puede parar el vigilante:
+        se sigue con lo que ya hay en disco, que es exactamente lo que había antes.
+        """
+        raiz = _repo_root()
+        if raiz is None:
+            return ""
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "git", "-C", str(raiz), "pull", "--ff-only",
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+            out, _ = await asyncio.wait_for(proc.communicate(), 90)
+            return (out or b"").decode("utf-8", "replace").strip()
+        except Exception:  # noqa: BLE001
+            return ""
+
+    @app.post("/algo/pull")
+    async def algo_pull():
+        """`git pull` en tu carpeta de bots y recoge lo que venga.
+
+        Es la pieza que cierra el círculo: ajustas el bot en otra conversación, se
+        sube al repo, aquí le das a actualizar y Hydra se queda con TUS valores sin
+        que tengas que exportar ni copiar nada a mano.
+        """
+        d = _algo_dir()
+        if not (d and d.is_dir()):
+            return JSONResponse({"ok": False, "error": "no hay carpeta de bots puesta"},
+                                status_code=400)
+        raiz = _repo_root()
+        if raiz is None:
+            return JSONResponse(
+                {"ok": False, "error": f"{d} no está dentro de un repositorio git"},
+                status_code=400)
+        txt = await _git_pull_quiet()
+        res = await asyncio.to_thread(_algo_scan_once, True)
+        # y los presets: es lo que se venía a buscar. Van por nombre, así que
+        # alcanzan también a los bots que subiste a mano.
+        pres = await asyncio.to_thread(_presets_from_folder)
+        store.log("system", "algo_pull",
+                  f"git pull en {raiz}: {len(pres.get('aplicados') or [])} presets "
+                  f"aplicados · {txt[:100]}")
+        return {"ok": True, "repo": str(raiz), "git": txt[:400],
+                "actualizados": len(res.get("updated") or []),
+                "sin_cambios": len(res.get("same") or []),
+                "presets": pres}
+
     @app.get("/algo/bots/{name}")
     async def algo_bot(name: str, group: str = "", q: str = ""):
         f = (_bots_dir() / (name + ".json")).resolve()
@@ -1760,7 +2006,9 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             return {}
 
     def _bot_json(name: str) -> dict | None:
-        f = (_bots_dir() / (name + ".json")).resolve()
+        # misma búsqueda tolerante que _bot_file (identificador o nombre visible),
+        # sin salirse de la carpeta de bots
+        f = _bot_file(name).resolve()
         if _bots_dir().resolve() not in f.parents or not f.is_file():
             return None
         try:

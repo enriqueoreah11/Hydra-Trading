@@ -586,6 +586,15 @@ async function renderBots(tgt){ const box=$(tgt||'#mb-work'); if(!box)return;
       +'<span class="phelp" style="margin:0;padding:0 6px;flex:0 0 auto">abrir ▸</span>'
       +'<span class="wx" title="Quitar de la lista" onclick="event.stopPropagation();botDel(\''+b.file+'\')">✕</span></div>';
   });
+  /* Traer de GitHub. Es el circuito que cierra todo: ajustas el bot en otra
+     conversacion, se sube al repo, aqui se pulsa y Hydra se queda con TUS valores.
+     Ademas se hace solo cada pocos minutos; el boton es para no esperar. */
+  h+='<div class="slbl" style="margin:16px 0 4px">'+ICO('refresh',12)+' TRAER DE GITHUB</div>'
+    +'<div class="phelp">Si tu carpeta de bots es un repo, esto hace <code>git pull</code> y recoge '
+    +'los <code>.cbotset</code> que vengan. Se hace <b>solo</b> cada pocos minutos: el botón es para no esperar.</div>'
+    +'<button class="btn" onclick="algoPull()">Actualizar desde GitHub</button>'
+    +'<button class="btn ghost" onclick="algoPresets()">Solo releer presets</button>'
+    +'<div id="pull-out" class="phelp"></div>';
   // la carpeta, DETRAS de un boton: recorrerla es lo unico que tarda aqui
   h+='<div class="slbl" style="margin:16px 0 4px">BUSCAR EN MI CARPETA (opcional)</div>'
     +'<div class="phelp">Si prefieres elegirlos de tu carpeta de cAlgo en vez de subirlos, '
@@ -760,7 +769,8 @@ async function botOpen(f){ BOTSEL=f; BOTQ='';
       : '✗ No tiene parámetros de reporte, y no se le pueden añadir sin tocar su código. '
         +'Hydra lo sigue igual por sus operaciones reales en la cuenta.')
     +'</div>'+chartNote(b);
-  $('#bw-head').innerHTML=head+'<div id="bw-mgmt" class="phelp"></div>';
+  $('#bw-head').innerHTML=head+'<div id="bw-preset"></div><div id="bw-mgmt" class="phelp"></div>';
+  botPreset(f);
   botMgmt(f);
   $('#bw-acts').innerHTML='<button class="btn" onclick="botExplain(false)">'+ICO('bolt',12)+' Explícame la estrategia</button>'
     +'<button class="btn ghost" onclick="botExplain(true)">'+ICO('refresh',12)+' Rehacer</button>'
@@ -769,6 +779,73 @@ async function botOpen(f){ BOTSEL=f; BOTQ='';
   botBody(); }
 function closeWins(){ document.querySelectorAll('.modalwin.open').forEach(w=>w.classList.remove('open'));
   $('#modalshade').classList.remove('open'); }
+/* Traer del repo lo que se haya ajustado fuera. */
+async function algoPull(){ const out=$('#pull-out'); if(out){ out.style.color='#5f7387'; out.textContent='Trayendo de GitHub…'; }
+  let d; try{ d=await (await fetch('/algo/pull',{method:'POST'})).json(); }
+  catch(e){ if(out) out.textContent='Error de red.'; return; }
+  if(!d.ok){ if(out){ out.style.color='#fbbf24'; out.textContent=d.error||'No se pudo.'; } return; }
+  presetMsg(out,d.presets,(d.git||'').split('\n')[0]);
+  renderBots(); }
+async function algoPresets(){ const out=$('#pull-out'); if(out){ out.style.color='#5f7387'; out.textContent='Releyendo presets…'; }
+  let d; try{ d=await (await fetch('/algo/presets',{method:'POST'})).json(); }
+  catch(e){ if(out) out.textContent='Error de red.'; return; }
+  if(!d.ok){ if(out){ out.style.color='#fbbf24'; out.textContent=d.error||'No se pudo.'; } return; }
+  presetMsg(out,d,''); renderBots(); }
+/* El resultado se cuenta bot a bot: «se aplicaron 3» no dice si alguno trajo un
+   preset de otro robot, que es lo unico que hay que mirar aqui. */
+function presetMsg(out,p,git){ if(!out) return; p=p||{};
+  const ap=p.aplicados||[], mal=ap.filter(x=>x.sospechoso);
+  out.style.color=mal.length?'#ff5d73':'#34d399';
+  out.innerHTML=(git?escapeHtml(git)+'<br>':'')
+    +(ap.length?ap.map(x=>escapeHtml(x.bot)+': '+x.cambiados+' distintos de fábrica'
+        +(x.sospechoso?' <b>⚠ ¿preset de otro bot?</b>':'')).join('<br>')
+      :'Sin presets nuevos.')
+    +((p.sin_preset||[]).length?('<br><span style="opacity:.7">Sin .cbotset: '
+        +p.sin_preset.map(escapeHtml).join(', ')+'</span>'):'')
+    +((p.fallidos||[]).length?('<br><span style="color:#fbbf24">No pude leer: '
+        +p.fallidos.map(x=>escapeHtml(x.bot)+' ('+escapeHtml(x.error)+')').join(', ')+'</span>'):''); }
+/* ------- TUS VALORES (.cbotset) -------
+   El .algo solo trae los valores DE FABRICA. Si tu bot lleva el break-even a 12 y
+   el .algo dice 20, Hydra gestionaba con 20 sin dar ningun error. Subir el
+   .cbotset (el que guarda cTrader al pulsar Save en los ajustes de la instancia)
+   es lo que hace que gestione con TUS numeros. */
+async function botPreset(f){ const box=$('#bw-preset'); if(!box)return;
+  let d; try{ d=await (await fetch('/algo/bots/'+encodeURIComponent(f))).json(); }
+  catch(e){ box.innerHTML=''; return; }
+  const rep=d.preset_report||null, hay=!!d.preset_ts;
+  let h='<div class="slbl" style="margin:10px 0 4px">'+ICO('sliders',12)+' TUS VALORES (.cbotset)</div>';
+  if(!hay) h+='<div class="phelp" style="color:#fbbf24">Ahora mismo se usan los valores <b>de fábrica</b> del .algo. '
+    +'Si en cTrader tienes otros puestos, Hydra gestiona con números que no usas — y eso no da ningún error. '
+    +'Sube el <code>.cbotset</code> del bot (en cTrader: ajustes de la instancia → Save).</div>';
+  else { h+='<div class="phelp" style="color:#34d399">Usando tus valores'
+    +(d.preset_file?(' · <span style="opacity:.7">'+escapeHtml(String(d.preset_file).split('/').pop())+'</span>'):'')
+    +(rep?(' · '+rep.n_matched+' aplicados, <b>'+rep.n_changed+' distintos del de fábrica</b>'):'')+'</div>';
+    if(rep&&rep.suspect) h+='<div class="phelp" style="color:#ff5d73">⚠ Casi nada casó con este bot: '
+      +'lo más probable es que ese preset sea de OTRO robot. Revísalo antes de dejar la gestión suelta.</div>';
+    if(rep&&(rep.changed||[]).length) h+='<div class="phelp">Cambiaste: '
+      +rep.changed.slice(0,8).map(c=>'<b>'+escapeHtml(c.name)+'</b> '+escapeHtml(String(c.default))+'→'+escapeHtml(String(c.value))).join(' · ')
+      +((rep.changed.length>8)?(' … y '+(rep.changed.length-8)+' más'):'')+'</div>';
+    if(rep&&(rep.unmatched||[]).length) h+='<div class="phelp" style="opacity:.75">Sin sitio en este bot: '
+      +rep.unmatched.slice(0,6).map(escapeHtml).join(', ')+'</div>'; }
+  h+='<div class="wadd"><input type="file" id="cbs-f" accept=".cbotset,.xml,.json" '
+    +'style="flex:1;background:#08131d;color:#9fe6ff;border:1px solid #17495d;border-radius:8px;padding:6px 8px;font-size:11.5px">'
+    +'<button class="btn" onclick="presetUp(\''+f+'\')">Subir</button>'
+    +(hay?'<button class="btn ghost" onclick="presetDel(\''+f+'\')">Volver a fábrica</button>':'')+'</div>'
+    +'<div id="cbs-out" class="phelp"></div>';
+  box.innerHTML=h; }
+async function presetUp(f){ const el=$('#cbs-f'), out=$('#cbs-out');
+  if(!el||!el.files||!el.files[0]){ if(out) out.textContent='Elige el archivo .cbotset primero.'; return; }
+  if(out){ out.style.color='#5f7387'; out.textContent='Leyendo…'; }
+  let d; try{ d=await (await fetch('/algo/bots/'+encodeURIComponent(f)+'/preset',
+      {method:'POST',body:el.files[0]})).json(); }
+  catch(e){ if(out){ out.style.color='#ff5d73'; out.textContent='Error de red.'; } return; }
+  if(!d.ok){ if(out){ out.style.color='#ff5d73'; out.textContent=d.error||'No pude leerlo.'; } return; }
+  toast(d.n_changed+' valores distintos del de fábrica');
+  botPreset(f); botMgmt(f); botBody(); }
+async function presetDel(f){ if(!confirm('¿Volver a los valores de fábrica del .algo? Hydra dejará de gestionar con los tuyos.')) return;
+  try{ await fetch('/algo/bots/'+encodeURIComponent(f)+'/preset',{method:'DELETE'}); }
+  catch(e){ toast('Error de red'); return; }
+  toast('De vuelta a fábrica'); botPreset(f); botMgmt(f); botBody(); }
 /* ------- GESTION DE POSICIONES -------
    Hydra no puede arrancar el bot, pero SI puede gestionar lo que el bot abra: la
    Open API permite mover el stop y cerrar. La politica se lee de SUS parametros
