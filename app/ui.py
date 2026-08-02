@@ -356,7 +356,7 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 
 <div id="calwin">
   <div class="hd"><div class="e" id="cw-icon"></div>
-    <div><h2>CALENDARIO</h2><div class="role">Pr&oacute;ximos 7 d&iacute;as &middot; todas las divisas</div></div>
+    <div><h2>CALENDARIO</h2><div class="role" id="cw-sub">Completo &middot; sin filtro de sesi&oacute;n ni de impacto</div></div>
     <div class="x" onclick="closeCalWin()">&#10005;</div></div>
   <div class="cbody" id="cw-body"><div class="empty">&hellip;</div></div>
 </div>
@@ -1678,9 +1678,14 @@ async function openCalendar(){
   box.innerHTML='<div class="empty">Cargando eventos…</div>';
   $('#calwin').classList.add('open');
   let d; try{ d=await (await fetch('/calendar')).json(); }catch(e){ box.innerHTML='<div class="empty" style="color:#ff5d73">No se pudo cargar el calendario.</div>'; return; }
+  /* La EXTENDIDA es la lista completa: todas las divisas, todos los impactos y
+     todos los dias. No hereda ni el filtro de sesion ni los chips de impacto de la
+     ventana pequeña — para eso esta la pequeña. */
   const ev=d.events||[];
   if(!ev.length){ box.innerHTML='<div class="empty">Sin eventos'+(d.error?': '+escapeHtml(d.error):' en la ventana.')+'</div>'; return; }
   const ic={high:'#ff5d73',medium:'#fbbf24',low:'#5ad1e6',holiday:'#8aa'};
+  const dias=new Set(ev.map(e=>new Date(e.ts*1000).toDateString())).size;
+  const divs=new Set(ev.map(e=>String(e.currency||'').toUpperCase())).size;
   let last='', h='';
   ev.forEach(e=>{ const dt=new Date(e.ts*1000);
     const day=dt.toLocaleDateString('es',{weekday:'long',day:'numeric',month:'short'});
@@ -1692,7 +1697,14 @@ async function openCalendar(){
       +'<span class="cal-dot" style="background:'+col+'"></span>'
       +'<span class="cal-cur">'+escapeHtml(e.currency)+'</span>'
       +'<span class="cal-title">'+escapeHtml(e.title)+(det?'<span class="cal-det"> '+escapeHtml(det)+'</span>':'')+'</span></div>'; });
-  box.innerHTML='<p class="role">🔴 alto · 🟡 medio · 🔵 bajo impacto. Resaltados = afectan tus símbolos.</p>'+h; }
+  /* El recuento va arriba a proposito: es lo unico que distingue "no hay eventos
+     ese dia" de "la lista se corto y no me entere". */
+  const cab='<p class="role"><b style="color:#7ff6ff">'+ev.length+' eventos</b> · '
+    +dias+' días · '+divs+' divisas · sin filtros<br>'
+    +'<span style="color:#ff5d73">●</span> alto · <span style="color:#fbbf24">●</span> medio · '
+    +'<span style="color:#5ad1e6">●</span> bajo. Resaltados = afectan tus símbolos.</p>';
+  box.innerHTML=cab+h;
+  const sub=$('#cw-sub'); if(sub) sub.textContent='Completo · sin filtro de sesión ni de impacto'; }
 async function runDemo(){ toast('Corriendo demo…'); speak(L('Ejecutando análisis de demostración.','Running the demo analysis.'));
   let r; try{ r=await fetch('/demo',{method:'POST'}); }catch(e){ toast('Error de red'); return; }
   if(!r.ok){ const t=await r.text(); openInfo('▶ Modo demo','<p style="color:#ff5d73">No se pudo correr el demo.</p><p>'+escapeHtml(t)+'</p><p>Configura la key: <code>fly secrets set ANTHROPIC_API_KEY=sk-ant-...</code></p>'); speak('No pude correr el demo. Falta la clave de Anthropic.'); return; }

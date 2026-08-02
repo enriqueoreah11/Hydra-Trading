@@ -3597,8 +3597,13 @@ Conecta tu cuenta en <a href="/oauth/login">/oauth/login</a> para operar de verd
                 "watched": cur in symbols_ccy,
             })
         events.sort(key=lambda x: x["ts"])
-        return {"events": events[:120], "source": src, "server_time": now,
-                "error": error, "fetched_ts": _cal_cache["ts"] or None}
+        # SIN recortar. Antes se devolvían 120 y una semana cargada de ForexFactory
+        # pasa de eso: la versión extendida se quedaba sin los últimos días y desde
+        # fuera parecía que esos días no tenían eventos. Son ~250 filas de texto
+        # corto; el coste de mandarlas todas es irrelevante al lado de esa confusión.
+        return {"events": events, "total": len(events), "source": src,
+                "server_time": now, "error": error,
+                "fetched_ts": _cal_cache["ts"] or None}
 
     # ------------------------------------------------------------- dashboard
 
