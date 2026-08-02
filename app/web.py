@@ -2357,6 +2357,10 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         """Las cuentas que ve tu autorización y cómo está configurada cada una."""
         from . import mirror as mr
         conf = {int(d.get("account_id") or 0): d for d in _mirror_conf()}
+        # El nombre que le pusiste manda aquí también. Antes esta lista tenía su
+        # propio alias y, si estaba vacío, salía el número: renombrabas una cuenta
+        # arriba y abajo seguía sin saberse cuál era, que es justo el problema.
+        nombres = _acc_names()
         accounts = []
         if broker is not None and broker.client.account_authorized and tokens is not None:
             try:
@@ -2367,6 +2371,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                         "account_id": aid,
                         "live": bool(a.get("isLive")),
                         "broker": a.get("brokerTitleShort") or a.get("brokerName") or "",
+                        "name": nombres.get(str(aid), ""),
                         "main": aid == int(settings.ctrader_account_id or 0),
                         "conf": conf.get(aid),
                     })

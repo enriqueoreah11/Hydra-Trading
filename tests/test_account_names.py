@@ -115,6 +115,28 @@ def test_the_names_travel_with_the_account_list(tmp_path, monkeypatch):
     assert d["current"] == 4002
 
 
+def test_the_name_also_reaches_the_destination_accounts(tmp_path, monkeypatch):
+    """Sale en dos listas distintas. Si el nombre solo llega a una, renombras arriba
+    y abajo sigues viendo un número — que es exactamente el problema que resuelve."""
+    monkeypatch.setattr(settings, "data_dir", str(tmp_path))
+    monkeypatch.setattr(settings, "ctrader_account_id", 4002)
+
+    class ClientAutorizado(ClienteFalso):
+        account_authorized = True
+
+    class BrokerAutorizado(BrokerFalso):
+        client = ClientAutorizado()
+
+    c = TestClient(create_app(Store(tmp_path / "brain.db"), TokensFalsos(),
+                              BrokerAutorizado(), None))
+    c.post("/accounts/4003/name", json={"name": "FTMO 100k"})
+
+    d = c.get("/mirror").json()
+    assert d["ok"], d
+    destino = next(a for a in d["accounts"] if a["account_id"] == 4003)
+    assert destino["name"] == "FTMO 100k"
+
+
 def test_a_name_never_hides_whether_it_is_real_or_demo(tmp_path, monkeypatch):
     """Llamarla «mi demo» no puede tapar que sea REAL: el nombre lo pones tú y te
     puedes equivocar; `live` viene del broker y es el que manda."""

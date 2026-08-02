@@ -1530,10 +1530,17 @@ async function renderMirror(){ const box=$('#sys-mirror'); if(!box)return;
          'Your authorisation only sees one account. Re-authorise in cTrader ticking every account you want.')+'</div>'; return; }
   acc.forEach(a=>{ const c=byId[a.account_id]||{mode:'equity',value:1,enabled:false};
     const on=!!c.enabled;
+    /* El nombre que le pusiste arriba manda. Antes salía el alias del destino y,
+       vacío, el número: renombrabas la cuenta y aquí seguía sin saberse cuál era. */
+    const nom=String(a.name||'').trim()||String(c.alias||'').trim()||a.broker||('#'+a.account_id);
     h+='<div class="wrow" style="align-items:flex-start;flex-wrap:wrap">'
-      +'<span class="wsym" style="min-width:0;flex:1">'+escapeHtml(String(c.alias||a.broker||a.account_id))
+      +'<span class="wsym" style="min-width:0;flex:1">'+escapeHtml(nom)
       +'<span class="phelp" style="margin:0;display:block;text-transform:none">#'+a.account_id
-      +' · '+(a.live?L('real','live'):'demo')+'</span></span>'
+      +' · '+(a.live?L('real','live'):'demo')+' · '
+      +'<span style="cursor:pointer;text-decoration:underline" '
+      +'onclick="event.stopPropagation();accRename('+a.account_id+',\''
+      +String(a.name||'').replace(/[\\'"]/g,'')+'\')">'+L('renombrar','rename')+'</span>'
+      +'</span></span>'
       +'<button class="btn '+(on?'':'ghost')+'" style="padding:4px 10px" onclick="mirTog('+a.account_id+')">'
       +(on?L('activa','on'):L('apagada','off'))+'</button></div>';
     if(on){ h+='<div style="padding:2px 2px 10px">'
@@ -1851,7 +1858,8 @@ async function accRename(id,actual){
     headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n})}); }
   catch(e){ toast('Error de red'); return; }
   toast(n.trim()?('Ahora es «'+n.trim()+'»'):'Nombre quitado');
-  loadAccounts(); pollAccounts(); }
+  // los tres sitios donde sale ese nombre: la ventana, el tablero y los destinos
+  loadAccounts(); pollAccounts(); renderMirror(); }
 async function selectAccount(){ const sel=$('#acc-sel'); if(!sel) return; const o=sel.options[sel.selectedIndex]; const id=+o.value, env=o.getAttribute('data-env');
   if(env==='live' && !confirm('⚠️ Es una cuenta REAL (LIVE): opera con dinero real. Para practicar usa una DEMO. ¿Continuar?')) return;
   toast('Cambiando de cuenta…');
