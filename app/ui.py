@@ -312,7 +312,7 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     <div class="ssec">
       <button class="btn" id="b-demo"><span class="bi" data-ico="play"></span>Demo</button>
       <button class="btn ghost" id="b-cal"><span class="bi" data-ico="cal"></span>Calendario</button>
-      <button class="btn ghost" id="b-halt">⏸ Halt</button>
+      <button class="btn ghost" id="b-halt">PARAR</button>
       <button class="btn ghost" id="b-refresh"><span class="bi" data-ico="refresh"></span>Actualizar</button>
     </div>
     <div class="slbl">CONEXIÓN Y CONFIGURACIÓN</div>
@@ -411,7 +411,7 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
   <div id="hudA" class="hud">
     <div class="hudhd"><span class="dot"></span>CONFIGURACION<span class="tf" id="hud-tf"></span></div>
     <div class="sysact">
-      <button class="btn ghost" id="hud-halt" onclick="doHalt()"><span class="bi" id="ic-halt"></span>HALT</button>
+      <button class="btn ghost" id="hud-halt" onclick="doHalt()" title="Deja de analizar y de abrir. Lo abierto NO se cierra."><span class="bi" id="ic-halt"></span>PARAR</button>
       <button class="btn ghost" id="b-sistema" title="Voz, claves, instrumentos y flota"><span class="bi" id="ic-sys"></span>SISTEMA</button>
     </div>
   </div>
@@ -473,8 +473,15 @@ function renderCore(c){
   $('#c-conn').innerHTML=c.connected?'conexión <b style="color:#34d399">viva</b>':(c.oauth_ok?'conexión <b style="color:#fbbf24">esperando</b>':'conexión <b style="color:#ff5d73">sin cTrader</b>');
   $('#c-bal').innerHTML='balance <b>'+(c.balance!=null?c.balance:'—')+'</b>';
   $('#c-pb').innerHTML='playbook <b>v'+c.playbook_version+'</b>';
+  /* «HALT» no le dice nada a nadie. Lo que hace es concreto: deja de analizar y de
+     abrir, y NO cierra lo que ya está abierto. Eso último hay que decirlo, porque
+     quien pulsa un botón rojo en una app de trading espera que cierre. */
   $('#b-halt').innerHTML='<span class="bi">'+ICO(c.halted?'play':'pause',13)+'</span>'
-    +(c.halted?'RESUME':'HALT');
+    +(c.halted?L('REANUDAR','RESUME'):L('PARAR','HALT'));
+  $('#b-halt').title=c.halted
+    ? L('Volver a analizar y a poder abrir operaciones.','Resume analysing and opening trades.')
+    : L('Deja de analizar y de abrir operaciones nuevas. Las que ya estén abiertas NO se cierran.',
+        'Stops analysing and opening new trades. Already-open positions are NOT closed.');
   {const bc=$('#b-cal'); if(bc) bc.style.display='';}
   {const bs=$('#b-sfx'); if(bs) bs.classList.toggle('on',sfxOn);}
   if(c.voice_enabled===false)['b-mic','b-wake','b-clap','b-speak'].forEach(id=>{const e=$('#'+id);if(e)e.style.display='none';});
@@ -1743,11 +1750,16 @@ async function selectAccount(){ const sel=$('#acc-sel'); if(!sel) return; const 
   if(r.ok){ toast('Cuenta seleccionada ✓ conectando…'); speak('Cuenta cambiada, '+SIR+'. Conectando.'); setTimeout(load,2500); setTimeout(()=>{renderSysInfo();},3000); }
   else if(r.status===404){ toast('Falta redesplegar: git pull && fly deploy (el selector aún no está en tu app).'); }
   else { let m='No se pudo cambiar'; try{ const j=await r.json(); if(j&&(j.error||j.detail)) m+=': '+(j.error||j.detail); }catch(_){} toast(m); } }
-async function doHalt(){ const halt=$('#b-halt').textContent.includes('HALT');
-  if(halt) sfxOff(); else sfxBoot();          // el sonido va ANTES: se siente inmediato
-  await fetch(halt?'/halt':'/resume',{method:'POST'});
-  toast(halt?'Sistema DETENIDO':'Sistema reanudado');
-  speak(halt?'Sistema detenido, '+SIR+'.':'Sistema reanudado, '+SIR+'.'); load(); }
+/* Se decide por el ESTADO, no por el texto del botón. Leer la etiqueta funcionaba
+   de casualidad: antes de la primera carga pone «Halt» en minúsculas, y comparar
+   con 'HALT' daba falso — pulsar PARAR habría llamado a reanudar. */
+async function doHalt(){ const parar=!halted;
+  if(parar) sfxOff(); else sfxBoot();          // el sonido va ANTES: se siente inmediato
+  await fetch(parar?'/halt':'/resume',{method:'POST'});
+  toast(parar?L('Sistema PARADO — no abrirá nada nuevo','System HALTED — no new trades')
+             :L('Sistema reanudado','System resumed'));
+  speak(parar?'Sistema parado, '+SIR+'. No abriré nada nuevo.':'Sistema reanudado, '+SIR+'.');
+  load(); }
 function closeCalWin(){ $('#calwin').classList.remove('open'); }
 /* Rellena de una vez los huecos de icono del HTML: asi el markup no lleva SVG a
    mano y cambiar un icono se hace en ICO_P y ya. */
@@ -2255,8 +2267,11 @@ function renderHudSys(){ const box=$('#hud-sys'); if(!box||!DATA)return; const c
     +row(L('Contexto','Context'),CTXCOUNT>0?CTXCOUNT:'0','#b096ff')
     +row(L('Estado','State'),c.halted?L('DETENIDO','HALTED'):L('en línea','online'),c.halted?'#ff5d73':'#34d399');
   const b=$('#hud-halt');
-  if(b) b.innerHTML='<span class="bi">'+ICO(c.halted?'play':'pause',13)+'</span>'
-        +(c.halted?'REANUDAR':'HALT'); }
+  if(b){ b.innerHTML='<span class="bi">'+ICO(c.halted?'play':'pause',13)+'</span>'
+        +(c.halted?L('REANUDAR','RESUME'):L('PARAR','HALT'));
+    b.title=c.halted?L('Volver a analizar y a poder abrir.','Resume analysing and opening.')
+                    :L('Deja de analizar y de abrir. Lo abierto NO se cierra.',
+                       'Stops analysing and opening. Open positions are NOT closed.'); } }
 let CTXCOUNT=0;
 
 /* ---------- TRADE CONTEXT: memoria inmutable de como se veia el mundo al decidir ---------- */
@@ -2468,8 +2483,9 @@ function onClap(){ wakeFlash(); speak(L('A la orden, '+SIR+'.','At your command,
 const AGENT_WORDS=[{k:'analyst',w:['analista','analisis']},{k:'risk_manager',w:['riesgo','gestor']},{k:'executor',w:['ejecutor','ordenes']},{k:'overnight',w:['nocturno','noche']},{k:'reviewer',w:['revisor','revision']},{k:'architect',w:['arquitecto','playbook']},{k:'sentinel',w:['sentinel','noticias','calendario','centinela']},{k:'watchdog',w:['watchdog','vigilante','salud']},{k:'auditor',w:['auditor','auditoria']},{k:'validator',w:['validador','backtest']},{k:'portfolio',w:['portafolio','cartera','correlacion']}];
 function runCmd(t){
   if(/(demo|prueba|analiza|corre)/.test(t)){ runDemo(); return; }
-  if(/(deten|para|alto|halt|pausa)/.test(t)){ if($('#b-halt').textContent.includes('HALT'))doHalt(); else speak('Ya está detenido, '+SIR+'.'); return; }
-  if(/(reanuda|continua|resume|activa el sistema)/.test(t)){ if($('#b-halt').textContent.includes('RESUME'))doHalt(); else speak('Ya está activo, '+SIR+'.'); return; }
+  // por voz, igual: manda el estado real, no lo que ponga el botón
+  if(/(deten|para|alto|halt|pausa)/.test(t)){ if(!halted)doHalt(); else speak('Ya está parado, '+SIR+'.'); return; }
+  if(/(reanuda|continua|resume|activa el sistema)/.test(t)){ if(halted)doHalt(); else speak('Ya está activo, '+SIR+'.'); return; }
   if(/(estado|reporte|situacion|resumen|status|como vas)/.test(t)){ speakStatus(); return; }
   if(/(calendario|noticias)/.test(t)){ openCalendar(); speak('Abriendo el calendario.'); return; }
   if(/(actualiza|refresca|recarga)/.test(t)){ load(); speak('Datos actualizados, '+SIR+'.'); return; }
@@ -2507,6 +2523,13 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     S=Math.max(260,Math.min(W-side*2,H)); Rh=S*0.25; Rlab=S*0.44; Rctx=S*0.385; dirty=true; pcbDirty=true; }
   rs(); addEventListener('resize',rs);
   function stateOf(k){ const a=agentByKey(k); return a?a.state:'idle'; }
+  /* El estado interno es una palabra en inglés ('idle', 'off'…). En la pista se
+     enseñaba tal cual, y «IDLE» no significa nada para quien mira el tablero.
+     «EN ESPERA» además dice la verdad: el agente está bien, es que le toca cada
+     tantos minutos y ahora no le toca. */
+  function estadoTxt(s){ return ({active:L('ACTIVO','ACTIVE'),
+    idle:L('EN ESPERA','IDLE'), off:L('APAGADO','OFF'),
+    alert:L('ALERTA','ALERT')})[s] || s; }
   function entriesOf(k){ const a=agentByKey(k); return a&&a.entries?a.entries.length:0; }
   const PAL=['#ffd24a','#ff7a59','#c07cff','#4ad1c8','#5aa0ff','#9be36b','#7ff6ff','#ff5d73','#ff9f43','#6ee7ff','#e879f9'];
   function hx2(h){ h=(h||'').replace('#',''); if(h.length===3)h=h.split('').map(c=>c+c).join(''); const n=parseInt(h,16); if(isNaN(n))return '127,246,255'; return (n>>16&255)+','+(n>>8&255)+','+(n&255); }
@@ -3158,7 +3181,7 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       const nb=LINKS.filter(L=>L[0]===hoverKey||L[1]===hoverKey).map(L=>L[0]===hoverKey?L[1]:L[0]).map(k=>byKey[k]?byKey[k].name:k);
       tip.style.left=(a.x+24)+'px'; tip.style.top=a.y+'px';
       const icu=window.hydraIconURL?window.hydraIconURL(a.key):''; const ico=icu?'<img src="'+icu+'" style="width:16px;height:16px;vertical-align:-3px;margin-right:3px">':a.emoji;
-      tip.innerHTML=ico+' <b>'+a.name+'</b> · '+stateOf(a.key)+'<br><span>'+a.role+'</span>'+(nb.length?'<br><span>↔ '+nb.join(', ')+'</span>':'')+'<br><span style="opacity:.7">'+L('clic para ver sus tareas','click to see its tasks')+'</span>';
+      tip.innerHTML=ico+' <b>'+a.name+'</b> · '+estadoTxt(stateOf(a.key))+'<br><span>'+a.role+'</span>'+(nb.length?'<br><span>↔ '+nb.join(', ')+'</span>':'')+'<br><span style="opacity:.7">'+L('clic para ver sus tareas','click to see its tasks')+'</span>';
       tip.classList.add('show'); }
     else tip.classList.remove('show');
     requestAnimationFrame(frame);
