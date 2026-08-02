@@ -1791,31 +1791,52 @@ async function pollAccounts(){ const box=$('#hud-acc'); if(!box)return;
   const orden=acc.slice().sort((a,b)=>(b.id==d.current)-(a.id==d.current));
   box.innerHTML=orden.slice(0,5).map(a=>{ const usa=a.id==d.current, live=!!a.live;
     const col=usa?(live?'#ff5d73':'#34d399'):'#3d5a6b';
+    /* Si le pusiste nombre, manda el nombre: un numero de ocho cifras no distingue
+       nada, y es cuando mas importa acertar — la demo de pruebas y la real se
+       parecen muchisimo escritas. El numero se queda de apoyo. */
+    const nom=String(a.name||'').trim();
     return '<div class="prow" style="border-left-color:'+col+'">'
       +'<span class="sd" style="color:#02141b;background:'+col+'">'+(live?'REAL':'DEMO')+'</span>'
-      +'<span class="sy">#'+escapeHtml(String(a.id))+'</span>'
+      +'<span class="sy">'+escapeHtml(nom||('#'+a.id))+'</span>'
       +'<span class="vl">'+(usa?('<b style="color:'+col+'">'+L('LA QUE USA','IN USE')+'</b>')
-                               :(a.login?('login '+escapeHtml(String(a.login))):''))+'</span></div>'; }).join('')
+                               :(nom?('#'+escapeHtml(String(a.id))):(a.login?('login '+escapeHtml(String(a.login))):'')))+'</span></div>'; }).join('')
     +(acc.length>5?('<div class="phelp" style="margin:2px 0 0">'+(acc.length-5)+' '+L('más','more')+'</div>'):'')
     +'<div class="phelp" style="margin:4px 0 0;text-align:right">'+L('pulsa para cambiar ▸','click to switch ▸')+'</div>'; }
 async function loadAccounts(){ let d; try{ d=await (await fetch('/accounts')).json(); }catch(e){ return; }
   const el=$('#sys-accounts'); if(!el) return;
   if(!d.ok||!(d.accounts||[]).length){ el.innerHTML='<div class="empty">No pude listar tus cuentas'+(d&&d.reason?': '+escapeHtml(d.reason):'.')+'</div>'
     +'<a class="btn" href="/oauth/login" style="display:inline-block;margin-top:8px;text-decoration:none">Conectar cTrader</a>'; return; }
-  const opts=d.accounts.map(a=>'<option value="'+a.id+'" data-env="'+(a.live?'live':'demo')+'"'+(a.id==d.current?' selected':'')+'>#'+a.id+' · '+(a.live?'LIVE ⚠️':'DEMO')+(a.login?' · login '+a.login:'')+'</option>').join('');
+  const eti=a=>(String(a.name||'').trim()||('#'+a.id));
+  const opts=d.accounts.map(a=>'<option value="'+a.id+'" data-env="'+(a.live?'live':'demo')+'"'+(a.id==d.current?' selected':'')+'>'+escapeHtml(eti(a))+' · '+(a.live?'LIVE ⚠️':'DEMO')+(a.name?(' · #'+a.id):'')+(a.login?' · login '+a.login:'')+'</option>').join('');
   el.innerHTML='<div class="phelp">Hydra opera con <b>una</b> cuenta: la que elijas aquí. Para mandar los trades '
     +'a varias a la vez, eso se configura en Sistema → Cuentas destino.</div>'
     +'<div class="prm"><label>Cuenta que usa Hydra</label><select id="acc-sel">'+opts+'</select>'
     +'<div class="phelp">Usa una <b>DEMO</b> para practicar; LIVE opera con dinero real.</div></div>'
     +'<button class="btn" onclick="selectAccount()">Usar esta cuenta</button>'
     +'<div class="slbl" style="margin:14px 0 4px">TODAS TUS CUENTAS ('+d.accounts.length+')</div>'
-    +d.accounts.map(a=>'<div class="wrow"><span class="wsym">#'+escapeHtml(String(a.id))
+    +'<div class="phelp">Ponles el nombre que quieras (FTMO, mi demo, la de oro…). Es una etiqueta '
+    +'tuya y se guarda aquí: cTrader no se entera y renombrar NO cambia con cuál opera Hydra.</div>'
+    +d.accounts.map(a=>'<div class="wrow"><span class="wsym" style="min-width:0;flex:1">'
+      +escapeHtml(eti(a))
       +'<span class="phelp" style="margin:0;display:block;text-transform:none">'
-      +(a.live?'REAL — dinero de verdad':'DEMO — práctica')
+      +(a.live?'REAL — dinero de verdad':'DEMO — práctica')+' · #'+escapeHtml(String(a.id))
       +(a.login?(' · login '+escapeHtml(String(a.login))):'')+'</span></span>'
-      +(a.id==d.current?'<span class="phelp" style="margin:0;color:#34d399">la que usa ✓</span>':'')+'</div>').join('')
+      +(a.id==d.current?'<span class="phelp" style="margin:0;color:#34d399">la que usa ✓</span>':'')
+      +'<span class="wx" title="Ponerle nombre" style="cursor:pointer" onclick="accRename('+a.id+',\''
+      +String(a.name||'').replace(/[\\'"]/g,'')+'\')">'+ICO('sliders',12)+'</span></div>').join('')
     +'<a class="btn ghost" href="/oauth/login" style="display:inline-block;margin-top:10px;text-decoration:none">'
     +'Reconectar cTrader (actualizar cuentas)</a>'; }
+/* Renombrar es SOLO una etiqueta local: no se manda nada a cTrader y NO cambia con
+   qué cuenta opera Hydra. Se dice en la ventana, porque tocar algo llamado «cuenta»
+   en una app que opera da respeto, y con razón. */
+async function accRename(id,actual){
+  const n=prompt('Nombre para la cuenta #'+id+' (vacío = quitarlo):',actual||'');
+  if(n===null) return;                       // canceló
+  try{ await fetch('/accounts/'+id+'/name',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n})}); }
+  catch(e){ toast('Error de red'); return; }
+  toast(n.trim()?('Ahora es «'+n.trim()+'»'):'Nombre quitado');
+  loadAccounts(); pollAccounts(); }
 async function selectAccount(){ const sel=$('#acc-sel'); if(!sel) return; const o=sel.options[sel.selectedIndex]; const id=+o.value, env=o.getAttribute('data-env');
   if(env==='live' && !confirm('⚠️ Es una cuenta REAL (LIVE): opera con dinero real. Para practicar usa una DEMO. ¿Continuar?')) return;
   toast('Cambiando de cuenta…');

@@ -955,11 +955,25 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         pairs.sort(key=lambda p: -abs(p["corr"]))
         return {"ok": True, "pairs": pairs, "max": settings.max_correlation, "timeframe": settings.timeframe}
 
+    def _acc_names() -> dict:
+        """Los nombres que les hayas puesto tú: {"4002": "Mi FTMO"}.
+
+        Un número de ocho cifras no distingue nada cuando tienes seis cuentas, y es
+        justo cuando importa acertar: la DEMO de pruebas y la REAL se parecen
+        muchísimo escritas.
+        """
+        try:
+            d = json.loads((settings.data_path / "account_names.json").read_text())
+            return {str(k): str(v)[:40] for k, v in d.items() if str(v).strip()}
+        except Exception:  # noqa: BLE001
+            return {}
+
     @app.get("/accounts")
     async def accounts_list():
-        """Lista las cuentas autorizadas (ctidTraderAccountId) para saber cuál poner en CTRADER_ACCOUNT_ID."""
+        """Lista las cuentas autorizadas (ctidTraderAccountId) con el nombre que les pusiste."""
         if not tokens.has_tokens:
             return {"ok": False, "reason": "sin OAuth — conecta cTrader primero"}
+        nombres = _acc_names()
         try:
             token = await tokens.get_access_token()
             await broker.client.start()
@@ -967,9 +981,34 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             accs = await asyncio.wait_for(broker.list_accounts(token), timeout=12)
             return {"ok": True, "current": settings.ctrader_account_id, "env": settings.ctrader_env,
                     "accounts": [{"id": a.get("ctidTraderAccountId"), "live": a.get("isLive"),
-                                  "login": a.get("traderLogin")} for a in accs]}
+                                  "login": a.get("traderLogin"),
+                                  "name": nombres.get(str(a.get("ctidTraderAccountId")), "")}
+                                 for a in accs]}
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "reason": str(exc)[:200]}
+
+    @app.post("/accounts/{acc_id}/name")
+    async def account_rename(acc_id: int, request: Request):
+        """Ponle nombre a una cuenta. Vacío = quitarlo y volver al número.
+
+        Es solo una etiqueta tuya, guardada aquí: cTrader no sabe nada de esto y no
+        se le manda nada. Renombrar no cambia con cuál opera Hydra.
+        """
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        nombre = str(body.get("name") or "").strip()[:40]
+        nombres = _acc_names()
+        if nombre:
+            nombres[str(acc_id)] = nombre
+        else:
+            nombres.pop(str(acc_id), None)
+        (settings.data_path / "account_names.json").write_text(
+            json.dumps(nombres, ensure_ascii=False, indent=1))
+        store.log("system", "account_name",
+                  f"cuenta #{acc_id}: {nombre or '(sin nombre)'}")
+        return {"ok": True, "id": acc_id, "name": nombre}
 
     # -------------------------------------------------------------- controls
 
