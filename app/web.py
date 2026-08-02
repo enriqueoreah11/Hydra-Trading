@@ -2937,6 +2937,100 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         except Exception:  # noqa: BLE001
             lg.warning("no se pudo arrancar la actualización de histórico", exc_info=True)
 
+    @app.post("/data/download-ctrader")
+    async def data_dl_ctrader(request: Request):
+        """Baja histórico de TU bróker por la conexión de cTrader.
+
+        Es la fuente que responde de verdad a «¿qué habría pasado?»: son los mismos
+        precios con los que opera tu bot. Dukascopy es otro proveedor y sus velas no
+        coinciden — parecidas, pero no iguales, y un stop se toca o no se toca por
+        décimas.
+        """
+        from . import ctdata, history as hist
+
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        if broker is None or not broker.client.account_authorized:
+            return JSONResponse({"ok": False, "error": "conecta cTrader primero"},
+                                status_code=400)
+        sym = str(body.get("symbol") or "").upper().strip()
+        tf = str(body.get("tf") or settings.timeframe).upper()
+        dias = max(1.0, min(3650.0, float(body.get("days") or 365)))
+        if not sym:
+            return JSONResponse({"ok": False, "error": "dime qué símbolo"},
+                                status_code=400)
+        if tf not in hist._TF_SECONDS:
+            return JSONResponse({"ok": False, "error": f"temporalidad {tf} no soportada"},
+                                status_code=400)
+
+        return await _pull_ctrader(sym, tf, dias)
+
+    async def _pull_ctrader(sym: str, tf: str, dias: float) -> dict:
+        """Pide el histórico a cTrader por trozos y lo guarda. Devuelve el parte."""
+        from . import ctdata, history as hist
+
+        trozos, fallos, vacios = [], [], 0
+        for frm, to in ctdata.windows(tf, dias, time.time()):
+            try:
+                cs = await asyncio.wait_for(
+                    broker.candles_range(sym, tf, frm, to), timeout=30)
+            except Exception as exc:  # noqa: BLE001
+                fallos.append(str(exc)[:100])
+                if len(fallos) >= 3:
+                    break        # tres fallos: algo va mal, no insistimos veinte veces
+                continue
+            if not cs:
+                vacios += 1
+                # dos tramos seguidos vacíos = el bróker ya no tiene más histórico
+                if vacios >= 2:
+                    break
+                continue
+            vacios = 0
+            trozos.append(cs)
+
+        velas = ctdata.merge(trozos)
+        if not velas:
+            return {"ok": False, "fallos": fallos,
+                    "error": "el bróker no devolvió velas"
+                             + (f" ({fallos[0]})" if fallos else "")}
+        filas = [{"ts": c.ts, "open": c.open, "high": c.high, "low": c.low,
+                  "close": c.close, "volume": c.volume} for c in velas]
+        db = _candles_db()
+        added = await asyncio.to_thread(db.add, sym, tf, filas)
+        huecos = ctdata.gaps(velas, hist._TF_SECONDS[tf])
+        store.log("system", "data_ctrader",
+                  f"{sym} {tf}: {added} velas nuevas de {len(filas)} bajadas de cTrader")
+        return {"ok": True, "symbol": sym, "tf": tf, "bajadas": len(filas),
+                "nuevas": added, "total": db.count(sym, tf),
+                "desde_ts": filas[0]["ts"], "hasta_ts": filas[-1]["ts"],
+                "huecos": huecos[:20], "n_huecos": len(huecos), "fallos": fallos,
+                "fuente": "cTrader (tu bróker)"}
+
+    async def _con_velas(sym: str, tf: str, dias: float = 365) -> tuple[list, dict]:
+        """Las velas de ese símbolo, bajándolas solas si no están.
+
+        Es lo que quita el paso de «primero descarga y luego prueba»: se pulsa
+        backtest y, si falta el histórico, se pide a tu bróker y se guarda. La
+        segunda vez ya está en disco y es instantáneo.
+        """
+        db = _candles_db()
+        cs = await asyncio.to_thread(db.series, sym, tf)
+        if len(cs) >= 400:                     # suficiente para medir algo
+            return cs, {"fuente": "guardado", "bajadas": 0}
+        if broker is None or not broker.client.account_authorized:
+            return cs, {"fuente": "guardado", "bajadas": 0,
+                        "aviso": "no tengo histórico de ese símbolo y cTrader no está "
+                                 "conectado para bajarlo"}
+        parte = await _pull_ctrader(sym, tf, dias)
+        if not parte.get("ok"):
+            return cs, {"fuente": "guardado", "bajadas": 0,
+                        "aviso": parte.get("error") or "no pude bajarlo"}
+        cs = await asyncio.to_thread(db.series, sym, tf)
+        return cs, {"fuente": "cTrader (bajado ahora)", "bajadas": parte.get("bajadas", 0),
+                    "n_huecos": parte.get("n_huecos", 0)}
+
     @app.post("/backtest/run")
     async def backtest_run(request: Request):
         """Backtest de UNA estrategia sobre tu histórico, en múltiplos de R."""
@@ -2948,10 +3042,13 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         sym = str(body.get("symbol") or "").upper()
         tf = str(body.get("tf") or settings.timeframe).upper()
         strat = str(body.get("strategy") or "donchian")
-        cs = await asyncio.to_thread(_candles_db().series, sym, tf)
+        # si no hay histórico, se pide a tu bróker en el momento: no hay que
+        # descargar nada por separado antes de poder probar una estrategia
+        cs, orig = await _con_velas(sym, tf, float(body.get("days") or 365))
         if not cs:
-            return JSONResponse({"ok": False, "error": f"no tengo velas de {sym} {tf}: "
-                                                       "impórtalas o descárgalas"},
+            return JSONResponse({"ok": False,
+                                 "error": orig.get("aviso")
+                                          or f"no tengo velas de {sym} {tf}"},
                                 status_code=400)
         from . import strategies as st3
         params = body.get("params") or st3.DEFAULTS.get(strat, {})
@@ -2960,7 +3057,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         if not res.get("ok"):
             return JSONResponse(res, status_code=400)
         res.update({"symbol": sym, "tf": tf, "strategy": strat, "params": params,
-                    "bars": len(cs)})
+                    "bars": len(cs), "datos": orig})
         return res
 
     @app.post("/backtest/optimize")
@@ -2974,15 +3071,17 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         sym = str(body.get("symbol") or "").upper()
         tf = str(body.get("tf") or settings.timeframe).upper()
         strat = str(body.get("strategy") or "donchian")
-        cs = await asyncio.to_thread(_candles_db().series, sym, tf)
+        cs, orig = await _con_velas(sym, tf, float(body.get("days") or 365))
         if not cs:
-            return JSONResponse({"ok": False, "error": f"no tengo velas de {sym} {tf}"},
+            return JSONResponse({"ok": False,
+                                 "error": orig.get("aviso")
+                                          or f"no tengo velas de {sym} {tf}"},
                                 status_code=400)
         res = await asyncio.to_thread(
             opt.optimize, cs, strat, int(body.get("steps") or 3),
             int(body.get("horizon") or 60), float(body.get("split") or 0.7),
             int(body.get("top") or 8), int(body.get("min_trades") or 10))
-        res.update({"symbol": sym, "tf": tf})
+        res.update({"symbol": sym, "tf": tf, "datos": orig})
         return res
 
     @app.get("/setups")

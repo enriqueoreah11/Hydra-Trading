@@ -170,20 +170,37 @@ class Broker:
 
     # -------------------------------------------------------------- candles
 
+    async def candles_range(self, symbol: str, timeframe: str,
+                            from_ms: int, to_ms: int) -> list[Candle]:
+        """Velas de un TRAMO concreto, para bajar histórico por trozos.
+
+        `candles()` mira siempre desde ahora hacia atrás: sirve para operar, pero no
+        para reconstruir un año. La Open API limita cada petición por ventana de
+        tiempo, así que el histórico hay que pedirlo a cachos con sus fechas.
+        """
+        return await self._trendbars(symbol, timeframe, int(from_ms), int(to_ms), 0)
+
     async def candles(self, symbol: str, timeframe: str, count: int = 200) -> list[Candle]:
-        sid = await self.symbol_id(symbol)
-        period = c.TRENDBAR_PERIOD[timeframe]
         minutes = c.TRENDBAR_PERIOD_MINUTES[timeframe]
         now_ms = int(time.time() * 1000)
         frm = now_ms - int(count * 2.5) * minutes * 60_000  # extra margin for weekends
-        res = await self.client.send(c.GET_TRENDBARS_REQ, {
+        out = await self._trendbars(symbol, timeframe, frm, now_ms, count)
+        return out[-count:] if count else out
+
+    async def _trendbars(self, symbol: str, timeframe: str, frm: int, to: int,
+                         count: int) -> list[Candle]:
+        sid = await self.symbol_id(symbol)
+        period = c.TRENDBAR_PERIOD[timeframe]
+        payload = {
             "ctidTraderAccountId": self.account_id,
             "fromTimestamp": frm,
-            "toTimestamp": now_ms,
+            "toTimestamp": to,
             "period": period,
             "symbolId": sid,
-            "count": count,
-        })
+        }
+        if count:
+            payload["count"] = count
+        res = await self.client.send(c.GET_TRENDBARS_REQ, payload)
         out: list[Candle] = []
         for tb in res.get("trendbar", []):
             low = float(tb.get("low", 0))
@@ -200,7 +217,7 @@ class Broker:
                 volume=float(tb.get("volume", 0)),
             ))
         out.sort(key=lambda x: x.ts)
-        return out[-count:]
+        return out
 
     # ------------------------------------------------------------- positions
 

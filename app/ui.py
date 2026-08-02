@@ -1108,7 +1108,10 @@ async function renderData(){ const box=$('#mb-data'); if(!box)return;
     +'<div class="ssec" style="margin:6px 0">'
     +'<button class="btn '+(d.enabled?'':'ghost')+'" onclick="dataAuto('+(d.enabled?'false':'true')+')">'
     +(d.enabled?L('✔ trayendo las nuevas sola','✔ keeping itself updated'):L('mantener al día solo','keep it updated'))+'</button>'
-    +'<button class="btn ghost" onclick="dataDl()">'+ICO('refresh',12)+' '+L('Descargar de Dukascopy','Download from Dukascopy')+'</button>'
+    /* cTrader va PRIMERO y en botón sólido: es la fuente que coincide con lo que
+       opera tu bot. Dukascopy queda de alternativa para lo que el bróker no tenga. */
+    +'<button class="btn" onclick="dataCT()">'+ICO('archive',12)+' '+L('Bajar de mi bróker (cTrader)','From my broker (cTrader)')+'</button>'
+    +'<button class="btn ghost" onclick="dataDl()">'+ICO('refresh',12)+' '+L('Dukascopy','Dukascopy')+'</button>'
     +'<button class="btn ghost" onclick="btRun()">'+ICO('bars',12)+' '+L('Backtest','Backtest')+'</button>'
     +'<button class="btn ghost" onclick="btOpt()">'+ICO('bolt',12)+' '+L('Buscar mejores parámetros','Optimise parameters')+'</button>'
     +'</div><div id="dt-out" class="phelp"></div>';
@@ -1151,6 +1154,26 @@ async function dataUp(){ const f=$('#dt-f'), out=$('#dt-out');
   out.textContent=d.symbol+' '+d.tf+': '+d.added+' '+L('velas nuevas de','new bars out of')+' '+d.read
     +(d.skipped?(' · '+d.skipped+' '+L('filas descartadas','rows skipped')):'');
   BTSYM=d.symbol; BTTF=d.tf; renderData(); }
+/* Bajar de cTrader: los MISMOS precios con los que opera tu bot. Es lo que hace que
+   el backtest conteste a «qué habría pasado» y no a «qué habría pasado en otro
+   bróker». */
+async function dataCT(){ const sym=($('#dt-sym')||{}).value||'', tf=($('#dt-tf')||{}).value||'M15';
+  const out=$('#dt-out');
+  if(!sym.trim()){ if(out) out.textContent='Escribe el símbolo arriba (p. ej. XAUUSD).'; return; }
+  const dias=prompt('¿Cuántos días de histórico? (365 = un año)','365');
+  if(dias===null) return;
+  if(out){ out.style.color='#5f7387'; out.textContent='Pidiendo a tu bróker… (va por trozos, tarda)'; }
+  let d; try{ d=await (await fetch('/data/download-ctrader',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({symbol:sym.trim(),tf:tf,days:+dias||365})})).json(); }
+  catch(e){ if(out) out.textContent='Error de red.'; return; }
+  if(!d.ok){ if(out){ out.style.color='#ff5d73'; out.textContent=d.error||'No se pudo.'; } return; }
+  if(out){ out.style.color=d.n_huecos?'#fbbf24':'#34d399';
+    // los huecos se DICEN: no dan error y hacen que el backtest opere de menos
+    out.textContent=d.symbol+' '+d.tf+': '+d.nuevas+' velas nuevas de '+d.bajadas
+      +' · total '+d.total+' · fuente '+d.fuente
+      +(d.n_huecos?(' · ⚠ '+d.n_huecos+' huecos en la serie (velas que tu bróker no dio)'):''); }
+  renderData(); }
 async function dataDl(){ const out=$('#dt-out');
   const sym=(($('#dt-sym')||{}).value||BTSYM||'').toUpperCase();
   const tf=(($('#dt-tf')||{}).value||BTTF||'M15').toUpperCase();
@@ -1170,13 +1193,15 @@ async function btRun(){ const out=$('#dt-out');
   const tf=(($('#dt-tf')||{}).value||BTTF||'M15').toUpperCase();
   const st=prompt(L('¿Qué estrategia? (donchian, rsi_fade, momentum_burst, ema_trend, ma_pullback)','Which strategy?'),'donchian');
   if(!st) return;
-  out.style.color=''; out.textContent=L('Corriendo…','Running…');
+  out.style.color=''; out.textContent=L('Corriendo… (si faltan velas las pido a tu bróker)','Running…');
   let d; try{ d=await (await fetch('/backtest/run',{method:'POST',headers:{'content-type':'application/json'},
         body:JSON.stringify({symbol:sym,tf:tf,strategy:st})})).json(); }
   catch(e){ out.textContent='Error de red.'; return; }
   if(!d.ok){ out.style.color='#fbbf24'; out.textContent=d.error||''; return; }
   const col=(d.expectancy_r||0)>0?'#34d399':'#ff5d73';
-  out.innerHTML='<b>'+escapeHtml(st)+'</b> · '+escapeHtml(sym)+' '+escapeHtml(tf)+' ('+d.bars+' velas)<br>'
+  // de dónde salieron las velas: medir con las de otro bróker mide otro bot
+  const fu=(d.datos&&d.datos.fuente)?(' · '+escapeHtml(d.datos.fuente)):'';
+  out.innerHTML='<b>'+escapeHtml(st)+'</b> · '+escapeHtml(sym)+' '+escapeHtml(tf)+' ('+d.bars+' velas'+fu+')<br>'
     +d.trades+' '+L('operaciones','trades')+' · '+L('acierto','win')+' '+d.win_pct+'%'
     +' · <b style="color:'+col+'">'+d.expectancy_r+'R</b> '+L('por operación','per trade')
     +'<br>'+L('total','total')+' '+d.total_r+'R · '+L('peor racha','worst run')+' '+d.max_dd_r+'R'; }
@@ -2117,12 +2142,16 @@ const INSTR_FAM=[
   ['indice',  /(US100|US30|US500|SPX|NAS|USTEC|DE40|GER40|UK100|JPN225|JP225|DAX|FTSE|NIKKEI|IDX)/,'#7aa2ff','Índice'],
   ['cripto',  /^(BTC|ETH|XRP|SOL|ADA|DOGE|LTC)/,           '#b98cff','Cripto'],
   ['dolar',   /^DXY$/,                                     '#34d399','Índice del dólar']];
+function hex2rgb(h){ const m=/^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(h||''));
+  return m?(parseInt(m[1],16)+','+parseInt(m[2],16)+','+parseInt(m[3],16)):'138,170,170'; }
 function instrFam(sym){ const s=String(sym||'').toUpperCase().replace(/[^A-Z0-9.]/g,'');
   for(let i=0;i<INSTR_FAM.length;i++){ const f=INSTR_FAM[i];
     if(f[1].test(s)) return {k:f[0],col:f[2],label:f[3]}; }
   // lo que queda con seis letras y dos monedas conocidas es un cruce
   if(typeof ccyPair==='function'&&ccyPair(s)) return {k:'forex',col:'#5ad1e6',label:'Forex'};
-  return {k:'otro',col:'#8aa',label:'Otro'}; }
+  return {k:'otro',col:'#8aa8aa',label:'Otro'}; }
+// el lienzo pinta con "r,g,b", no con hex
+function instrFamRGB(sym){ return hex2rgb(instrFam(sym).col); }
 /* Qué está pasando con ese instrumento AHORA.
    OPERA gana sobre ANALIZA: si hay dinero puesto, eso es lo primero que hay que ver.
    Y «analiza» solo cuenta si es reciente — decirlo de algo que se miró hace tres
@@ -3333,7 +3362,12 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
     const IW=Math.max(56,Math.min(88,S*0.105)), IH=Math.max(20,Math.min(28,S*0.033));
     for(let i=0;i<NI;i++){ const r=RING3[i], sym=String(r.symbol||'').toUpperCase();
       const hi=hoverI===i, live=OPENSYMS.has(sym);
-      const col=live?'52,211,153':(r.verdict==='compra'?'52,211,153':(r.verdict==='venta'?'255,93,115':(r.verdict?'110,150,175':'80,110,132')));
+      /* El componente lleva el color de SU FAMILIA: metales dorados, energía ámbar,
+         índices azules, forex cian. Así se reconoce de qué es sin leer la etiqueta.
+         La señal y la posición abierta siguen viéndose, pero por otras vías: el
+         porcentaje en verde o rojo, y el marco que late. Un solo elemento pintado a
+         la vez por dos criterios distintos no dice ninguno de los dos. */
+      const col=instrFamRGB(sym);
       const bb=compBox(r,hi?IW*1.06:IW,hi?IH*1.06:IH); r.box=bb;
       const entry=compEntry(bb);
       if(!r.wire||r.wireK!==(IW+','+CX+','+CY))
@@ -3349,7 +3383,9 @@ let waveLevelG=0.12; requestAnimationFrame(drawWave);
       g.fillStyle='rgba('+col+','+(hi?1:0.9)+')';
       g.fillText(((window.mktName&&window.mktName(sym))||sym).slice(0,10), r.x, r.y-IH*0.17);
       g.font=Math.max(6.5,Math.min(8.5,IH*0.30))+'px system-ui,sans-serif';
-      g.fillStyle='rgba('+col+',0.62)';
+      // la dirección se va al porcentaje, que es donde se lee de todas formas
+      g.fillStyle=(r.change_pct==null)?('rgba('+col+',0.5)')
+        :(r.change_pct>=0?'rgba(52,211,153,0.95)':'rgba(255,93,115,0.95)');
       g.fillText(r.change_pct==null?'· · ·':((r.change_pct>=0?'+':'')+r.change_pct.toFixed(2)+'%'),
                  r.x, r.y+IH*0.26); }
     if(hoverI>=0) cv.style.cursor='pointer';
