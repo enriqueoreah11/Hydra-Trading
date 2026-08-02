@@ -880,7 +880,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         """
         import time as _t
         if _instr_cache["data"] and _t.time() - _instr_cache["ts"] < 25:
-            return _instr_cache["data"]
+            return {**_instr_cache["data"], "favs": _favs()}
         if not broker.client.account_authorized:
             return {"ok": False, "reason": "Conecta cTrader.", "rows": []}
         from . import indicators
@@ -915,9 +915,11 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                 pass
         if _dxy_cache["row"]:
             rows.append(_dxy_cache["row"])
+        # los favoritos van FUERA de la caché: se marcan y desmarcan a mano y tienen
+        # que verse al instante, no dentro de 25 segundos
         out = {"ok": True, "timeframe": settings.timeframe, "rows": rows}
         _instr_cache.update({"ts": _t.time(), "data": out})
-        return out
+        return {**out, "favs": _favs()}
 
     @app.get("/correlations")
     async def correlations():
@@ -973,7 +975,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         """Lista las cuentas autorizadas (ctidTraderAccountId) con el nombre que les pusiste."""
         if not tokens.has_tokens:
             return {"ok": False, "reason": "sin OAuth — conecta cTrader primero"}
-        nombres = _acc_names()
+        nombres, favs = _acc_names(), _acc_favs()
         try:
             token = await tokens.get_access_token()
             await broker.client.start()
@@ -982,10 +984,41 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             return {"ok": True, "current": settings.ctrader_account_id, "env": settings.ctrader_env,
                     "accounts": [{"id": a.get("ctidTraderAccountId"), "live": a.get("isLive"),
                                   "login": a.get("traderLogin"),
-                                  "name": nombres.get(str(a.get("ctidTraderAccountId")), "")}
+                                  "name": nombres.get(str(a.get("ctidTraderAccountId")), ""),
+                                  "fav": int(a.get("ctidTraderAccountId") or 0) in favs}
                                  for a in accs]}
         except Exception as exc:  # noqa: BLE001
             return {"ok": False, "reason": str(exc)[:200]}
+
+    def _acc_favs() -> list[int]:
+        """Las cuentas marcadas con estrella: son las que salen primero."""
+        try:
+            d = json.loads((settings.data_path / "fav_accounts.json").read_text())
+            return [int(x) for x in d]
+        except Exception:  # noqa: BLE001
+            return []
+
+    @app.post("/accounts/{acc_id}/fav")
+    async def account_fav(acc_id: int, request: Request):
+        """Marca o desmarca una cuenta como favorita.
+
+        Solo cambia el orden en pantalla: no toca con cuál opera Hydra ni a cuáles
+        se mandan las órdenes. Con seis cuentas y cinco huecos, poder fijar arriba
+        las que de verdad miras es lo que hace útil la ventana.
+        """
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        favs = _acc_favs()
+        quiero = body.get("fav")
+        activar = (acc_id not in favs) if quiero is None else bool(quiero)
+        if activar and acc_id not in favs:
+            favs.append(acc_id)
+        elif not activar and acc_id in favs:
+            favs.remove(acc_id)
+        (settings.data_path / "fav_accounts.json").write_text(json.dumps(favs))
+        return {"ok": True, "id": acc_id, "fav": activar, "favs": favs}
 
     @app.post("/accounts/{acc_id}/name")
     async def account_rename(acc_id: int, request: Request):
@@ -3174,16 +3207,51 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         got = _watch["assign"].get(symbol.upper()) or []
         return [s for s in got if s in st.STRATEGIES]
 
+    def _favs() -> list[str]:
+        """Los instrumentos que marcaste con estrella, para verlos primero."""
+        try:
+            d = json.loads((settings.data_path / "fav_symbols.json").read_text())
+            return [str(x).upper() for x in d if str(x).strip()]
+        except Exception:  # noqa: BLE001
+            return []
+
+    @app.post("/watchlist/{symbol}/fav")
+    async def watchlist_fav(symbol: str, request: Request):
+        """Marca o desmarca un instrumento como favorito.
+
+        Es solo orden de pantalla: no cambia qué vigila Hydra ni con qué estrategia.
+        Con una lista larga y solo cinco huecos en la ventana, poder fijar arriba los
+        tres que miras de verdad es la diferencia entre usarla y no mirarla.
+        """
+        try:
+            body = await request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        sym = symbol.upper().strip()
+        favs = _favs()
+        quiero = body.get("fav")
+        activar = (sym not in favs) if quiero is None else bool(quiero)
+        if activar and sym not in favs:
+            favs.append(sym)
+        elif not activar and sym in favs:
+            favs.remove(sym)
+        (settings.data_path / "fav_symbols.json").write_text(
+            json.dumps(favs, ensure_ascii=False))
+        return {"ok": True, "symbol": sym, "fav": activar, "favs": favs}
+
     @app.get("/watchlist")
     async def watchlist():
         """Instrumentos vigilados + qué estrategia lleva cada uno."""
         from . import strategies as st
-        rows = [{"symbol": sym, "strategies": strategies_for(sym), "fixed": False}
+        favs = _favs()
+        rows = [{"symbol": sym, "strategies": strategies_for(sym), "fixed": False,
+                 "fav": sym.upper() in favs}
                 for sym in settings.symbol_list]
         rows += [{"symbol": sym, "strategies": [], "fixed": True,
+                  "fav": sym.upper() in favs,
                   "note": "referencia · no se opera"} for sym in PINNED]
         known = broker.symbol_names() if broker.client.account_authorized else []
-        return {"symbols": rows,
+        return {"symbols": rows, "favs": favs,
                 "available": [{"id": k, "label": _STRAT_LABEL.get(k, k),
                                "params": st.DEFAULTS.get(k, {})} for k in st.STRATEGIES],
                 "broker_symbols": known[:400], "broker_ready": bool(known),

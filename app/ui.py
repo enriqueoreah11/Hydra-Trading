@@ -486,6 +486,13 @@ const $=s=>document.querySelector(s);
 let DATA=null, selected=null, halted=false;
 let booted=false;                // false = placa apagada (pantalla de inicio)
 let OPENSYMS=new Set();          // pares con posición abierta (se marcan en verde)
+/* Pares MIRADOS hace poco. Sale del diario, que ya se pide para la cinta: no
+   cuesta ni una petición más. La ventana es corta a propósito — «analizando» tiene
+   que querer decir ahora, no hace tres horas. */
+let ANALSYMS=new Set();
+const ANAL_MIN=20;               // minutos que algo sigue contando como reciente
+let FAVSYM=new Set();            // instrumentos con estrella: van primero
+let FAVACC=new Set();            // cuentas con estrella: van primero
 let INSTR=[];                    // precios de /instruments
 let RING3S=[];                   // el anillo exterior tal como se dibuja
 const norm=s=>(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
@@ -1351,7 +1358,10 @@ let WATCH=null, WVIEW='sym';
 async function renderWatch(){ const box=$('#sys-watch'); if(!box)return;
   try{ WATCH=await (await fetch('/watchlist')).json(); }
   catch(e){ box.innerHTML='<div class="empty">No se pudo cargar. ¿Falta redesplegar?</div>'; return; }
-  const av=WATCH.available||[], rows=WATCH.symbols||[];
+  const av=WATCH.available||[];
+  // alfabético también aquí: es la misma lista y tiene que leerse igual
+  const rows=(WATCH.symbols||[]).slice().sort((a,b)=>
+    String(a.symbol||'').localeCompare(String(b.symbol||'')));
   let h='<div class="phelp">Elige QUÉ vigila Hydra y CON QUÉ estrategia. Sin estrategia marcada, ese instrumento prueba <b>todas</b>. Esto manda en la flota de pruebas; las entradas en vivo las sigue proponiendo el Analyst.</div>';
   h+='<div class="ssec" style="margin:10px 0">'
     +'<button class="btn '+(WVIEW==='sym'?'':'ghost')+'" style="padding:5px 10px" onclick="wView(\'sym\')">Por instrumento</button>'
@@ -1363,8 +1373,16 @@ async function renderWatch(){ const box=$('#sys-watch'); if(!box)return;
           +'<span class="phelp" style="margin:0;flex:1">'+escapeHtml(r.note||'referencia')+'</span>'
           +'<span class="wx" title="Fijo: siempre vigilado" style="cursor:default">'+ICO('lock',12,'#8aa')+'</span></div>';
         return; }
-      h+='<div class="wrow"><span class="wsym">'
-        +escapeHtml(r.symbol)+'</span>'
+      const est=instrEstado(r.symbol);
+      h+='<div class="wrow">'
+        +'<span title="Verlo primero en la ventana" style="cursor:pointer;margin-right:6px;color:'
+        +(r.fav?'#fbbf24':'#3d5a6b')+'" onclick="favSym(\''+r.symbol+'\')">\u2605</span>'
+        +'<span class="wsym">'
+        +(est.txt?('<span class="sd" style="color:#02141b;background:'+est.col
+                   +';margin-right:6px">'+est.txt+'</span>'):'')
+        +'<span style="color:'+instrFam(r.symbol).col+'">'+escapeHtml(r.symbol)+'</span>'
+        +'<span class="phelp" style="margin:0;display:block;text-transform:none">'
+        +escapeHtml(instrFam(r.symbol).label)+'</span></span>'
         +av.map(a=>'<span class="chip2'+(on.indexOf(a.id)>=0?' on':'')+'" title="'+escapeHtml(JSON.stringify(a.params))
           +'" onclick="wTog(\''+r.symbol+'\',\''+a.id+'\')">'+escapeHtml(a.label)+'</span>').join('')
         +'<span class="wx" title="Quitar" onclick="wDel(\''+r.symbol+'\')">✕</span></div>'; });
@@ -1801,6 +1819,7 @@ function openAccWin(){ const ic=$('#acc-icon'); if(ic) ic.innerHTML=ICO('archive
 async function pollAccounts(){ const box=$('#hud-acc'); if(!box)return;
   let d; try{ d=await (await fetch('/accounts')).json(); }catch(e){ return; }
   ACCS=d;
+  FAVACC=new Set((d.accounts||[]).filter(a=>a.fav).map(a=>a.id));
   const n=$('#hud-acc-n');
   if(!d.ok||!(d.accounts||[]).length){
     if(n) n.textContent='—';
@@ -1810,7 +1829,10 @@ async function pollAccounts(){ const box=$('#hud-acc'); if(!box)return;
   if(n) n.textContent=acc.length+(acc.length===1?' CUENTA':' CUENTAS');
   /* La que usa Hydra va PRIMERO y marcada. Con varias cuentas conectadas, saber
      cual esta operando de verdad es lo unico que hay que poder ver de un vistazo. */
-  const orden=acc.slice().sort((a,b)=>(b.id==d.current)-(a.id==d.current));
+  /* Primero la que opera, luego las marcadas con estrella. Con seis cuentas y
+     cinco huecos, ver la que usas y tus habituales es todo lo que hace falta. */
+  const orden=acc.slice().sort((a,b)=>((b.id==d.current)-(a.id==d.current))
+    ||((FAVACC.has(b.id)?1:0)-(FAVACC.has(a.id)?1:0)));
   box.innerHTML=orden.slice(0,5).map(a=>{ const usa=a.id==d.current, live=!!a.live;
     const col=usa?(live?'#ff5d73':'#34d399'):'#3d5a6b';
     /* Si le pusiste nombre, manda el nombre: un numero de ocho cifras no distingue
@@ -1819,7 +1841,8 @@ async function pollAccounts(){ const box=$('#hud-acc'); if(!box)return;
     const nom=String(a.name||'').trim();
     return '<div class="prow" style="border-left-color:'+col+'">'
       +'<span class="sd" style="color:#02141b;background:'+col+'">'+(live?'REAL':'DEMO')+'</span>'
-      +'<span class="sy">'+escapeHtml(nom||('#'+a.id))+'</span>'
+      +'<span class="sy">'+(FAVACC.has(a.id)?'<span style="color:#fbbf24;margin-right:3px">\u2605</span>':'')
+      +escapeHtml(nom||('#'+a.id))+'</span>'
       +'<span class="vl">'+(usa?('<b style="color:'+col+'">'+L('LA QUE USA','IN USE')+'</b>')
                                :(nom?('#'+escapeHtml(String(a.id))):(a.login?('login '+escapeHtml(String(a.login))):'')))+'</span></div>'; }).join('')
     +(acc.length>5?('<div class="phelp" style="margin:2px 0 0">'+(acc.length-5)+' '+L('más','more')+'</div>'):'')
@@ -1838,8 +1861,10 @@ async function loadAccounts(){ let d; try{ d=await (await fetch('/accounts')).js
     +'<div class="slbl" style="margin:14px 0 4px">TODAS TUS CUENTAS ('+d.accounts.length+')</div>'
     +'<div class="phelp">Ponles el nombre que quieras (FTMO, mi demo, la de oro…). Es una etiqueta '
     +'tuya y se guarda aquí: cTrader no se entera y renombrar NO cambia con cuál opera Hydra.</div>'
-    +d.accounts.map(a=>'<div class="wrow"><span class="wsym" style="min-width:0;flex:1">'
-      +escapeHtml(eti(a))
+    +d.accounts.map(a=>'<div class="wrow">'
+      +'<span title="Verla primero en la ventana" style="cursor:pointer;margin-right:6px;color:'
+      +(a.fav?'#fbbf24':'#3d5a6b')+'" onclick="favAcc('+a.id+')">\u2605</span>'
+      +'<span class="wsym" style="min-width:0;flex:1">'+escapeHtml(eti(a))
       +'<span class="phelp" style="margin:0;display:block;text-transform:none">'
       +(a.live?'REAL — dinero de verdad':'DEMO — práctica')+' · #'+escapeHtml(String(a.id))
       +(a.login?(' · login '+escapeHtml(String(a.login))):'')+'</span></span>'
@@ -1851,6 +1876,20 @@ async function loadAccounts(){ let d; try{ d=await (await fetch('/accounts')).js
 /* Renombrar es SOLO una etiqueta local: no se manda nada a cTrader y NO cambia con
    qué cuenta opera Hydra. Se dice en la ventana, porque tocar algo llamado «cuenta»
    en una app que opera da respeto, y con razón. */
+/* Estrella = «esto quiero verlo sin abrir nada». Solo cambia el ORDEN de la
+   ventanita: no toca qué vigila Hydra, ni con qué cuenta opera, ni a cuáles manda.
+   Se dice porque una estrella en una app que opera podría entenderse como otra
+   cosa mucho más seria. */
+async function favSym(sym){
+  try{ await fetch('/watchlist/'+encodeURIComponent(sym)+'/fav',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:'{}'}); }
+  catch(e){ toast('Error de red'); return; }
+  renderWatch(); pollInstruments(); }
+async function favAcc(id){
+  try{ await fetch('/accounts/'+id+'/fav',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:'{}'}); }
+  catch(e){ toast('Error de red'); return; }
+  loadAccounts(); pollAccounts(); }
 async function accRename(id,actual){
   const n=prompt('Nombre para la cuenta #'+id+' (vacío = quitarlo):',actual||'');
   if(n===null) return;                       // canceló
@@ -2065,12 +2104,44 @@ function spark(vals,col){ if(!vals||vals.length<2)return'';
     +'<stop offset="0" stop-color="'+col+'" stop-opacity=".28"/><stop offset="1" stop-color="'+col+'" stop-opacity="0"/></linearGradient></defs>'
     +'<polygon points="0,22 '+pts+' 100,22" fill="url(#'+id+')"/>'
     +'<polyline points="'+pts+'" fill="none" stroke="'+col+'" stroke-width="1" vector-effect="non-scaling-stroke"/></svg>'; }
+/* ------- FAMILIA DE CADA INSTRUMENTO -------
+   Un color por tipo para reconocerlo sin leer: metales dorados, energía ámbar,
+   índices azules, forex cian. Salen de los mismos tonos que ya usan las monedas de
+   la placa, para que la app no hable dos idiomas.
+
+   Se decide por el SÍMBOLO, no por una lista cerrada: los brókers renombran (US100,
+   USTEC, NAS100…) y una lista fija dejaría fuera justo los de tu prop firm. */
+const INSTR_FAM=[
+  ['metal',   /^(XAU|XAG|XPT|XPD|GOLD|SILVER)/,            '#f0c419','Metal'],
+  ['energia', /^(XTI|XBR|USOIL|UKOIL|WTI|BRENT|NGAS|XNG)/, '#e08a3c','Energía'],
+  ['indice',  /(US100|US30|US500|SPX|NAS|USTEC|DE40|GER40|UK100|JPN225|JP225|DAX|FTSE|NIKKEI|IDX)/,'#7aa2ff','Índice'],
+  ['cripto',  /^(BTC|ETH|XRP|SOL|ADA|DOGE|LTC)/,           '#b98cff','Cripto'],
+  ['dolar',   /^DXY$/,                                     '#34d399','Índice del dólar']];
+function instrFam(sym){ const s=String(sym||'').toUpperCase().replace(/[^A-Z0-9.]/g,'');
+  for(let i=0;i<INSTR_FAM.length;i++){ const f=INSTR_FAM[i];
+    if(f[1].test(s)) return {k:f[0],col:f[2],label:f[3]}; }
+  // lo que queda con seis letras y dos monedas conocidas es un cruce
+  if(typeof ccyPair==='function'&&ccyPair(s)) return {k:'forex',col:'#5ad1e6',label:'Forex'};
+  return {k:'otro',col:'#8aa',label:'Otro'}; }
+/* Qué está pasando con ese instrumento AHORA.
+   OPERA gana sobre ANALIZA: si hay dinero puesto, eso es lo primero que hay que ver.
+   Y «analiza» solo cuenta si es reciente — decirlo de algo que se miró hace tres
+   horas convierte el indicador en adorno. */
+function instrEstado(sym){ const s=String(sym||'').toUpperCase();
+  if(OPENSYMS.has(s)) return {txt:L('OPERA','TRADING'),col:'#34d399'};
+  if(ANALSYMS.has(s)) return {txt:L('ANALIZA','ANALYSING'),col:'#5ad1e6'};
+  return {txt:'',col:''}; }
 /* Ventana INSTRUMENTOS del HUD: la lista de los VIGILADOS (que existe aunque el
    broker no haya mandado precios todavia) y un aviso de que se pulsa para editar. */
 function renderHudInstr(d){ const box=$('#hud-instr'); if(!box)return;
   const watch=((DATA&&DATA.core&&DATA.core.symbols)||[]).map(x=>String(x).toUpperCase());
   const pinned=((DATA&&DATA.core&&DATA.core.pinned)||['DXY']).map(x=>String(x).toUpperCase());
-  const order=watch.concat(pinned.filter(x=>watch.indexOf(x)<0));
+  /* Alfabético SIEMPRE — antes salían en el orden en que estaban configurados, que
+     cambia al añadir o quitar, y buscar un par era leerlos todos cada vez. Los
+     marcados con estrella van delante, y también alfabéticos entre ellos: son los
+     que quieres ver sin abrir nada. */
+  const order=watch.concat(pinned.filter(x=>watch.indexOf(x)<0)).sort()
+    .sort((a,b)=>(FAVSYM.has(b)?1:0)-(FAVSYM.has(a)?1:0));
   const by={}; (INSTR||[]).forEach(r=>{ by[String(r.symbol||'').toUpperCase()]=r; });
   const n=$('#hud-instr-n'); if(n) n.textContent=order.length+(pinned.length?(' · '+pinned.length+' fijo'+(pinned.length>1?'s':'')):'');
   if(!order.length){ box.innerHTML='<div class="empty" style="padding:4px 2px;font-size:10.5px">'
@@ -2080,16 +2151,31 @@ function renderHudInstr(d){ const box=$('#hud-instr'); if(!box)return;
   const MAX=5, resto=order.length-MAX;
   box.innerHTML=order.slice(0,MAX).map(sym=>{ const r=by[sym]||{}, fx=pinned.indexOf(sym)>=0;
     const up=(r.change_pct||0)>=0, col=r.price==null?'#5f7387':(up?'#34d399':'#ff5d73');
-    return '<div class="prow" style="border-left-color:'+col+'">'
-      +'<span class="sy">'+escapeHtml(sym)+(fx?' '+ICO('lock',11,'#8aa'):'')+'</span>'
+    const est=instrEstado(sym);
+    return '<div class="prow" style="border-left-color:'+(est.col||col)+'">'
+      +(est.txt?('<span class="sd" style="color:#02141b;background:'+est.col+'">'+est.txt+'</span>'):'')
+      +'<span class="sy">'+(FAVSYM.has(sym)?'<span style="color:#fbbf24;margin-right:3px">\u2605</span>':'')
+      // el color dice DE QUÉ es; el borde izquierdo, qué se está haciendo con él
+      +'<span style="color:'+instrFam(sym).col+'">'+escapeHtml(sym)+'</span>'
+      +(fx?' '+ICO('lock',11,'#8aa'):'')+'</span>'
       +'<span class="vl" style="color:'+col+'">'
       +(r.price==null?L('sin datos','no data')
         :(r.price+' · '+(up?'+':'')+Number(r.change_pct||0).toFixed(2)+'%'))+'</span></div>'; }).join('')
     // se DICE cuántos quedan fuera: si no, cinco de doce parecen todos los que hay
     +(resto>0?('<div class="phelp" style="margin:2px 0 0">+'+resto+' '+L('más','more')+'</div>'):'')
+    /* Y si alguno de los que quedan fuera está operando o analizándose, se nombra.
+       Con orden alfabético y tope de cinco, el que tiene dinero puesto puede caer
+       fuera de la vista — y un indicador que se puede perder no sirve de nada. */
+    +(function(){ const ocultos=order.slice(MAX).filter(s=>instrEstado(s).txt);
+      if(!ocultos.length) return '';
+      return '<div class="phelp" style="margin:2px 0 0">'+ocultos.map(s=>{
+        const e=instrEstado(s);
+        return '<span style="color:'+e.col+'">'+escapeHtml(s)+'</span>'; }).join(' · ')
+        +' '+L('(abajo, con actividad)','(below, active)')+'</div>'; })()
     +'<div class="phelp" style="margin:4px 0 0;text-align:right">'+L('pulsa para editar ▸','click to edit ▸')+'</div>'; }
 async function pollInstruments(){
   let d; try{ d=await (await fetch('/instruments')).json(); }catch(e){ return; }
+  FAVSYM=new Set((d.favs||[]).map(x=>String(x).toUpperCase()));
   const rows=d.rows||[];
   INSTR=rows;                       // los instrumentos SON el tercer anillo del reactor
   const tf=$('#hud-tf'); if(tf) tf.textContent=d.timeframe||'';
@@ -2350,7 +2436,12 @@ function tapeText(e){ let c=e.content;
 let TAPE_SEEN=0;
 async function pollTape(){ const box=$('#tape-b'); if(!box)return;
   let j; try{ j=await (await fetch('/journal?limit=40')).json(); }catch(e){ return; }
-  const rows=(Array.isArray(j)?j:[]).filter(e=>TAPE_AG[e.agent]).slice(0,14);
+  const todo=Array.isArray(j)?j:[];
+  // qué se está mirando ahora mismo: para el indicador de los instrumentos
+  const corte=Date.now()/1000-ANAL_MIN*60;
+  ANALSYMS=new Set(todo.filter(e=>(e.ts||0)>=corte&&e.symbol)
+                       .map(e=>String(e.symbol).toUpperCase()));
+  const rows=todo.filter(e=>TAPE_AG[e.agent]).slice(0,14);
   const newest=rows.length?rows[0].ts:0;
   const busy=newest&&(Date.now()/1000-newest)<120;      // algo se movió hace menos de 2 min
   const tp=$('#tape'); if(tp) tp.classList.toggle('busy',!!busy);
