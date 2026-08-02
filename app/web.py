@@ -24,13 +24,18 @@ from .store import Store
 
 # Modelos disponibles desde la UI, del más barato al más caro.
 # El costo por 1M tokens es aproximado (entrada/salida) y solo sirve de guía.
+# Esta lista es una LISTA BLANCA: /model rechaza lo que no esté aquí. Por eso hay que
+# tocarla al salir una generación nueva — si solo se cambiara la de la interfaz, el
+# botón nuevo daría error y parecería que el modelo no existe.
 MODELS: dict[str, dict] = {
     "claude-haiku-4-5-20251001": {"label": "Haiku 4.5", "tier": "económico",
                                   "hint": "el más barato (~20-30x menos que Opus)"},
+    "claude-fable-5": {"label": "Fable 5", "tier": "económico",
+                       "hint": "rápido y económico, para el volumen"},
     "claude-sonnet-5": {"label": "Sonnet 5", "tier": "balance",
                         "hint": "balance costo/calidad (recomendado)"},
-    "claude-opus-4-8": {"label": "Opus 4.8", "tier": "máximo",
-                        "hint": "el más capaz y el más caro"},
+    "claude-opus-5": {"label": "Opus 5", "tier": "máximo",
+                      "hint": "el más capaz y el más caro"},
 }
 
 

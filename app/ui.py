@@ -558,19 +558,22 @@ async function renderBots(tgt){ const box=$(tgt||'#mb-work'); if(!box)return;
   let d; try{ d=await (await fetch('/algo/bots')).json(); }
   catch(e){ box.innerHTML='<div class="empty">No disponible. ¿Falta reiniciar?</div>'; return; }
   const bots=d.bots||[];
-  /* ORDEN: primero la carpeta y el selector (es lo que se usa a diario), después
-     los bots que YA elegiste, y al final el seguimiento por etiqueta. Antes la
-     lista de importados iba arriba y tapaba el acceso. */
-  let h='<div class="phelp">La carpeta queda fija y tú eliges <b>cuál</b> subir. De cada <code>.algo</code> se leen sus <b>parámetros</b>; la <b>lógica</b> vive en una DLL de .NET que solo ejecuta cTrader.</div>';
-  h+='<div id="algo-dir"></div>'
-    +'<div class="phelp" style="margin-top:10px">…o sube uno a mano, desde donde quieras:</div>'
-    +'<div class="wadd"><input type="file" id="algo-f" accept=".algo" '
+  /* SUBIR va primero y la CARPETA no se toca hasta que se pida.
+     Rastrear la carpeta de cAlgo es lo unico de esta ventana que recorre el disco
+     entero, y en un Mac con esa carpeta sincronizada tarda de verdad. Subir el
+     .algo a mano da el mismo resultado —queda guardado igual— y abre al instante,
+     asi que la carpeta pasa a ser un extra que se pulsa, no un peaje al entrar. */
+  let h='<div class="phelp">Sube el <code>.algo</code> del bot y se queda guardado. '
+    +'Un <code>.algo</code> es el bot ENTERO tal y como lo instala cTrader: no hace falta '
+    +'subir el resto de archivos del proyecto. De él se leen sus <b>parámetros</b>; la '
+    +'<b>lógica</b> va compilada dentro y solo la ejecuta cTrader.</div>';
+  h+='<div class="wadd"><input type="file" id="algo-f" accept=".algo" multiple '
     +'style="flex:1;background:#08131d;color:#9fe6ff;border:1px solid #17495d;border-radius:8px;padding:6px 8px;font-size:11.5px">'
-    +'<button class="btn ghost" onclick="algoUp()">Importar</button></div><div id="algo-out" class="phelp"></div>';
-  h+='<div class="slbl" style="margin:16px 0 4px">TUS BOTS ELEGIDOS ('+bots.length+')'
+    +'<button class="btn" onclick="algoUp()">Subir</button></div><div id="algo-out" class="phelp"></div>';
+  h+='<div class="slbl" style="margin:16px 0 4px">TUS BOTS ('+bots.length+')'
     +(bots.length?'<span style="float:right;cursor:pointer;opacity:.8;font-weight:400" onclick="botDelAll()">vaciar la lista ✕</span>':'')
     +'</div>';
-  if(!bots.length) h+='<div class="empty">Ninguno todavía. Elige arriba el que quieras: se queda guardado.</div>';
+  if(!bots.length) h+='<div class="empty">Ninguno todavía. Sube su <code>.algo</code> arriba: se queda guardado.</div>';
   /* La lista es SOLO la lista: un renglon por bot. Su configuracion se abre en su
      propia ventanita, porque 297 parametros dentro de un desplegable no se leen. */
   bots.forEach(b=>{
@@ -583,12 +586,18 @@ async function renderBots(tgt){ const box=$(tgt||'#mb-work'); if(!box)return;
       +'<span class="phelp" style="margin:0;padding:0 6px;flex:0 0 auto">abrir ▸</span>'
       +'<span class="wx" title="Quitar de la lista" onclick="event.stopPropagation();botDel(\''+b.file+'\')">✕</span></div>';
   });
+  // la carpeta, DETRAS de un boton: recorrerla es lo unico que tarda aqui
+  h+='<div class="slbl" style="margin:16px 0 4px">BUSCAR EN MI CARPETA (opcional)</div>'
+    +'<div class="phelp">Si prefieres elegirlos de tu carpeta de cAlgo en vez de subirlos, '
+    +'ábrela aquí. Se rastrea solo cuando lo pides: hacerlo al entrar es lo que hacía '
+    +'que esta ventana tardara.</div>'
+    +'<button class="btn ghost" id="algo-dir-btn" onclick="algoDir()">'+ICO('archive',12)+' Abrir mi carpeta de bots</button>'
+    +'<div id="algo-dir"></div>';
   // el seguimiento por etiqueta va al FINAL: sirve aunque no subas ningun .algo
   h+='<div class="slbl" style="margin:16px 0 4px">BOTS EN LA CUENTA (por etiqueta)</div>'
     +'<div class="phelp">Esto sale de tus operaciones reales, no del bot: funciona con <b>cualquier</b> bot sin tocarlo, aunque no lo hayas subido.</div>'
     +'<button class="btn ghost" onclick="botsLive()">'+ICO('refresh',12)+' Ver qué opera cada bot</button><div id="bots-live"></div>';
   box.innerHTML=h;
-  algoDir();
   if(BOTSEL) botBody(); }
 /* Vaciar la lista. Hace falta porque hasta ahora la carpeta se importaba entera y
    quedaron decenas guardados: sin esto no hay forma de volver a empezar y elegir. */
@@ -690,17 +699,34 @@ async function algoScan(){ const box=$('#algo-scan'); if(box) box.textContent='E
   (d.failed||[]).forEach(f=>{ h+='<div style="color:#ff5d73">✗ '+escapeHtml(f.file)+': '+escapeHtml(f.error)+'</div>'; });
   if(box){ box.style.color=''; box.innerHTML=h; }
   renderBots(); }
+/* Subir uno o VARIOS .algo. Se suben de uno en uno al servidor aunque elijas ocho:
+   asi el que falle se dice por su nombre en vez de tumbar la tanda entera. */
 async function algoUp(){ const el=$('#algo-f'), out=$('#algo-out');
-  if(!el||!el.files||!el.files[0]){ if(out)out.textContent='Elige el archivo .algo primero.'; return; }
-  const f=el.files[0];
-  if(out){ out.style.color='#5f7387'; out.textContent='Leyendo '+f.name+'…'; }
-  let d; try{ d=await (await fetch('/algo/import',{method:'POST',body:f,
-        headers:{'content-type':'application/octet-stream'}})).json(); }
-  catch(e){ if(out){out.style.color='#ff5d73';out.textContent='Error de red.';} return; }
-  if(!d.ok){ if(out){out.style.color='#ff5d73';out.textContent=d.error||'No pude leerlo.';} return; }
-  toast(d.name+': '+d.n_params+' parámetros importados');
-  speak(L('Importé '+d.n_params+' parámetros de '+d.name+'.','Imported '+d.n_params+' parameters from '+d.name+'.'));
-  BOTSEL=d.bot; renderBots(); }
+  const fs=(el&&el.files)?Array.from(el.files):[];
+  if(!fs.length){ if(out)out.textContent='Elige el archivo .algo primero.'; return; }
+  const ok=[], mal=[];
+  for(let i=0;i<fs.length;i++){ const f=fs[i];
+    if(out){ out.style.color='#5f7387'; out.textContent='Leyendo '+f.name+(fs.length>1?(' ('+(i+1)+'/'+fs.length+')'):'')+'…'; }
+    let d; try{ d=await (await fetch('/algo/import',{method:'POST',body:f,
+          headers:{'content-type':'application/octet-stream'}})).json(); }
+    catch(e){ mal.push(f.name+': error de red'); continue; }
+    if(!d.ok){ mal.push(f.name+': '+(d.error||'no pude leerlo')); continue; }
+    ok.push(d); }
+  if(el) el.value='';                 // si no, volver a pulsar Subir lo repite
+  const msg=(ok.length?(ok.length+' subido'+(ok.length>1?'s':'')+': '
+      +ok.map(d=>d.name+' ('+d.n_params+' par.)').join(' · ')):'')
+    +(mal.length?((ok.length?' — ':'')+'falló: '+mal.join(' · ')):'');
+  if(!ok.length){ if(out){ out.style.color='#ff5d73'; out.textContent=msg; } return; }
+  toast(ok.length===1?(ok[0].name+': '+ok[0].n_params+' parámetros'):(ok.length+' bots guardados'));
+  speak(ok.length===1?L('Importé '+ok[0].n_params+' parámetros de '+ok[0].name+'.',
+                        'Imported '+ok[0].n_params+' parameters from '+ok[0].name+'.')
+                     :L(ok.length+' bots guardados.',ok.length+' bots saved.'));
+  BOTSEL=ok[ok.length-1].bot;
+  // el resumen se escribe DESPUES de repintar: renderBots recrea #algo-out vacio y
+  // si se escribiera antes desapareceria justo al terminar de subir
+  await renderBots();
+  const out2=$('#algo-out');
+  if(out2){ out2.style.color=mal.length?'#fbbf24':'#34d399'; out2.textContent=msg; } }
 /* ------- VENTANITA DE UN BOT -------
    Al pulsar un bot se abre SU ventana, no un desplegable: ahi caben la cabecera,
    los botones y los 297 parametros con su buscador. El buscador vive en el HTML
@@ -836,9 +862,18 @@ async function botsLive(tgt){ const box=$(tgt||'#bots-live'); if(!box)return;
    estrategias de Hydra. En Configuración ya no hay nada de esto: allí solo queda lo
    general de la app. Tenerlo en dos sitios era lo que hacía dudar de cuál mandaba. */
 let MBSEQ=0;
-/* Ir a una seccion de ESTA ventana. La configuracion de los bots ya no vive en
-   Configuracion: alli solo queda lo general de la app. */
-function mbGo(id){ const el=$(id); if(el&&el.scrollIntoView) el.scrollIntoView({block:'start',behavior:'smooth'}); }
+/* Cada seccion se carga LA PRIMERA VEZ que se pide, no al abrir la ventana.
+   Antes abrirla disparaba diez peticiones —flota, registro CSV, historico,
+   indicadores, la carpeta de cAlgo— y varias recorren disco. Lo que se quiere al
+   entrar son tus bots; lo demas se pide cuando se mira. */
+const MBLOAD={'#mb-fleet':()=>renderFleet('#mb-fleet'),'#mb-log':renderShadow,
+              '#mb-data':renderData,'#mb-ind':renderInd};
+const MBDONE={};
+function mbGo(id){ const el=$(id); if(!el) return;
+  if(MBLOAD[id]&&!MBDONE[id]){ MBDONE[id]=1;
+    el.innerHTML='<div class="empty">'+L('Cargando…','Loading…')+'</div>';
+    try{ MBLOAD[id](); }catch(e){ el.innerHTML='<div class="empty">No disponible.</div>'; } }
+  if(el.scrollIntoView) el.scrollIntoView({block:'start',behavior:'smooth'}); }
 async function mbScan(){ const box=$('#algo-scan'); if(box) box.textContent=L('Refrescando los bots elegidos…','Refreshing the bots you picked…');
   // refresh, NO scan: aqui no se importa la carpeta entera a tus espaldas
   let d; try{ d=await (await fetch('/algo/refresh',{method:'POST'})).json(); }
@@ -913,16 +948,18 @@ async function renderBotsPanel(){ const seq=++MBSEQ;
   h+='</div>';
   // la carpeta y tus bots: los pinta renderBots, que es quien sabe de esto
   h+='<div id="mb-work"><div class="empty">'+L('Cargando…','Loading…')+'</div></div>';
-  h+='<div id="mb-fleet"></div>';
-  h+='<div id="mb-log"></div>';
-  h+='<div id="mb-data"></div>';
-  h+='<div id="mb-ind"></div>';
+  /* Las secciones de abajo nacen vacias con su titulo: se ve que estan y se cargan
+     al pulsar su chip. Pintar las cinco de golpe era lo que hacia esperar. */
+  [['#mb-fleet','flag',L('ESTRATEGIAS DE HYDRA','HYDRA STRATEGIES')],
+   ['#mb-log','book',L('REGISTRO DEL BOT (CSV)','BOT LOG (CSV)')],
+   ['#mb-data','chart',L('HISTÓRICO PARA BACKTEST','BACKTEST HISTORY')],
+   ['#mb-ind','bars',L('INDICADORES DE HYDRA','HYDRA INDICATORS')]].forEach(s=>{
+    h+='<div class="slbl" style="margin:16px 0 4px;cursor:pointer" onclick="mbGo(\''+s[0]+'\')">'
+      +ICO(s[1],12)+' '+s[2]+' <span style="float:right;opacity:.7;font-weight:400">abrir ▸</span></div>'
+      +'<div id="'+s[0].slice(1)+'"></div>'; });
   box.innerHTML=h;
-  renderBots('#mb-work');
-  renderFleet('#mb-fleet');
-  renderShadow();
-  renderData();
-  renderInd(); }
+  for(const k in MBDONE) delete MBDONE[k];   // ventana nueva, secciones por cargar
+  renderBots('#mb-work'); }
 /* ------- HISTORICO Y BACKTEST -------
    Se guardan VELAS, no ticks: un año de M15 de un simbolo es cosa de un mega y los
    ticks son decenas de millones de filas. Al descargar de Dukascopy se agregan al
@@ -1343,13 +1380,16 @@ async function setLang(lg){ try{ await fetch('/lang',{method:'POST',headers:{'Co
   if(recog){ try{ recog.lang=voiceLang(); if(running)recog.stop(); }catch(_){} }
   toast(L('Idioma: '+({es:'Español',mix:'Español + inglés',en:'English'}[lg]), 'Language: '+({es:'Spanish',mix:'Spanish + English',en:'English'}[lg])));
   speak(L('Listo, hablaré así.','Done, I will speak like this.')); renderSysInfo(); }
+/* Los modelos actuales. El de Opus estaba en la generación anterior (4.8) y por eso
+   no se veía el salto: aquí se pide por nombre exacto, no por «el último». */
 const MODELS=[
-  {id:'claude-haiku-4-5-20251001',label:'Haiku',hint:'el más barato (~20-30x menos que Opus)'},
-  {id:'claude-sonnet-5',label:'Sonnet',hint:'balance costo/calidad (recomendado)'},
-  {id:'claude-opus-4-8',label:'Opus',hint:'el más capaz y el más caro'}];
+  {id:'claude-haiku-4-5-20251001',label:'Haiku 4.5',hint:'el más barato (~20-30x menos que Opus)'},
+  {id:'claude-fable-5',label:'Fable 5',hint:'rápido y económico, para el volumen'},
+  {id:'claude-sonnet-5',label:'Sonnet 5',hint:'balance costo/calidad (recomendado)'},
+  {id:'claude-opus-5',label:'Opus 5',hint:'el más capaz y el más caro'}];
 async function setModel(id){ const m=MODELS.find(x=>x.id===id)||{label:id};
   let r; try{ r=await fetch('/model',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:id})}); }catch(e){ toast('Error de red'); return; }
-  if(r.ok){ toast('Modelo IA: '+m.label+' ✓'); speak(L('Cambié el modelo a '+m.label+', '+SIR+'.','Switched the model to '+m.label+', '+SIR+'.')); load(); setTimeout(renderSysInfo,600); }
+  if(r.ok){ toast('Modelo IA: '+m.label+' ✓'); speak(L('Cambié el modelo a '+m.label+', '+SIR+'.','Switched the model to '+m.label+', '+SIR+'.')); load(); setTimeout(renderCV,600); }
   else if(r.status===404){ toast('Falta redesplegar: git pull && fly deploy.'); }
   else { toast('No se pudo cambiar el modelo'); } }
 /* ------- CUENTAS DESTINO -------
