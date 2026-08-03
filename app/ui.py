@@ -204,11 +204,6 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
 .impbar{display:flex;gap:5px;padding:2px 1px 7px}
 /* Paginacion del calendario: diez por pagina para que la ventana mida SIEMPRE lo
    mismo y quede sitio debajo para otra. */
-.newspg{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 0 2px;
-  font-size:9.5px;letter-spacing:1.4px;color:#4d6b7d}
-.newspg .pgb{cursor:pointer;padding:2px 9px;border:1px solid #17495d;border-radius:7px;color:#9fe6ff;
-  background:#08131d;font-size:12px;line-height:1.1}
-.newspg .pgb.off{opacity:.3;pointer-events:none}
 .impc{flex:1;text-align:center;cursor:pointer;font-size:8.5px;letter-spacing:1.2px;padding:3px 0;border-radius:2px;
   border:1px solid #17323f;color:#3d5a6b;transition:color .15s ease,border-color .15s ease,background .15s ease}
 .impc.on{color:var(--c);border-color:var(--c);background:color-mix(in srgb,var(--c) 12%,transparent);
@@ -2240,14 +2235,14 @@ async function pollInstruments(){
 let IMPF={high:true,medium:true,low:false};
 try{ const sv=JSON.parse(localStorage.getItem('hydra_impf')||'null'); if(sv)IMPF=sv; }catch(e){}
 const IMPC={high:'#ff5d73',medium:'#fbbf24',low:'#5ad1e6',holiday:'#8aa'};
-function toggleImp(k){ IMPF[k]=!IMPF[k]; NEWSP=0;
+function toggleImp(k){ IMPF[k]=!IMPF[k];
   try{ localStorage.setItem('hydra_impf',JSON.stringify(IMPF)); }catch(e){}
   pollNews(); }
 function impChips(){ return ['high','medium','low'].map(k=>
   '<span class="impc'+(IMPF[k]?' on':'')+'" style="--c:'+IMPC[k]+'" onclick="toggleImp(\''+k+'\')">'
   +{high:L('ALTO','HIGH'),medium:L('MEDIO','MED'),low:L('BAJO','LOW')}[k]+'</span>').join(''); }
-let NEWS_RAW=null, NEWSP=0;
-const NEWS_PP=10;      // diez por pagina: lo que cabe sin que la ventana crezca
+let NEWS_RAW=null;
+const NEWS_PP=10;      // los diez siguientes: lo que cabe sin que la ventana crezca
 async function pollNews(){ const box=$('#hud-news'); if(!box)return;
   if(!NEWS_RAW){ try{ NEWS_RAW=await (await fetch('/calendar')).json(); }catch(e){ return; } }
   const d=NEWS_RAW;
@@ -2269,12 +2264,15 @@ async function pollNews(){ const box=$('#hud-news'); if(!box)return;
   if(!ev.length){ box.innerHTML=chips+'<div class="empty" style="padding:8px;font-size:11px">'
       +escapeHtml(d.error||L('Sin eventos de '+[...cur].join('/')+' con esos filtros.',
                              'No '+[...cur].join('/')+' events with those filters.'))+'</div>'; return; }
-  /* DE 10 EN 10. La ventana ya no crece con la semana: mide siempre lo mismo y
-     deja hueco debajo. La pagina se recorta si al cambiar los filtros quedan
-     menos eventos, para no quedarse mirando una pagina vacia. */
-  const pages=Math.max(1,Math.ceil(ev.length/NEWS_PP));
-  if(NEWSP>=pages) NEWSP=pages-1;
-  const page=ev.slice(NEWSP*NEWS_PP,(NEWSP+1)*NEWS_PP);
+  /* LOS DIEZ QUE VIENEN, sin paginar. La lista rueda sola: cuando un evento pasa
+     sale de arriba y entra otro por abajo, asi que lo que se ve es siempre lo
+     siguiente. Paginar obligaba a ir a buscar la pagina donde estaba "ahora", y
+     esa pagina se movia sola cada media hora.
+     Se deja un margen de 30 min hacia atras: lo que acaba de publicarse sigue
+     moviendo el precio y quitarlo de la vista justo entonces es cuando mas estorba. */
+  const desde=Date.now()/1000-1800;
+  const prox=ev.filter(e=>(e.ts||0)>=desde);
+  const page=(prox.length?prox:ev).slice(0,NEWS_PP);
   let h=chips;
   page.forEach(e=>{ const dt=new Date(e.ts*1000);
     const wd=dt.toLocaleDateString(LANG==='en'?'en':'es',{weekday:'short'})
@@ -2285,14 +2283,12 @@ async function pollNews(){ const box=$('#hud-news'); if(!box)return;
       +'<span class="d" style="background:'+col+';color:'+col+'"></span>'
       +'<span class="c">'+escapeHtml(String(e.currency||''))+'</span>'
       +'<span class="n">'+escapeHtml(String(e.title||''))+'</span></div>'; });
-  if(pages>1){ const from=NEWSP*NEWS_PP+1, to=NEWSP*NEWS_PP+page.length;
-    h+='<div class="newspg">'
-      +'<span class="pgb'+(NEWSP?'':' off')+'" onclick="newsPage(-1)">‹</span>'
-      +'<span>'+from+'–'+to+' '+L('de','of')+' '+ev.length+'</span>'
-      +'<span class="pgb'+(NEWSP<pages-1?'':' off')+'" onclick="newsPage(1)">›</span></div>'; }
+  // los que quedan fuera se DICEN, y se recuerda donde estan todos
+  const resto=(prox.length?prox:ev).length-page.length;
+  if(resto>0) h+='<div class="phelp" style="margin:4px 0 0;text-align:center">+'+resto+' '
+    +L('más · versión extendida','more · extended view')+'</div>';
   box.innerHTML=h; }
-function newsPage(d){ NEWSP=Math.max(0,NEWSP+d); pollNews(); }
-async function refreshNews(){ NEWS_RAW=null; NEWSP=0; await pollNews(); }
+async function refreshNews(){ NEWS_RAW=null; await pollNews(); }
 /* Sesiones: se calculan con la hora LOCAL de cada plaza (Intl ya aplica el horario
    de verano), así no hay que tocar nada dos veces al año. */
 const SESSIONS=[{n:'SÍDNEY',tz:'Australia/Sydney',o:8,c:17},
@@ -2516,6 +2512,10 @@ function hudStart(){ document.querySelectorAll('.hudcol .hud').forEach((e,i)=>se
   if(speakOn) setTimeout(voiceAutoStart,1500);
   setInterval(renderSessions,30000); setInterval(pollPositions,20000);
   setInterval(pollInstruments,30000); setInterval(refreshNews,1800000);
+  /* El calendario se repinta cada minuto para que RUEDE solo: el que ya pasó sale y
+     entra el siguiente. No pide nada — se repinta de lo que ya está en memoria; el
+     calendario en sí se vuelve a bajar cada media hora. */
+  setInterval(pollNews,60000);
   setInterval(pollBrain,60000); setInterval(pollTape,6000);
   setInterval(pollBots,20000); setInterval(pollTrades,25000);
   setInterval(pollAccounts,120000); }   // las cuentas no cambian solas: cada 2 min sobra
