@@ -6,12 +6,16 @@ import sqlite3
 import time
 from pathlib import Path
 
-DEFAULT_PLAYBOOK = """# Playbook v2 — metales, petroleo e indices
+DEFAULT_PLAYBOOK = """# Playbook v3 — metales, energia, indices, forex y cripto
 
 ## Contexto
-Cazamos oportunidades en ORO, PLATA, PETROLEO e INDICES de EEUU (Nasdaq, Dow, S&P).
 Prioriza calidad sobre cantidad: pocas operaciones con tesis clara valen mas que muchas
-mediocres. Cada mercado tiene caracter propio — usa la seccion que corresponda.
+mediocres. Cada familia de mercado tiene caracter propio — usa la seccion que toque.
+
+IMPORTANTE: si un simbolo no tiene seccion propia aqui, NO es motivo para descartarlo.
+Se le aplican las reglas globales y se opera igual. Antes faltaban las secciones de
+forex y cripto y por eso se rechazaban pares que estaban perfectamente vigilados: la
+falta de una seccion es una laguna del manual, no una senal del mercado.
 
 ## Reglas globales (todos los mercados)
 - Solo operar a favor de la tendencia dominante (precio vs EMA200 y pendiente de EMA50).
@@ -40,6 +44,32 @@ mediocres. Cada mercado tiene caracter propio — usa la seccion que corresponda
 - Los tres indices se mueven juntos: UNA posicion de indice a la vez (el Portfolio veta
   duplicados, pero tampoco los propongas).
 - El US100 (Nasdaq) es el mas volatil: stops mas anchos (>= 1.2x ATR14).
+
+## Forex (EURUSD, GBPUSD, GBPJPY, AUDUSD, EURJPY, cruces en general)
+- Sesion util: Londres (07:00-11:00 UTC) y el solape con NY (13:00-16:00 UTC). En la
+  sesion asiatica solo pares con yen o dolar australiano, y con objetivos mas cortos.
+- El movimiento del dia suele darse en el solape: entrar a las 20:00 UTC es pagar
+  spread para ver como no se mueve.
+- Los cruces sin dolar (GBPJPY, EURGBP, GBPNZD) se mueven mas y con menos aviso:
+  exigir estructura mas limpia y stops >= 1.3x ATR14.
+- Mirar el DXY antes de operar cualquier par contra el dolar: si el DXY va en contra
+  de tu tesis, la operacion nace peleada.
+- Los pares con yen reaccionan al Banco de Japon y a los bonos de EEUU; los del dolar
+  australiano y neozelandes, a China y a las materias primas.
+- Cuidado con el rollover (21:00-22:00 UTC): spreads que se abren y mechas que barren
+  stops sin que haya movimiento real.
+
+## Cripto (BTCUSD, ETHUSD)
+- Opera 24/7, pero el volumen de verdad esta en la sesion de EEUU: fuera de ahi los
+  movimientos se deshacen con facilidad.
+- Volatilidad mucho mayor que el resto: stops >= 2x ATR14 y tamano mas pequeno. Un
+  stop "normal" aqui es ruido de diez minutos.
+- Los fines de semana hay poca liquidez y mechas grandes: no abrir posiciones nuevas
+  el sabado ni el domingo.
+
+## Cualquier otro instrumento
+- Si no tiene seccion, valen las reglas globales tal cual. No se descarta por eso.
+- Ante la duda por desconocer el instrumento, baja el tamano; no lo bloquees.
 
 ## Cuando NO operar (global)
 - Sin tendencia clara (precio enredado entre EMAs).

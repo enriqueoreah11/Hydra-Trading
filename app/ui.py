@@ -1097,11 +1097,25 @@ async function renderData(){ const box=$('#mb-data'); if(!box)return;
       +f.toLocaleDateString()+' → '+t.toLocaleDateString()+'</span></span>'
       +'<span class="phelp" style="margin:0;text-align:right">'+x.bars+' '+L('velas','bars')+'</span>'
       +'<span class="wx" title="Quitar" onclick="dataDrop(\''+x.symbol+'\',\''+x.tf+'\')">✕</span></div>'; });
-  h+='<div class="phelp" style="margin-top:8px">'+L('Sube tu CSV descargado (fecha, open, high, low, close):','Upload your downloaded CSV:')+'</div>'
-    +'<div class="wadd"><input id="dt-sym" placeholder="EURUSD" style="max-width:110px">'
-    +'<input id="dt-tf" placeholder="M15" style="max-width:70px" value="">'
+  /* Qué se prueba: sale relleno con lo que Hydra ya vigila. Antes había que
+     escribir el símbolo a mano y pulsar «Backtest» con el campo vacío no hacía
+     nada — el paso que sobraba no era descargar, era teclear. */
+  const vig=((DATA&&DATA.core&&DATA.core.symbols)||[]).map(x=>String(x).toUpperCase());
+  const tfAct=((DATA&&DATA.core&&DATA.core.timeframe)||'M15');
+  h+='<div class="slbl" style="margin:14px 0 4px">QUÉ PROBAR</div>'
+    +'<div class="phelp">'+L('Elige y pulsa Backtest. Si faltan las velas se piden a tu bróker y se guardan.','Pick and press Backtest.')+'</div>'
+    +'<div class="wadd">'
+    +'<input id="dt-sym" placeholder="EURUSD" style="max-width:120px" list="dt-syms" value="'
+    +escapeHtml(vig[0]||'')+'">'
+    +'<datalist id="dt-syms">'+vig.map(s=>'<option>'+escapeHtml(s)+'</option>').join('')+'</datalist>'
+    +'<select id="dt-tf" style="max-width:90px">'
+    +['M5','M15','M30','H1','H4','D1'].map(x=>'<option'+(x===tfAct?' selected':'')+'>'+x+'</option>').join('')
+    +'</select></div>';
+  h+='<div class="phelp" style="margin-top:8px">'+L('…o sube un CSV tuyo (fecha, open, high, low, close):','…or upload your own CSV:')+'</div>'
+    +'<div class="wadd">'
     +'<input type="file" id="dt-f" accept=".csv,.txt" style="flex:1;background:#08131d;color:#9fe6ff;border:1px solid #17495d;border-radius:8px;padding:6px 8px;font-size:11.5px">'
     +'<button class="btn ghost" onclick="dataUp()">'+L('Importar','Import')+'</button></div>'
+    +'<div class="phelp" style="opacity:.75">El CSV usa el símbolo y la temporalidad de arriba.</div>'
     +'<div class="phelp" style="margin-top:8px">'+L('…o importa una carpeta entera (el símbolo y la temporalidad salen del nombre del archivo):','…or import a whole folder:')+'</div>'
     +'<div class="wadd"><input id="dt-dir" placeholder="/Users/tu/Downloads/dukascopy" style="text-transform:none">'
     +'<button class="btn" onclick="dataFolder()">'+L('Importar carpeta','Import folder')+'</button></div>'
