@@ -70,6 +70,14 @@ class Settings(BaseSettings):
     perplexity_model: str = "sonar"          # "sonar" es el económico; "sonar-pro" el potente
     research_daily_brief: bool = True        # un brief de mercado al día, guardado en la memoria
 
+    # --- Macro (lo que mueve a los CFDs y no viene del bróker) ---
+    # FRED (Reserva Federal de St. Louis): tipos nominales y reales, VIX e índice
+    # dólar. Gratis, pero pide una clave gratuita en fred.stlouisfed.org. Sin clave
+    # el macro sigue funcionando solo con el posicionamiento de la CFTC, que no
+    # necesita clave ninguna.
+    fred_api_key: str = ""
+    macro_enabled: bool = True               # apagarlo deja al analista solo con el precio
+
     # --- Trading universe & cadence ---
     # Principales metales, energia e indices. OJO: el nombre exacto depende del broker
     # (Nasdaq puede ser US100/USTEC/NAS100; el WTI puede ser XTIUSD/USOIL/WTI).

@@ -15,7 +15,7 @@ import json
 import logging
 import time
 
-from . import constants, indicators, research, vault
+from . import constants, indicators, macro, research, vault
 from .agents import (analyst, architect, auditor, executor, overnight, portfolio,
                      reviewer, risk_manager, validator)
 from .agents.sentinel import Sentinel
@@ -137,7 +137,16 @@ class Brain:
             return
 
         market = indicators.snapshot(candles)
-        proposal = await analyst.analyze(symbol, settings.timeframe, market, playbook, positions)
+        # El macro es contexto: si la fuente está caída, se analiza sin él. Dejar
+        # de mirar el mercado porque no contesta un servidor de la Fed sería
+        # cambiar un dato de apoyo por el trabajo entero.
+        macro_ctx = ""
+        try:
+            macro_ctx = macro.texto(await macro.contexto(symbol))
+        except Exception:  # noqa: BLE001
+            log.info("%s: sin contexto macro en este ciclo", symbol)
+        proposal = await analyst.analyze(symbol, settings.timeframe, market, playbook,
+                                         positions, macro_ctx=macro_ctx)
         self.store.log("analyst", "analysis", proposal, symbol=symbol)
 
         if proposal["action"] != "propose":

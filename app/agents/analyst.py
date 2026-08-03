@@ -56,12 +56,22 @@ Reglas de salida:
 
 
 async def analyze(symbol: str, timeframe: str, market: dict, playbook: str,
-                  open_positions: list[dict]) -> dict:
+                  open_positions: list[dict], macro_ctx: str = "") -> dict:
+    # El macro va DESPUES del snapshot y con su aviso a cuestas: es contexto de
+    # fondo que pondera, no un dato de entrada. Puesto delante, el modelo tiende a
+    # construir la tesis desde ahi y luego buscar en el precio lo que la confirme.
+    bloque = ""
+    if macro_ctx:
+        bloque = (
+            f"\n## Contexto macro (NO es una senal de entrada)\n{macro_ctx}\n"
+            "Usalo solo para ponderar: puede rebajarte la confianza o desaconsejar la\n"
+            "operacion, pero NUNCA es por si solo motivo para proponer una entrada.\n")
     user = (
         f"## Playbook vigente\n{playbook}\n\n"
         f"## Simbolo: {symbol}  Timeframe: {timeframe}\n"
         f"## Snapshot de mercado (indicadores + ultimas 40 velas OHLC)\n"
-        f"{json.dumps(market, ensure_ascii=False)}\n\n"
+        f"{json.dumps(market, ensure_ascii=False)}\n"
+        f"{bloque}\n"
         f"## Posiciones abiertas actuales\n{json.dumps(open_positions, ensure_ascii=False)}\n\n"
         "Evalua si hay un setup valido AHORA y responde con el JSON del esquema."
     )

@@ -2637,6 +2637,37 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                           f"{r['alias']} ({r['account_id']}): {exc}", symbol=sym)
         return out
 
+    # ------------------------------------------------------ contexto macro
+
+    @app.get("/macro")
+    async def macro_ctx(symbol: str = ""):
+        """Qué macro está viendo el cerebro, y de cuándo es.
+
+        Sirve para lo que no se puede comprobar de otra forma: si FRED contesta, si
+        la clave está puesta y si el dato es de hoy o de anteayer. Un macro viejo
+        pasando por actual es la manera silenciosa de decidir con datos falsos.
+        """
+        from . import macro as m
+        sym = (symbol or "").upper().strip()
+        datos, edad = await m.series()
+        out = {"ok": True, "activo": bool(settings.macro_enabled),
+               "fred_key": bool((settings.fred_api_key or "").strip()),
+               "datos": m.derivados(datos),
+               "edad_h": round(edad / 3600, 1) if edad is not None else None,
+               "opciones_fx": m.OPCIONES_FX_NOTA,
+               "fuentes": {"tipos/VIX/dólar": "FRED (clave gratuita)",
+                           "posicionamiento": "CFTC COT (sin clave)"}}
+        if not out["fred_key"]:
+            out["aviso"] = ("sin clave de FRED no hay tipos, VIX ni dólar; el "
+                            "posicionamiento de la CFTC sí funciona sin clave")
+        if sym:
+            ctx = await m.contexto(sym)
+            out["symbol"], out["familia"] = ctx["symbol"], ctx["familia"]
+            out["factores"], out["frases"] = ctx["factores"], ctx["frases"]
+            out["cot"] = ctx["cot"]
+            out["texto"] = m.texto(ctx)
+        return out
+
     # --------------------------------- histórico propio: importar y hacer backtest
 
     _cdb: dict = {"db": None}

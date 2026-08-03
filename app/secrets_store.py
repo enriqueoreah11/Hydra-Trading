@@ -21,6 +21,7 @@ from .config import settings
 SECRETS: list[tuple[str, str]] = [
     ("anthropic_api_key", "Anthropic (cerebro IA)"),
     ("perplexity_api_key", "Perplexity (investigación web)"),
+    ("fred_api_key", "FRED (macro: tipos, VIX, dólar)"),
     ("tts_api_key", "Voz neural (ElevenLabs / OpenAI)"),
     ("ctrader_client_id", "cTrader · Client ID"),
     ("ctrader_client_secret", "cTrader · Client Secret"),
