@@ -1766,8 +1766,17 @@ async function voiceAutoStart(){ if(vbTried) return; vbTried=true;
 /* Probar la voz y DECIR qué pasó. Es lo único que convierte «no usa mi voz» en un
    motivo concreto: la app cerrada, el perfil que no existe, o que sí sonó. */
 async function voiceTest(){ const out=$('#vb-out'); if(out){ out.style.color='#5f7387'; out.textContent='Probando…'; }
-  let d; try{ d=await (await fetch('/tts/health')).json(); }
-  catch(e){ if(out) out.textContent='Error de red.'; return; }
+  /* Con tope por este lado también. El servidor ya no se cuelga, pero si algo se
+     atasca en medio (la red, la app a medio abrir) el botón tiene que contestar
+     igual: quedarse en «Probando…» para siempre parece que la app se murió. */
+  const ctrl=new AbortController(), reloj=setTimeout(()=>ctrl.abort(),35000);
+  let d;
+  try{ d=await (await fetch('/tts/health',{signal:ctrl.signal})).json(); }
+  catch(e){ if(out){ out.style.color='#ff5d73';
+      out.textContent=(e&&e.name==='AbortError')
+        ? 'Voicebox no contestó en 35s. Ciérrala del todo y vuelve a abrirla.'
+        : 'Error de red.'; } return; }
+  finally{ clearTimeout(reloj); }
   if(!out) return;
   if(d.ok){ out.style.color='#34d399';
     out.textContent='Sonó con tu voz'+(d.voice_id?(' ('+d.voice_id+')'):'')+'. '

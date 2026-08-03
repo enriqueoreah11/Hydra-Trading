@@ -5,6 +5,7 @@ Si no hay proveedor/clave configurados, devuelve None y la UI usa la voz del nav
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from urllib.parse import urljoin
@@ -117,7 +118,10 @@ async def _voicebox(text: str) -> bytes | None:
         # El estado es un stream SSE; esperamos a que termine de generar.
         poll = urljoin(base + "/", (spoken.get("poll_url") or
                                     f"/generate/{gen}/status").lstrip("/"))
-        try:
+
+        async def esperar_fin() -> bool:
+            """True si hubo error de Voicebox. Se sale al primer estado terminal."""
+            global _last_error
             async with http.stream("GET", poll,
                                    headers={"Accept": "text/event-stream"}) as r:
                 async for line in r.aiter_lines():
@@ -132,8 +136,18 @@ async def _voicebox(text: str) -> bytes | None:
                     if st in _TERMINAL:
                         if ev.get("error"):
                             _last_error = f"Voicebox: {str(ev['error'])[:160]}"
-                            return None
-                        break
+                            return True
+                        return False
+            return False
+
+        try:
+            if await asyncio.wait_for(esperar_fin(), timeout=_POLL_MAX):
+                return None
+        except asyncio.TimeoutError:
+            # Un stream que no cierra NO puede colgar la app: a estas alturas
+            # Voicebox ya está hablando por las bocinas — lo que falta es el aviso
+            # de que terminó, y eso no cambia nada de lo que se oye.
+            log.info("Voicebox no cerró el estado en %ss; sigo", _POLL_MAX)
         except Exception:  # noqa: BLE001 - el stream puede cortarse al terminar
             pass
 
@@ -181,6 +195,13 @@ async def voicebox_profiles() -> list[dict] | None:
 
 _TERMINAL = {"done", "complete", "completed", "finished", "ready", "success",
              "error", "failed", "cancelled", "canceled"}
+# Tope de espera del aviso "ya terminé" de Voicebox. Es MUY inferior al timeout del
+# cliente a propósito: para cuando llegamos aquí ya está hablando por las bocinas, y
+# un stream que no cierra no puede dejar la app pensando dos minutos.
+_POLL_MAX = 20.0
+# Y el diagnóstico entero tiene su propio tope: el botón "Probar mi voz" tiene que
+# contestar SIEMPRE, aunque sea para decir que no contestan.
+_DIAG_MAX = 30.0
 # played_locally: True cuando Voicebox ya lo reprodujo y no hay que repetirlo
 state: dict = {"played_locally": False}
 
@@ -255,7 +276,18 @@ async def diagnose() -> dict:
             info["error"] = (f"el perfil '{settings.voicebox_profile}' no existe. "
                              f"Disponibles: {', '.join(map(str, names)) or '(ninguno)'}")
             return info
-        await synth("prueba de voz")
+        # El diagnóstico SIEMPRE contesta. Antes, si Voicebox aceptaba la petición
+        # y luego no cerraba el estado, "Probar mi voz" se quedaba pensando hasta
+        # dos minutos y parecía que la app se había colgado.
+        try:
+            await asyncio.wait_for(synth("prueba de voz"), timeout=_DIAG_MAX)
+        except asyncio.TimeoutError:
+            info["ok"] = False
+            info["error"] = (f"Voicebox no contestó en {int(_DIAG_MAX)}s. Suele ser que "
+                             "está abierta pero atascada: ciérrala del todo y vuelve a "
+                             "abrirla.")
+            info["respuesta_voicebox"] = state.get("last_speak", "")
+            return info
         info["ok"] = not _last_error
         info["modo"] = ("Voicebox reproduce en las bocinas del Mac; el navegador no "
                         "vuelve a tocarlo (si lo hiciera, se oiria doble)")
@@ -270,7 +302,12 @@ async def diagnose() -> dict:
         info["error"] = ("sin proveedor de voz neural. En Sistema elige 'Voicebox' "
                          "(local y gratis) o configura TTS_PROVIDER / TTS_API_KEY.")
         return info
-    audio = await synth("prueba de voz")
+    try:
+        audio = await asyncio.wait_for(synth("prueba de voz"), timeout=_DIAG_MAX)
+    except asyncio.TimeoutError:
+        info["ok"] = False
+        info["error"] = f"el proveedor de voz no contestó en {int(_DIAG_MAX)}s"
+        return info
     info["ok"] = bool(audio)
     info["bytes"] = len(audio) if audio else 0
     info["error"] = "" if audio else _last_error
