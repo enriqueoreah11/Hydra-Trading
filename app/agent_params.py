@@ -66,7 +66,26 @@ _OPTIONS: dict[str, list[str]] = {
     "news_impact_min": ["High", "Medium", "Low"],
 }
 
-EDITABLE = {n for names in PARAMS.values() for n in names}
+# Ajustes de la app que no son de ningún agente —no salen en ningún panel de
+# parámetros— pero se cambian desde la UI y tienen que sobrevivir al reinicio. Sin
+# esto, apuntar la memoria a tu vault duraría hasta el siguiente arranque: la app
+# volvería a escribir dentro de sí misma sin decir nada.
+APP_SETTINGS = {"obsidian_vault_path", "obsidian_folder", "obsidian_tag",
+                "stt_enabled", "macro_enabled"}
+
+EDITABLE = {n for names in PARAMS.values() for n in names} | APP_SETTINGS
+
+
+def save_app_setting(path: Path, name: str, value) -> None:
+    """Aplica en caliente y persiste un ajuste de la app (no de un agente)."""
+    if name not in APP_SETTINGS:
+        raise KeyError(name)
+    cv = _coerce(name, value)
+    setattr(settings, name, cv)
+    data = _read(path)
+    data[name] = cv
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False))
 
 
 def _kind(name: str) -> str:

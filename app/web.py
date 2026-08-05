@@ -1085,6 +1085,80 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             raise HTTPException(503, tts_mod.last_error() or "TTS neural no configurado")
         return Response(content=audio, media_type="audio/mpeg")
 
+    # ------------------------------------------------------ oídos (voz -> texto)
+
+    @app.post("/stt")
+    async def stt_endpoint(request: Request, ms: int = 0):
+        """Audio del micro -> texto + qué se piensa hacer con él.
+
+        Devuelve 200 aunque no se entienda nada: la petición fue bien, lo que no
+        hubo fue voz. Un 4xx aquí haría que la UI lo pintara como avería.
+        """
+        from . import stt as stt_mod
+        r = await stt_mod.transcribe(await request.body(), ms=ms)
+        if r["ok"]:
+            r["intencion"] = stt_mod.intencion(r["text"])
+        return r
+
+    @app.get("/stt/health")
+    async def stt_health():
+        from . import stt as stt_mod
+        return await stt_mod.diagnose()
+
+    @app.post("/voice/note")
+    async def voice_note(request: Request):
+        """Lo que dictas se queda en la memoria, en tu Obsidian."""
+        try:
+            texto = str((await request.json()).get("text", "")).strip()[:4000]
+        except Exception:  # noqa: BLE001
+            texto = ""
+        if not texto:
+            return JSONResponse({"ok": False, "error": "nota vacía"}, status_code=400)
+        titulo = texto.split("\n")[0][:60]
+        p = vault.note("Dictado", titulo, texto,
+                       tags=["dictado", settings.obsidian_tag])
+        store.log("sentinel", "voice_note", {"text": texto[:400]})
+        return {"ok": True, "nota": p.name, "donde": vault.estado()["destino"]}
+
+    @app.post("/voice/ask")
+    async def voice_ask(request: Request):
+        """Pregunta hablada sobre el estado de la cuenta. Solo lee; no toca nada."""
+        from .agents import copiloto
+        try:
+            q = str((await request.json()).get("text", "")).strip()[:500]
+        except Exception:  # noqa: BLE001
+            q = ""
+        if not q:
+            return JSONResponse({"ok": False, "error": "pregunta vacía"}, status_code=400)
+
+        estado: dict = {"halted": store.halted, "dry_run": settings.dry_run,
+                        "simbolos": settings.symbol_list,
+                        "timeframe": settings.timeframe}
+        if broker is not None:
+            try:
+                t = await broker.trader()
+                estado["cuenta"] = {"balance": t.get("balance"),
+                                    "divisa": t.get("currency", "")}
+                estado["posiciones"] = await broker.positions()
+            except Exception as exc:  # noqa: BLE001
+                # Se dice, no se calla: si no, el copiloto contestaría "no tienes
+                # nada abierto" cuando lo que pasa es que el bróker no contesta.
+                estado["error_broker"] = str(exc)[:200]
+        try:
+            recuerdos = vault.search(q, limit=3)
+            if recuerdos:
+                estado["memoria"] = [{"nota": r["name"], "extracto": r["extracto"][:300]}
+                                     for r in recuerdos]
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            texto = await copiloto.responder(q, estado)
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": f"el cerebro no contestó: {exc}"[:200]},
+                                status_code=502)
+        store.log("sentinel", "voice_ask", {"q": q, "a": texto[:400]})
+        return {"ok": True, "text": texto}
+
     @app.post("/agent/{key}/params")
     async def set_agent_params(key: str, request: Request):
         """Guarda y aplica en caliente los parámetros de un agente (persisten en el volumen)."""
@@ -3576,7 +3650,53 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
 
     @app.get("/vault")
     async def vault_list():
-        return {"stats": vault.stats(), "notes": vault.list_notes()[:200]}
+        return {"stats": vault.stats(), "notes": vault.list_notes()[:200],
+                "estado": vault.estado()}
+
+    @app.get("/vault/estado")
+    async def vault_estado():
+        """Dónde acaban las notas y si el cerebro lee algo tuyo.
+
+        Es la única forma de distinguir «Obsidian configurado» de «Obsidian
+        funcionando»: con la ruta mal escrita, todo sigue guardándose sin dar
+        error, solo que donde no lo vas a ver.
+        """
+        e = vault.estado()
+        try:
+            reglas = vault.instrucciones()
+        except Exception:  # noqa: BLE001
+            reglas = ""
+        e["reglas_activas"] = bool(reglas)
+        e["reglas"] = reglas
+        e["tag_lectura"] = settings.obsidian_tag
+        e["tag_reglas"] = vault.REGLAS_TAG
+        return e
+
+    @app.post("/vault/vault-path")
+    async def vault_set_path(request: Request):
+        """Apunta la memoria a tu vault. Se comprueba ANTES de guardar."""
+        try:
+            p = str((await request.json()).get("path", "")).strip()
+        except Exception:  # noqa: BLE001
+            p = ""
+        if p:
+            from pathlib import Path as _P
+            if not _P(p).expanduser().is_dir():
+                return JSONResponse(
+                    {"ok": False, "error": f"no existe la carpeta «{p}». Ábre tu vault "
+                                           "en Obsidian, botón derecho sobre el vault → "
+                                           "«Reveal in Finder», y copia esa ruta."},
+                    status_code=400)
+        # Persistido: si solo se aplicara en caliente, al reiniciar la memoria
+        # volvería dentro de la app y las notas dejarían de aparecer en Obsidian
+        # sin que nada lo avisara.
+        agent_params.save_app_setting(settings.data_path / "overrides.json",
+                                      "obsidian_vault_path", p)
+        return {"ok": True, **vault.estado()}
+
+    @app.get("/vault/search")
+    async def vault_search(q: str = "", limit: int = 8):
+        return {"ok": True, "results": vault.search(q, limit=max(1, min(limit, 50)))}
 
     @app.get("/vault/note")
     async def vault_note(p: str = Query(...)):

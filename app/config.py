@@ -44,7 +44,9 @@ class Settings(BaseSettings):
     # el analista solo ya hace ~576 llamadas al día). El resto —reviewer y
     # architect, que deciden cómo evoluciona la estrategia— van con Claude,
     # porque corren pocas veces al día y ahí el criterio sí vale lo que cuesta.
-    llm_local_roles: str = "analyst,risk_manager,overnight,tester"
+    # El copiloto va en local a propósito: contestar "¿cómo va el oro?" veinte veces
+    # al día no justifica una llamada de pago cada vez, y solo lee lo que ya hay.
+    llm_local_roles: str = "analyst,risk_manager,overnight,tester,copiloto"
     ollama_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen3:8b"           # el de la talacha
     ollama_timeout_s: float = 180.0
@@ -129,6 +131,24 @@ class Settings(BaseSettings):
     openai_tts_voice: str = "onyx"           # onyx=masculina grave; echo/fable/alloy también
     elevenlabs_voice_id: str = ""            # id de la voz elegida en ElevenLabs
     elevenlabs_model: str = "eleven_multilingual_v2"
+
+    # --- Memoria en Obsidian ---
+    # Vacío = la memoria vive dentro de la app (data/vault) y solo se ve bajándola
+    # en .zip. Con la ruta de TU vault puesta, las notas se escriben directamente
+    # ahí: las ves en Obsidian según se crean, y lo que tú escribas puede volver al
+    # cerebro. Ejemplo: /Users/tu-usuario/Documents/MiVault
+    obsidian_vault_path: str = ""
+    obsidian_folder: str = "Hydra"           # subcarpeta suya dentro del vault
+    # Del resto del vault solo se lee lo que marques con #hydra. Lo tuyo es tuyo:
+    # sin esa etiqueta, una nota no entra nunca en un prompt.
+    obsidian_tag: str = "hydra"
+
+    # --- Oídos (voz -> texto) ---
+    # El mismo Voicebox que habla trae Whisper dentro y lo expone en /transcribe.
+    # Todo local: el audio no sale del Mac y no hace falta ninguna clave.
+    stt_enabled: bool = True
+    stt_model: str = "whisper-turbo"          # turbo va sobrado para dictar en español
+    stt_timeout_s: float = 60.0
 
     # --- Watchdog + Telegram notifier ---
     telegram_bot_token: str = ""             # from @BotFather; empty = notifications disabled

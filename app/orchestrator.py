@@ -145,8 +145,15 @@ class Brain:
             macro_ctx = macro.texto(await macro.contexto(symbol))
         except Exception:  # noqa: BLE001
             log.info("%s: sin contexto macro en este ciclo", symbol)
+        # Lo que él escriba en Obsidian con #hydra-reglas entra en el siguiente
+        # ciclo: sin reiniciar, sin tocar código. Si el vault no está montado,
+        # se opera con el playbook y ya.
+        try:
+            reglas = vault.instrucciones()
+        except Exception:  # noqa: BLE001
+            reglas = ""
         proposal = await analyst.analyze(symbol, settings.timeframe, market, playbook,
-                                         positions, macro_ctx=macro_ctx)
+                                         positions, macro_ctx=macro_ctx, reglas=reglas)
         self.store.log("analyst", "analysis", proposal, symbol=symbol)
 
         if proposal["action"] != "propose":

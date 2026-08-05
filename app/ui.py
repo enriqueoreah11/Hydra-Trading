@@ -1523,13 +1523,34 @@ async function decideProp(id,ok){ if(ok&&!confirm('Aplicar este cambio de parám
   else toast(j.error||'No se pudo'); }
 async function renderVault(){ let d; try{ d=await (await fetch('/vault')).json(); }catch(e){ $('#sys-vault').innerHTML='<div class="empty">Falta redesplegar para activar la memoria.</div>'; return; }
   const n=(d.stats&&d.stats.notes)||0;
+  const e=d.estado||{};
   let h='<div class="cfg"><span>Notas guardadas</span> <b>'+n+'</b> · <a href="/vault/export" style="color:#7ff6ff">⬇ descargar vault (.zip)</a></div>';
-  h+='<div class="phelp">Hydra guarda aquí todo lo que aprende (revisiones, playbook, investigación) en Markdown con tags y [[enlaces]]. Descarga el zip y ábrelo como vault en <b>Obsidian</b> (o suéltalo dentro de tu vault).</div>';
+  /* Dónde acaban las notas es LO primero: con la ruta mal puesta todo se guarda sin
+     un solo error, solo que en un sitio que Obsidian no conoce. */
+  h+='<div class="cfg"><span>Memoria en</span> <b>'+(e.obsidian?'tu Obsidian ✅':'dentro de la app')+'</b></div>';
+  if(e.obsidian) h+='<div class="phelp" style="color:#34d399">Escribiendo en <code>'+escapeHtml(e.destino||'')+'</code>. Ábrelo en Obsidian y verás las notas según se crean.</div>';
+  else if(e.motivo) h+='<div class="phelp" style="color:#fbbf24">'+escapeHtml(e.motivo)+'</div>';
+  h+='<div class="prm"><label>Ruta de tu vault de Obsidian</label><input id="vpath" placeholder="/Users/tu-usuario/Documents/MiVault" value="'+escapeHtml(e.vault||'')+'" onkeydown="if(event.key===\'Enter\')setVaultPath()"></div>';
+  h+='<button class="btn ghost" onclick="setVaultPath()">Guardar ruta</button> <button class="btn ghost" onclick="setVaultPath(1)">Volver a la app</button><div id="vpout" class="phelp"></div>';
+  h+='<div class="phelp">En Obsidian: botón derecho sobre el vault → <b>Reveal in Finder</b>, y copia esa ruta. Hydra escribe solo dentro de su carpeta <code>'+escapeHtml((e.destino||'').split('/').pop()||'Hydra')+'</code>: no toca nada tuyo.</div>';
+  h+='<div class="phelp">De lo tuyo solo lee las notas que marques con <code>#hydra</code>. Y si además le pones <code>#hydra-reglas</code>, esa nota manda sobre el playbook en el siguiente ciclo — solo para <b>restringir</b>: si pide más riesgo, se ignora.'
+    +(e.reglas_activas?' <b style="color:#34d399">Ahora mismo hay reglas tuyas activas.</b>':'')+'</div>';
   h+='<div class="prm"><label>🔎 Preguntar al investigador (Perplexity)</label><input id="rsq" placeholder="ej. ¿qué mueve al oro hoy?" onkeydown="if(event.key===\'Enter\')doResearch()"></div>';
   h+='<button class="btn ghost" onclick="doResearch()">Investigar</button><div id="rsout"></div>';
   const recent=(d.notes||[]).slice(0,6);
   if(recent.length){ h+='<div class="phelp" style="margin-top:8px">Recientes:</div>'+recent.map(x=>'<div class="cfg"><span>'+escapeHtml(x.folder||'nota')+'</span> <b>'+escapeHtml(x.name)+'</b></div>').join(''); }
   $('#sys-vault').innerHTML=h; }
+async function setVaultPath(vaciar){ const el=$('#vpath'); const out=$('#vpout');
+  const p=vaciar?'':((el&&el.value||'').trim());
+  if(out){ out.style.color=''; out.textContent='Comprobando…'; }
+  let d; try{ d=await (await fetch('/vault/vault-path',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({path:p})})).json(); }
+  catch(e){ if(out){ out.style.color='#ff5d73'; out.textContent='Error de red.'; } return; }
+  if(!d.ok){ if(out){ out.style.color='#ff5d73'; out.textContent=d.error||'No pude usar esa ruta.'; } return; }
+  toast(d.obsidian?'Memoria en tu Obsidian ✓':'Memoria dentro de la app');
+  speak(d.obsidian?L('Memoria conectada a tu Obsidian, '+SIR+'.','Memory connected to your Obsidian, '+SIR+'.')
+                  :L('Memoria de vuelta dentro de la app.','Memory back inside the app.'));
+  renderVault(); }
 async function doResearch(){ const el=$('#rsq'); const q=(el&&el.value||'').trim(); if(!q){ toast('Escribe una pregunta'); return; }
   $('#rsout').innerHTML='<div class="empty">Investigando…</div>';
   let r,j; try{ r=await fetch('/research',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q:q})}); j=await r.json(); }catch(e){ $('#rsout').innerHTML='<div class="empty" style="color:#ff5d73">Error de red.</div>'; return; }
@@ -1734,6 +1755,15 @@ async function renderVoice(){ const el=$('#sys-voice'); if(!el) return;
       +'Ábrela y comprueba que tienes al menos uno creado.</div>'; }
   h+='<div style="margin-top:6px"><button class="btn" onclick="voiceTest()">Probar mi voz</button></div>'
     +(d.running?'<div id="vb-out" class="phelp"></div>':'');
+  /* Los oídos: la otra mitad. Lo importante que se dice aquí es DÓNDE se transcribe,
+     porque el motor del navegador manda tu voz a Google y el de Voicebox no sale
+     del Mac — y desde fuera las dos cosas se ven exactamente igual. */
+  let s; try{ s=await (await fetch('/stt/health')).json(); }catch(e){ s=null; }
+  h+='<div class="cfg" style="margin-top:10px"><span>Oídos</span> <b>'+(s&&s.ok?'Whisper local ✅':'motor del navegador')+'</b></div>';
+  if(s&&s.ok) h+='<div class="phelp" style="color:#34d399">Lo que le dictes se transcribe <b>en tu Mac</b> con el Whisper de Voicebox: el audio no sale de aquí. Toca 🎙, habla, y toca otra vez.</div>';
+  else h+='<div class="phelp" style="color:#fbbf24">'+escapeHtml((s&&s.error)||'Voicebox no responde')
+    +'. Mientras tanto se oye con el motor del navegador, que <b>manda tu voz a los servidores de Google</b> y solo va en Chrome.</div>';
+  h+='<div class="phelp">Puedes decirle: <b>«apunta que…»</b> (lo guarda en tu memoria), <b>«¿cómo voy hoy?»</b> (te contesta hablando) o <b>«para»</b>. Abrir, cerrar y reanudar no se hacen hablando: si el micro entiende mal, eso ya no se deshace.</div>';
   el.innerHTML=h; paintIcons(); }
 /* Abrir la app desde aqui: es el motivo numero uno de "configure la voz y no la usa". */
 async function voiceStart(){ const out=$('#vb-out');
@@ -2786,10 +2816,95 @@ else{ recog=new SR(); recog.lang=voiceLang(); recog.interimResults=true; recog.c
   recog.onend=()=>{ running=false; coreHear(false); if((wakeMode||awaiting)&&!micDenied){ setTimeout(startRecog,300);} else setV(''); };
 }
 function startRecog(){ if(!recog||running||micDenied||micMuted)return; try{ recog.lang=voiceLang(); recog.start(); running=true; coreHear(true);}catch(_){}}
-function handlePhrase(t){ if(awaiting){ clearTimeout(awaitTimer); awaiting=false; wakeFlash(); runCmd(t); return; }
+
+/* ===================== OÍDOS LOCALES (Whisper dentro de Voicebox) =====================
+   El motor del navegador manda tu voz a los servidores de Google. Para la palabra
+   mágica da igual —son dos palabras—, pero lo que dictas después habla de tu cuenta,
+   tus posiciones y tu dinero: eso se transcribe en el Mac y no sale de ahí.
+   Si Voicebox no está o es vieja, se sigue con el motor del navegador y se avisa. */
+let sttOk=false, mrec=null, mchunks=[], mt0=0, mstream=null, mtimer=null;
+async function sttCheck(){ try{ const d=await (await fetch('/stt/health')).json(); sttOk=!!d.ok; }catch(_){ sttOk=false; } }
+function grabando(){ return !!(mrec&&mrec.state==='recording'); }
+
+async function escuchaLocal(seg){
+  if(grabando()){ pararEscucha(); return; }
+  if(!navigator.mediaDevices||!window.MediaRecorder){ toast('Este navegador no puede grabar audio'); return; }
+  try{ mstream=await navigator.mediaDevices.getUserMedia({audio:true}); }
+  catch(e){ micDenied=true; setV(''); toast('Micrófono bloqueado. Actívalo en Ajustes → Sitios web → Micrófono → Permitir.'); return; }
+  mchunks=[]; mt0=performance.now();
+  try{ mrec=new MediaRecorder(mstream); }catch(e){ try{ mrec=new MediaRecorder(mstream,{mimeType:'audio/webm'}); }catch(e2){ toast('No pude grabar audio'); return; } }
+  mrec.ondataavailable=e=>{ if(e.data&&e.data.size)mchunks.push(e.data); };
+  mrec.onstop=async()=>{
+    const ms=Math.round(performance.now()-mt0);
+    if(mstream){ mstream.getTracks().forEach(t=>t.stop()); mstream=null; }
+    coreHear(false);
+    const blob=new Blob(mchunks,{type:(mchunks[0]&&mchunks[0].type)||'audio/webm'});
+    await mandarAudio(blob,ms);
+    if(wakeMode&&!micMuted&&!micDenied&&!running) startRecog(); };
+  if(recog&&running){ try{recog.stop();}catch(_){} }   // que suelte el micro
+  try{ mrec.start(); }catch(e){ toast('No pude grabar audio'); return; }
+  coreHear(true); setV('<b>Le escucho…</b> toca de nuevo para parar');
+  clearTimeout(mtimer); mtimer=setTimeout(()=>{ if(grabando())pararEscucha(); },(seg||8)*1000); }
+
+function pararEscucha(){ clearTimeout(mtimer); if(grabando()){ setV('Transcribiendo…'); try{mrec.stop();}catch(_){} } }
+
+async function mandarAudio(blob,ms){
+  let d; try{ const r=await fetch('/stt?ms='+ms,{method:'POST',body:blob}); d=await r.json(); }
+  catch(e){ setV(''); toast('No pude transcribir'); return; }
+  if(!d.ok){ setV(''); toast(d.error||'No te entendí'); return; }
+  setV('“'+escapeHtml(d.text)+'”'); manejarVoz(d); }
+
+function manejarVoz(d){
+  const i=d.intencion||{}; const t=i.texto||d.text||'';
+  if(i.tipo==='nota'){ guardarNota(t); return; }
+  if(i.tipo==='orden'){
+    // Parar falla hacia el lado bueno: si se entiende mal, el sistema se queda
+    // quieto. Lo demás no, y por eso lo demás pide un botón.
+    if(i.seguro){ if(!halted)doHalt(); else speak(L('Ya está parado, '+SIR+'.','Already halted, '+SIR+'.')); }
+    else avisoOrden(d.text||t);
+    return; }
+  if(runCmd(norm(t))) return;              // calendario, demo, abrir un agente…
+  preguntarCopiloto(t); }
+
+function avisoOrden(t){
+  speak(L('Eso mueve dinero, '+SIR+'. Se lo dejo en pantalla para que lo confirme usted.',
+          'That moves money, '+SIR+'. Confirm it on screen.'));
+  openInfo('🎙️ Le oí una orden',
+    '<p>Entendí: <b>'+escapeHtml(t)+'</b></p>'
+   +'<p>Abrir, cerrar o reanudar no se ejecutan hablando. Whisper confunde «cierra» con '
+   +'«sierra» sin pestañear, y una orden mal oída ya no se deshace: cuando la ves, está puesta.</p>'
+   +'<p><b>Parar sí</b> puede decirlo en voz alta: si se entiende mal, el sistema se queda '
+   +'quieto y lo reanuda usted con el botón. Los dos errores no cuestan lo mismo.</p>'); }
+
+async function guardarNota(t){
+  let d; try{ const r=await fetch('/voice/note',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({text:t})}); d=await r.json(); }
+  catch(e){ toast('No pude guardar la nota'); return; }
+  if(!d||!d.ok){ toast((d&&d.error)||'No pude guardar la nota'); return; }
+  toast('Apuntado en tu memoria ✓'); speak(L('Apuntado, '+SIR+'.','Noted, '+SIR+'.')); }
+
+async function preguntarCopiloto(t){
+  if(!t){ return; }
+  setV('Pensando…');
+  let d; try{ const r=await fetch('/voice/ask',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({text:t})}); d=await r.json(); }
+  catch(e){ setV(''); speak(L('No pude contestar ahora, '+SIR+'.','I could not answer right now, '+SIR+'.')); return; }
+  if(!d||!d.ok){ setV(''); toast((d&&d.error)||'No pude contestar');
+    speak(L('No pude contestar ahora, '+SIR+'.','I could not answer right now, '+SIR+'.')); return; }
+  setV('“'+escapeHtml(d.text)+'”'); speak(d.text); }
+function handlePhrase(t){
+  // Con oídos locales, el motor del navegador solo hace de despertador: en cuanto
+  // suena la palabra mágica, lo que digas se graba y se transcribe en el Mac.
+  if(sttOk){ const w0=WAKE.find(w=>t.includes(w)); if(!w0)return; wakeFlash();
+    speak(L('Dígame, '+SIR+'.','Yes, '+SIR+'?')); escuchaLocal(8); return; }
+  if(awaiting){ clearTimeout(awaitTimer); awaiting=false; wakeFlash(); runCmdVoz(t); return; }
   const w=WAKE.find(w=>t.includes(w)); if(!w)return; wakeFlash(); const rest=t.slice(t.indexOf(w)+w.length).trim();
-  if(rest.length>2){ runCmd(rest); } else { speak(L('A la orden, '+SIR+'.','At your command, '+SIR+'.')); setV('<b>Le escucho…</b>'); awaiting=true; awaitTimer=setTimeout(()=>{awaiting=false;setV('Di <b>“Oye Hydra…”</b>');},9000); } }
-$('#b-mic').onclick=()=>{ if(!SR){toast('Usa Chrome para la voz');return;} micDenied=false; micMuted=false; $('#b-mute').classList.remove('on'); awaiting=true; setV('<b>Le escucho…</b>'); speak(L('Dígame, '+SIR+'.','Yes, '+SIR+'?')); if(!running)startRecog(); };
+  if(rest.length>2){ runCmdVoz(rest); } else { speak(L('A la orden, '+SIR+'.','At your command, '+SIR+'.')); setV('<b>Le escucho…</b>'); awaiting=true; awaitTimer=setTimeout(()=>{awaiting=false;setV('Di <b>“Oye Hydra…”</b>');},9000); } }
+function runCmdVoz(t){ if(!runCmd(t)) speak(L('No le entendí, '+SIR+'. Pruebe: corre el demo, dame el estado, o abre el analista.','I did not catch that, '+SIR+'. Try: run the demo, give me the status, or open the analyst.')); }
+$('#b-mic').onclick=()=>{ micDenied=false; micMuted=false; $('#b-mute').classList.remove('on');
+  if(sttOk){ escuchaLocal(8); return; }                       // pulsar, hablar, pulsar
+  if(!SR){toast('Enciende Voicebox para hablarle desde este navegador');return;}
+  awaiting=true; setV('<b>Le escucho…</b>'); speak(L('Dígame, '+SIR+'.','Yes, '+SIR+'?')); if(!running)startRecog(); };
 $('#b-wake').onclick=()=>{ wakeMode=!wakeMode; $('#b-wake').classList.toggle('on',wakeMode); if(wakeMode){ micDenied=false; micMuted=false; $('#b-mute').classList.remove('on'); try{localStorage.setItem('hydraWake','1');}catch(_){} toast('Escuchando “Oye Hydra”'); startRecog(); } else { try{localStorage.removeItem('hydraWake');}catch(_){} toast('Palabra mágica apagada'); if(recog&&running)recog.stop(); } };
 $('#b-mute').onclick=()=>{ micMuted=!micMuted; $('#b-mute').classList.toggle('on',micMuted);
   if(micMuted){ wakeMode=false; awaiting=false; $('#b-wake').classList.remove('on'); try{localStorage.removeItem('hydraWake');}catch(_){} if(recog&&running)recog.stop(); if(typeof clapOn!=='undefined'&&clapOn)stopClap(); setV(''); toast('Micrófono silenciado 🔇'); speak('Dejo de escuchar, '+SIR+'.'); }
@@ -2808,26 +2923,31 @@ function stopClap(){ clapOn=false; $('#b-clap').classList.remove('on'); if(clapR
 function onClap(){ wakeFlash(); speak(L('A la orden, '+SIR+'.','At your command, '+SIR+'.')); setV('<b>Le escucho…</b>'); awaiting=true; if(!running)startRecog(); clearTimeout(awaitTimer); awaitTimer=setTimeout(()=>{awaiting=false;},9000); }
 
 const AGENT_WORDS=[{k:'analyst',w:['analista','analisis']},{k:'risk_manager',w:['riesgo','gestor']},{k:'executor',w:['ejecutor','ordenes']},{k:'overnight',w:['nocturno','noche']},{k:'reviewer',w:['revisor','revision']},{k:'architect',w:['arquitecto','playbook']},{k:'sentinel',w:['sentinel','noticias','calendario','centinela']},{k:'watchdog',w:['watchdog','vigilante','salud']},{k:'auditor',w:['auditor','auditoria']},{k:'validator',w:['validador','backtest']},{k:'portfolio',w:['portafolio','cartera','correlacion']}];
+/* Devuelve true si la frase era una orden de pantalla. False = no era para aquí,
+   y quien llame decide (con oídos locales, se la pasa al copiloto para contestarla). */
 function runCmd(t){
-  if(/(demo|prueba|analiza|corre)/.test(t)){ runDemo(); return; }
+  if(/(demo|prueba|analiza|corre)/.test(t)){ runDemo(); return true; }
   // por voz, igual: manda el estado real, no lo que ponga el botón
-  if(/(deten|para|alto|halt|pausa)/.test(t)){ if(!halted)doHalt(); else speak('Ya está parado, '+SIR+'.'); return; }
-  if(/(reanuda|continua|resume|activa el sistema)/.test(t)){ if(halted)doHalt(); else speak('Ya está activo, '+SIR+'.'); return; }
-  if(/(estado|reporte|situacion|resumen|status|como vas)/.test(t)){ speakStatus(); return; }
-  if(/(calendario|noticias)/.test(t)){ openCalendar(); speak('Abriendo el calendario.'); return; }
-  if(/(actualiza|refresca|recarga)/.test(t)){ load(); speak('Datos actualizados, '+SIR+'.'); return; }
-  if(/(cierra|cerrar|oculta)/.test(t)){ closeDrawer(); return; }
-  if(/(hola|buenas|quien eres|presenta)/.test(t)){ speak(L('Soy Hydra, a su servicio. Puedo correr el demo, darle el estado, o mostrarle cualquier agente.','I am Hydra, at your service. I can run the demo, give you the status, or show you any agent.')); return; }
-  for(const a of AGENT_WORDS){ if(a.w.some(w=>t.includes(w))){ openAgent(a.k); return; } }
-  speak(L('No le entendí, '+SIR+'. Pruebe: corre el demo, dame el estado, o abre el analista.','I did not catch that, '+SIR+'. Try: run the demo, give me the status, or open the analyst.'));
+  if(/(deten|para|alto|halt|pausa)/.test(t)){ if(!halted)doHalt(); else speak('Ya está parado, '+SIR+'.'); return true; }
+  // Reanudar NO se ejecuta hablando: entenderlo de más pone a operar una cuenta
+  // que habías parado a mano, y eso no se deshace.
+  if(/(reanuda|continua|resume|activa el sistema)/.test(t)){
+    if(!halted){ speak('Ya está activo, '+SIR+'.'); } else { avisoOrden(t); } return true; }
+  if(/(estado|reporte|situacion|resumen|status|como vas)/.test(t)){ speakStatus(); return true; }
+  if(/(calendario|noticias)/.test(t)){ openCalendar(); speak('Abriendo el calendario.'); return true; }
+  if(/(actualiza|refresca|recarga)/.test(t)){ load(); speak('Datos actualizados, '+SIR+'.'); return true; }
+  if(/(oculta|cierra la ventana|cierra el panel)/.test(t)){ closeDrawer(); return true; }
+  if(/(hola|buenas|quien eres|presenta)/.test(t)){ speak(L('Soy Hydra, a su servicio. Puedo correr el demo, darle el estado, o mostrarle cualquier agente.','I am Hydra, at your service. I can run the demo, give you the status, or show you any agent.')); return true; }
+  for(const a of AGENT_WORDS){ if(a.w.some(w=>t.includes(w))){ openAgent(a.k); return true; } }
+  return false;
 }
 function speakStatus(){ if(!DATA){ speak('Aún cargando.'); return; } const c=DATA.core; const act=DATA.agents.filter(a=>a.state==='active').length;
   const conn=c.connected?'conectado a cTrader':(c.oauth_ok?'esperando conexión':'sin cuenta conectada');
   speak('Modo '+(c.dry_run?'papel':'real')+', '+conn+'. Balance '+(c.balance!=null?c.balance:'desconocido')+'. '+act+' de '+DATA.agents.length+' agentes activos, '+SIR+'.'); }
 
 $('#activate').onclick=()=>{ booted=true; sfxBoot(); $('#boot').classList.add('hide'); setTimeout(()=>$('#boot').style.display='none',700);
-  hudStart(); loadVoices(); speak(L('Sistemas en línea, '+SIR+'. Toca Oye Hydra cuando quieras activar el micrófono.','Systems online, '+SIR+'. Tap Oye Hydra to enable the mic.'));
-  if(SR) setV('Toca 👂 Oye Hydra para activar la voz'); };
+  hudStart(); loadVoices(); sttCheck().then(()=>{ if(sttOk||SR) setV(sttOk?'Toca 🎙 y háblame — te transcribo aquí, en tu Mac':'Toca 👂 Oye Hydra para activar la voz'); });
+  speak(L('Sistemas en línea, '+SIR+'. Toca Oye Hydra cuando quieras activar el micrófono.','Systems online, '+SIR+'. Tap Oye Hydra to enable the mic.')); };
 
 /* ===================== ONDA DE AUDIO ===================== */
 const wv=$('#wave'), wg=wv.getContext('2d'); let wt=0; const DPR=window.devicePixelRatio||1;
