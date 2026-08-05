@@ -1537,9 +1537,29 @@ async function renderVault(){ let d; try{ d=await (await fetch('/vault')).json()
     +(e.reglas_activas?' <b style="color:#34d399">Ahora mismo hay reglas tuyas activas.</b>':'')+'</div>';
   h+='<div class="prm"><label>🔎 Preguntar al investigador (Perplexity)</label><input id="rsq" placeholder="ej. ¿qué mueve al oro hoy?" onkeydown="if(event.key===\'Enter\')doResearch()"></div>';
   h+='<button class="btn ghost" onclick="doResearch()">Investigar</button><div id="rsout"></div>';
+  h+='<div id="sys-lecciones"></div>';
   const recent=(d.notes||[]).slice(0,6);
   if(recent.length){ h+='<div class="phelp" style="margin-top:8px">Recientes:</div>'+recent.map(x=>'<div class="cfg"><span>'+escapeHtml(x.folder||'nota')+'</span> <b>'+escapeHtml(x.name)+'</b></div>').join(''); }
-  $('#sys-vault').innerHTML=h; }
+  $('#sys-vault').innerHTML=h; renderLecciones(); }
+/* Lo que ha aprendido de sus propios resultados. Se enseña CON la muestra al lado:
+   sin ella, «el oro pierde por la mañana» y «el oro ha perdido 6 de 9 veces por la
+   mañana» se leen igual, y la segunda no es una conclusión todavía. */
+async function renderLecciones(){ const el=$('#sys-lecciones'); if(!el) return;
+  let d; try{ d=await (await fetch('/lecciones')).json(); }catch(e){ return; }
+  let h='<div class="cfg" style="margin-top:10px"><span>Ha aprendido de</span> <b>'+((d&&d.n_cerradas)||0)+' operaciones cerradas</b></div>';
+  if(!d||!d.ok){ el.innerHTML=h+'<div class="phelp">'+escapeHtml((d&&d.error)||'sin historial todavía')+'</div>'; return; }
+  const lec=d.lecciones||[];
+  if(lec.length){ h+=lec.slice(0,8).map(x=>'<div class="cfg"><span>'+escapeHtml(x.dimension+' «'+x.valor+'»')+'</span> <b style="color:'+(x.net<0?'#ff5d73':'#34d399')+'">'
+      +(x.net>0?'+':'')+x.net+'</b> · '+x.n+' ops · '+x.win_pct+'% · casualidad '+Math.round((x.prob_suerte||0)*100)+'%'
+      +(x.fuerza==='preliminar'?' <b style="color:#fbbf24">preliminar</b>':'')+'</div>').join('');
+    h+='<div class="phelp">Son evidencias con su muestra, no leyes: al analista le sirven para pedir más confluencia, nunca para operar en contra por sí solas.</div>'; }
+  else h+='<div class="phelp">Todavía ninguna. Hacen falta al menos '+((d.minimos&&d.minimos.muestra)||8)+' operaciones cerradas en un mismo grupo — con menos, tres pérdidas seguidas parecerían un patrón y no lo son.</div>';
+  const sm=(d.sin_muestra||[]).slice(0,5);
+  if(sm.length) h+='<div class="phelp" style="margin-top:6px">Midiendo (aún sin concluir): '
+    +sm.map(x=>escapeHtml(x.valor)+' ('+x.n+')').join(' · ')+'</div>';
+  const pm=d.postmortems||[];
+  if(pm.length) h+='<div class="phelp" style="color:#fbbf24">Errores que se repiten: '+pm.map(p=>escapeHtml(p.categoria)+' ×'+p.veces).join(' · ')+'</div>';
+  el.innerHTML=h; }
 async function setVaultPath(vaciar){ const el=$('#vpath'); const out=$('#vpout');
   const p=vaciar?'':((el&&el.value||'').trim());
   if(out){ out.style.color=''; out.textContent='Comprobando…'; }

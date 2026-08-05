@@ -38,9 +38,23 @@ Reglas:
 """
 
 
-async def evolve(playbook: str, recent_reviews: list[dict], stats: dict) -> dict:
+async def evolve(playbook: str, recent_reviews: list[dict], stats: dict,
+                 aprendido: str = "") -> dict:
+    # Las revisiones diarias son relato: lo que un modelo entendio de una jornada.
+    # Esto son cuentas sobre el historial real, con su muestra. Va primero a
+    # proposito — cuando el relato y los numeros no coinciden, mandan los numeros.
+    bloque = ""
+    if aprendido:
+        bloque = (
+            f"## Evidencia medida sobre el historial real\n{aprendido}\n\n"
+            "Cada linea trae su numero de operaciones y la probabilidad de que sea\n"
+            "casualidad. Cambia el playbook por lo que digan estas cuentas, no por lo\n"
+            "que sugiera el relato de un dia suelto. Una muestra corta NO justifica una\n"
+            "regla nueva: si la evidencia es preliminar, dilo en el resumen en vez de\n"
+            "escribir una norma que luego nadie sabra por que esta ahi.\n\n")
     user = (
         f"## Playbook actual\n{playbook}\n\n"
+        f"{bloque}"
         f"## Revisiones diarias recientes (mas nueva primero)\n"
         f"{json.dumps(recent_reviews, ensure_ascii=False)}\n\n"
         f"## Estadisticas\n{json.dumps(stats, ensure_ascii=False)}\n\n"

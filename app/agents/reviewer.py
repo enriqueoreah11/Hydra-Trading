@@ -28,9 +28,19 @@ Se brutalmente honesto. Un dia sin operaciones tambien se evalua (¿fue correcto
 
 async def daily_review(journal_entries: list[dict], daily_pnl: float,
                        positions: list[dict], playbook: str,
-                       context_digest: dict | None = None) -> str:
+                       context_digest: dict | None = None,
+                       aprendido: str = "") -> str:
+    # Antes de esto, los "patrones" del punto 4 salian de mirar UN dia de diario, y
+    # un dia no da para detectar ningun patron: lo que salia eran coincidencias
+    # contadas con seguridad. Aqui van las cuentas sobre el historial completo.
+    bloque = ""
+    if aprendido:
+        bloque = (f"## Evidencia medida sobre todo el historial\n{aprendido}\n\n"
+                  "Usa ESTO para el punto 4 en vez de deducir patrones de un solo dia.\n"
+                  "Cada linea trae su muestra: si es corta, dilo en vez de concluir.\n\n")
     user = (
         f"## Playbook vigente\n{playbook}\n\n"
+        f"{bloque}"
         f"## Diario de hoy (todas las decisiones de los agentes)\n"
         f"{json.dumps(journal_entries, ensure_ascii=False)}\n\n"
         f"## PnL realizado hoy: {daily_pnl:.2f}\n"

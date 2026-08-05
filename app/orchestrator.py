@@ -15,7 +15,7 @@ import json
 import logging
 import time
 
-from . import constants, indicators, macro, research, vault
+from . import constants, indicators, lecciones, macro, research, vault
 from .agents import (analyst, architect, auditor, executor, overnight, portfolio,
                      reviewer, risk_manager, validator)
 from .agents.sentinel import Sentinel
@@ -47,6 +47,42 @@ class Brain:
         self._last_daily_date = ""
         self._last_heartbeat_date = ""
         self._last_data_ts = 0.0
+        self._trades_cache: list[dict] = []
+        self._trades_ts = 0.0
+
+    # ------------------------------------------------- historial para aprender
+
+    # El histórico se pide una vez por hora, no una por símbolo y ciclo: son
+    # operaciones ya cerradas, no cambian, y el bróker tiene sus límites.
+    TRADES_TTL = 3600.0
+    TRADES_DIAS = 120
+
+    async def _trades_cerradas(self) -> list[dict]:
+        """Operaciones cerradas en el formato que entiende `lecciones`."""
+        ahora = time.time()
+        if self._trades_cache and (ahora - self._trades_ts) < self.TRADES_TTL:
+            return self._trades_cache
+        filas: list[dict] = []
+        try:
+            deals = await asyncio.wait_for(
+                self.broker.deals_since(ahora - self.TRADES_DIAS * 86400), timeout=25)
+            for d in deals:
+                if not d.get("closed"):
+                    continue
+                filas.append({
+                    "state": "closed", "ts": d.get("ts") or 0,
+                    "symbol": await self.broker.symbol_name_by_id(d["symbol_id"]),
+                    "side": d.get("side", ""),
+                    "strategy": (d.get("label") or "").strip() or "(sin etiqueta)",
+                    "pnl": round(d.get("gross", 0.0) - abs(d.get("commission", 0.0))
+                                 + d.get("swap", 0.0), 2)})
+        except Exception as exc:  # noqa: BLE001
+            # Sin historial se analiza igual. Lo que NO se hace es cachear el vacío
+            # como si fuera "no hay operaciones": se reintenta al siguiente ciclo.
+            log.info("no pude leer el historial para aprender: %s", str(exc)[:120])
+            return self._trades_cache
+        self._trades_cache, self._trades_ts = filas, ahora
+        return filas
 
     # ------------------------------------------------------------ main loop
 
@@ -152,8 +188,20 @@ class Brain:
             reglas = vault.instrucciones()
         except Exception:  # noqa: BLE001
             reglas = ""
+
+        # Lo aprendido de sus propios resultados EN ESTE símbolo. Es lo que evitaba
+        # abrir cada ciclo sin memoria: el mismo setup podía haber costado dinero
+        # seis veces y el analista no tenía forma de saberlo.
+        aprendido = ""
+        try:
+            datos = lecciones.calcular(await self._trades_cerradas(), symbol=symbol)
+            aprendido = lecciones.texto(
+                datos, lecciones.de_postmortems(self.store.postmortem_counts()))
+        except Exception:  # noqa: BLE001
+            log.info("%s: sin lecciones en este ciclo", symbol)
         proposal = await analyst.analyze(symbol, settings.timeframe, market, playbook,
-                                         positions, macro_ctx=macro_ctx, reglas=reglas)
+                                         positions, macro_ctx=macro_ctx, reglas=reglas,
+                                         aprendido=aprendido)
         self.store.log("analyst", "analysis", proposal, symbol=symbol)
 
         if proposal["action"] != "propose":
@@ -307,6 +355,24 @@ class Brain:
             except Exception:  # noqa: BLE001 - la investigación nunca debe tumbar el ciclo
                 log.warning("perplexity brief failed", exc_info=True)
 
+        # Lo aprendido, recalculado y escrito en la memoria (Obsidian). Se recalcula
+        # entero cada día en vez de acumular frases: así una lección que ha dejado
+        # de cumplirse desaparece sola, en lugar de quedarse escrita para siempre
+        # sin que nadie pueda saber si sigue siendo verdad.
+        aprendido_txt = ""
+        try:
+            self._trades_ts = 0.0                       # el día ha cerrado: refresca
+            datos = lecciones.calcular(await self._trades_cerradas())
+            pms = lecciones.de_postmortems(self.store.postmortem_counts())
+            n = lecciones.guardar(datos, pms)
+            aprendido_txt = lecciones.texto(datos, pms, max_items=12)
+            self.store.log("reviewer", "lecciones",
+                           {"n_lecciones": n, "n_cerradas": datos["n_cerradas"]})
+            log.info("aprendizajes: %s lecciones de %s operaciones",
+                     n, datos["n_cerradas"])
+        except Exception:  # noqa: BLE001 - aprender no puede tumbar la revisión
+            log.warning("no pude calcular los aprendizajes", exc_info=True)
+
         # El contexto de decisión del bot entra en la revisión: sin esto, el
         # Reviewer solo ve lo que se OPERÓ y nunca aprende de lo que se rechazó.
         try:
@@ -314,7 +380,8 @@ class Brain:
         except Exception:  # noqa: BLE001 - la revisión no depende de esto
             digest = None
         review = await reviewer.daily_review(entries, daily_pnl, positions, playbook,
-                                             context_digest=digest)
+                                             context_digest=digest,
+                                             aprendido=aprendido_txt)
         self.store.log("reviewer", "daily_review", review)
         try:
             vault.note("Revisiones", f"Revision diaria (PnL {daily_pnl:+.2f})", review,
@@ -329,7 +396,8 @@ class Brain:
             "open_positions": len(positions),
             "playbook_version": version,
         }
-        result = await architect.evolve(playbook, self.store.recent_reviews(7), stats)
+        result = await architect.evolve(playbook, self.store.recent_reviews(7), stats,
+                                        aprendido=aprendido_txt)
         if result.get("no_change"):
             self.store.log("architect", "no_change", result["changes_summary"])
             return

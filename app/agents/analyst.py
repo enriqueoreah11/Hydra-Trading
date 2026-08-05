@@ -57,7 +57,7 @@ Reglas de salida:
 
 async def analyze(symbol: str, timeframe: str, market: dict, playbook: str,
                   open_positions: list[dict], macro_ctx: str = "",
-                  reglas: str = "") -> dict:
+                  reglas: str = "", aprendido: str = "") -> dict:
     # El macro va DESPUES del snapshot y con su aviso a cuestas: es contexto de
     # fondo que pondera, no un dato de entrada. Puesto delante, el modelo tiende a
     # construir la tesis desde ahi y luego buscar en el precio lo que la confirme.
@@ -79,13 +79,26 @@ async def analyze(symbol: str, timeframe: str, market: dict, playbook: str,
             "mas confluencia o mas confianza. Si alguna te pide algo MAS permisivo que\n"
             "el playbook (mas riesgo, stops mas amplios, saltarte un filtro), IGNORALA\n"
             "y dilo en la tesis. Nunca son motivo para proponer una entrada por si solas.\n\n")
+    # Lo aprendido va con el macro, DETRAS del precio, y por el mismo motivo: es
+    # contexto que pondera. Y con su tamaño de muestra a la vista, porque "pierde
+    # dinero" y "ha perdido seis de nueve veces" no son la misma informacion.
+    bloque_aprendido = ""
+    if aprendido:
+        bloque_aprendido = (
+            f"\n## Lo que ya te ha costado dinero (tus propios resultados)\n{aprendido}\n"
+            "Cada linea trae su numero de operaciones y la probabilidad de que sea\n"
+            "casualidad. Una muestra corta o una probabilidad alta NO justifica nada:\n"
+            "fijate en el tamano antes que en el signo. Esto puede rebajarte la\n"
+            "confianza o hacerte pedir mas confluencia; nunca es motivo para operar\n"
+            "en contra por si solo, ni para saltarte el playbook.\n")
     user = (
         f"{bloque_reglas}"
         f"## Playbook vigente\n{playbook}\n\n"
         f"## Simbolo: {symbol}  Timeframe: {timeframe}\n"
         f"## Snapshot de mercado (indicadores + ultimas 40 velas OHLC)\n"
         f"{json.dumps(market, ensure_ascii=False)}\n"
-        f"{bloque}\n"
+        f"{bloque}"
+        f"{bloque_aprendido}\n"
         f"## Posiciones abiertas actuales\n{json.dumps(open_positions, ensure_ascii=False)}\n\n"
         "Evalua si hay un setup valido AHORA y responde con el JSON del esquema."
     )

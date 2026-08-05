@@ -3653,6 +3653,26 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         return {"stats": vault.stats(), "notes": vault.list_notes()[:200],
                 "estado": vault.estado()}
 
+    @app.get("/lecciones")
+    async def lecciones_ver(symbol: str = "", days: float = 120):
+        """Lo que ha aprendido de sus propios resultados, con la muestra a la vista.
+
+        Se calcula aquí mismo desde el historial real en vez de leerlo guardado: una
+        lección escrita hace un mes puede haber dejado de ser verdad, y nadie sabría
+        distinguirlo. Lo que sale de aquí es la evidencia de hoy.
+        """
+        from . import lecciones as lec
+        d = await trades_recent(days=max(1.0, min(365.0, float(days))), limit=500)
+        if not d.get("ok"):
+            return {"ok": False, "error": d.get("error", "sin historial"),
+                    "lecciones": [], "sin_muestra": []}
+        datos = lec.calcular(d.get("rows") or [], symbol=symbol)
+        pms = lec.de_postmortems(store.postmortem_counts())
+        return {"ok": True, **datos, "postmortems": pms,
+                "texto": lec.texto(datos, pms, max_items=12),
+                "minimos": {"muestra": lec.MIN_OPS, "fiable": lec.MIN_OPS_FIABLE,
+                            "max_prob_suerte": lec.MAX_PROB_SUERTE}}
+
     @app.get("/vault/estado")
     async def vault_estado():
         """Dónde acaban las notas y si el cerebro lee algo tuyo.
