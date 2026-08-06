@@ -594,7 +594,8 @@ async function abrirRadar(){
     return '<div class="cfg" style="align-items:flex-start"><span><b>'+escapeHtml(f.symbol)+'</b><br><span class="phelp">'+escapeHtml(String(f.precio))+'</span></span><span style="text-align:right;font-size:11px">'+(zs||'sin zonas')+'</span></div>'; }).join('');
   if((d.sin_datos||[]).length) h+='<div class="phelp" style="color:#fbbf24;margin-top:8px">Sin histórico suficiente: '
     +d.sin_datos.map(x=>escapeHtml(x.symbol)).join(', ')+'. Bájalo en Datos y vuelve a mirar.</div>';
-  h+='<p class="phelp" style="margin-top:10px">'+escapeHtml(d.aviso||'')+'</p>';
+  h+='<p class="phelp" style="margin-top:10px">'+escapeHtml(d.aviso||'')
+    +(d.nota_ajustes?'<br>'+escapeHtml(d.nota_ajustes):'')+'</p>';
   openInfo('◎ Radar de confluencias',h);
   speak(con.length?L(con.length+' instrumentos con entrada, '+SIR+'.',con.length+' instruments with a setup, '+SIR+'.')
                   :L('Ninguna entrada ahora mismo, '+SIR+'.','No setups right now, '+SIR+'.')); }

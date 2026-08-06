@@ -60,17 +60,92 @@ def test_the_family_names_match_the_bot_taxonomy():
     """Se llaman igual a propósito: si aquí fueran otras, no habría forma de comparar
     una captura del bot con una señal de Hydra."""
     from app.web import create_app  # noqa: F401  (solo para asegurar que importa)
-    assert set(confluencia.FAMILIAS) >= {"HTFKL", "KeyLevel", "Fib", "EMA", "SMA",
-                                         "Session", "Round"}
+    assert set(confluencia.FAMILIAS) >= {"HTFKL", "IKL", "KeyLevel", "TrendLine",
+                                         "Fib", "EMA", "SMA", "Session", "Round"}
 
 
-def test_what_cannot_be_replicated_is_declared():
-    """Si tu bot lee líneas dibujadas a mano, parte de sus señales son imposibles
-    aquí. Callarlo haría leer una coincidencia baja como «no se parece» cuando lo
-    que pasa es que le faltan datos."""
-    assert "TrendLine" in confluencia.NO_REPLICADAS
+def test_no_family_is_left_out():
+    """Las líneas, los key levels y los Fibonacci los CALCULA el bot: no los lee de
+    un gráfico, así que son reproducibles. Dar alguna por imposible dejaría fuera
+    señales suyas para siempre y con una excusa."""
+    assert confluencia.NO_REPLICADAS == ()
+
+
+def test_what_cannot_be_copied_is_declared_and_it_is_the_thresholds():
+    """Lo que de verdad no se puede copiar son sus umbrales: el .algo solo expone
+    tres parámetros y el resto va compilado. Callarlo haría creer que esto es su
+    bot exacto."""
+    n = confluencia.NOTA_AJUSTES.lower()
+    assert "compilados" in n and "3 par" in n
     v = serie(400, lambda i: 100 + i * 0.01)
-    assert "TrendLine" in confluencia.radar(v, P)["no_replicadas"]
+    assert confluencia.radar(v, P)["nota_ajustes"]
+
+
+# ------------------------------------------------- líneas de tendencia
+
+def test_a_clean_trend_line_is_found():
+    """Una bajista limpia: máximos cada vez más bajos que el precio respeta. Si no
+    sale ninguna línea, la familia TrendLine no aporta nada y sobra."""
+    def f(i):
+        return 200 - i * 0.05 + (3.0 if i % 20 == 0 else 0.0)
+    v = serie(500, f)
+    ls = confluencia._lineas(v, len(v) - 1, 5, 0.5)
+    assert ls, "no trazó ninguna línea en una tendencia limpia"
+
+
+def test_noise_does_not_produce_a_forest_of_trend_lines():
+    """Dos puntos definen una recta, y por dos puntos cualesquiera pasa exactamente
+    una: sobre ruido eso daba ocho «líneas» de doce posibles. Con tantas, TrendLine
+    está en cualquier zona que mires y deja de discriminar — peor que no tenerla,
+    porque infla la cuenta de familias sin aportar una razón."""
+    import random
+    rnd = random.Random(3)
+    v = serie(500, lambda i: 100 + rnd.uniform(-8, 8))
+    ls = confluencia._lineas(v, len(v) - 1, 5, 0.05)
+    assert len(ls) <= 2, f"aceptó demasiadas rectas sobre ruido: {len(ls)}"
+
+
+def test_two_points_are_not_enough_three_are():
+    """La regla de toda la vida, y aquí es lo que separa una línea de dos puntos
+    unidos: por dos puntos siempre pasa una recta."""
+    def f(i):
+        return 200 - i * 0.05 + (3.0 if i % 20 == 0 else 0.0)
+    v = serie(500, f)
+    con2 = confluencia._lineas(v, len(v) - 1, 5, 0.5, toques_min=2)
+    con3 = confluencia._lineas(v, len(v) - 1, 5, 0.5, toques_min=3)
+    assert len(con3) <= len(con2), "exigir un toque más dio MÁS líneas"
+
+
+def test_the_line_tolerance_scales_with_the_instrument():
+    """Va en ATR: con una tolerancia fija, la misma exigencia sería imposible en el
+    EURUSD y trivial en el Nasdaq."""
+    assert "tl_tol_atr" in strategies.DEFAULTS["confluencia"]
+
+
+def test_trend_lines_actually_reach_the_levels():
+    def f(i):
+        return 200 - i * 0.05 + (3.0 if i % 20 == 0 else 0.0)
+    v = serie(500, f)
+    fams = {fam for fam, _ in confluencia.niveles(v, len(v) - 1, P)}
+    assert "TrendLine" in fams
+
+
+# --------------------------------------------- marcos intermedio y alto
+
+def test_intermediate_and_higher_timeframes_are_separate_families():
+    """El bot los distingue (IKL vs HTF-KL) y aquí también: si se fundieran en una,
+    dos razones del mismo sitio contarían como una sola."""
+    v = serie(900, lambda i: 100 + (i % 50) * 0.08)
+    fams = {fam for fam, _ in confluencia.niveles(v, len(v) - 1, P)}
+    assert "IKL" in fams and "HTFKL" in fams
+
+
+def test_the_higher_timeframe_boxes_end_where_we_are():
+    """Agrupando desde el principio, el resto sobrante desplaza todas las cajas y
+    los niveles del marco alto salen movidos — sin que nada lo avise."""
+    v = serie(400, lambda i: 100 + i * 0.1)
+    ag = confluencia._agrupar(v, len(v) - 1, 4)
+    assert ag and ag[-1].close == v[len(v) - 1].close
 
 
 # --------------------------------------------- anchura en ATR, no en pips

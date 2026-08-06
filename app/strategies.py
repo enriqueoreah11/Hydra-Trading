@@ -196,9 +196,10 @@ DEFAULTS: dict[str, dict] = {
     "ma_pullback": {"ema_fast": 20, "sma_trend": 200, "touch_atr": 0.25,
                     "atr_mult": 1.5, "rr": 2.0},
     "confluencia": {"min_familias": 3, "zona_atr": 0.35, "dist_atr": 0.6,
-                    "swing_lookback": 5, "htf_mult": 4, "ema_fast": 20,
-                    "ema_slow": 50, "sma_trend": 200, "fib_window": 120,
-                    "velas_dia": 96, "atr_mult": 1.5, "rr": 2.0},
+                    "swing_lookback": 5, "ikl_mult": 2, "htf_mult": 4,
+                    "tl_tol_atr": 0.25, "ema_fast": 20, "ema_slow": 50,
+                    "sma_trend": 200, "fib_window": 120, "velas_dia": 96,
+                    "atr_mult": 1.5, "rr": 2.0},
 }
 
 

@@ -37,11 +37,19 @@ log = logging.getLogger("confluencia")
 
 # Los mismos nombres que usa el bot al clasificar sus etiquetas. Coincidir en el
 # vocabulario es lo que permite comparar una captura suya con una señal de aquí.
-FAMILIAS = ("HTFKL", "KeyLevel", "Fib", "EMA", "SMA", "Session", "Round")
+FAMILIAS = ("HTFKL", "IKL", "KeyLevel", "TrendLine", "Fib", "EMA", "SMA",
+            "Session", "Round")
 
-# Familias que tu bot puede tener y esta réplica no calcula. Van declaradas para
-# que una coincidencia baja se lea como "le faltan datos" y no como "no coincide".
-NO_REPLICADAS = ("TrendLine", "IKL")
+# Ninguna familia se queda fuera: las líneas de tendencia, los key levels y los
+# Fibonacci los CALCULA el bot, no los lees tú del gráfico, así que son
+# reproducibles. Lo que no se puede copiar son sus umbrales exactos: el .algo solo
+# expone tres parámetros (break-even y trailing) y el resto va compilado dentro.
+# Por eso los de aquí no se copian, se miden fuera de muestra como los de
+# cualquier otra estrategia.
+NO_REPLICADAS: tuple[str, ...] = ()
+NOTA_AJUSTES = ("las familias son las mismas, pero los umbrales de tu bot van "
+                "compilados en el .algo (solo expone 3 parámetros): los de aquí "
+                "salen de medir, no de copiar")
 
 
 def _redondos(precio: float, atr_v: float) -> list[float]:
@@ -74,6 +82,93 @@ def _swings(candles: list[Candle], hasta: int, lookback: int, n: int) -> list[fl
             out.append(c.low)
         if len(out) >= n:
             break
+    return out
+
+
+def _agrupar(candles: list[Candle], hasta: int, mult: int) -> list[Candle]:
+    """Las mismas velas en un marco mayor. Se agrupa desde el final para que la
+    última vela agregada termine donde estamos: agrupando desde el principio, el
+    resto sobrante desplazaría todas las cajas y los niveles saldrían movidos."""
+    out: list[Candle] = []
+    fin = hasta + 1
+    ini = fin - ((fin // mult) * mult)
+    for k in range(ini, fin, mult):
+        trozo = candles[k:k + mult]
+        if len(trozo) < mult:
+            continue
+        out.append(Candle(ts=trozo[0].ts, open=trozo[0].open,
+                          high=max(c.high for c in trozo),
+                          low=min(c.low for c in trozo),
+                          close=trozo[-1].close,
+                          volume=sum(c.volume for c in trozo)))
+    return out
+
+
+def _pivotes(candles: list[Candle], hasta: int, lookback: int,
+             n: int) -> tuple[list[tuple[int, float]], list[tuple[int, float]]]:
+    """Máximos y mínimos pivote con su posición. Los índices hacen falta para las
+    líneas: una recta necesita DOS puntos y cuándo ocurrió cada uno."""
+    altos: list[tuple[int, float]] = []
+    bajos: list[tuple[int, float]] = []
+    lo = max(lookback, hasta - 400)
+    for i in range(hasta - lookback, lo, -1):
+        if i - lookback < 0 or i + lookback > hasta:
+            continue
+        ventana = candles[i - lookback:i + lookback + 1]
+        c = candles[i]
+        if c.high >= max(x.high for x in ventana) and len(altos) < n:
+            altos.append((i, c.high))
+        elif c.low <= min(x.low for x in ventana) and len(bajos) < n:
+            bajos.append((i, c.low))
+        if len(altos) >= n and len(bajos) >= n:
+            break
+    return altos, bajos
+
+
+def _lineas(candles: list[Candle], hasta: int, lookback: int, tol: float,
+            toques_min: int = 3) -> list[float]:
+    """Líneas de tendencia trazadas entre pivotes, proyectadas hasta la vela actual.
+
+    Es lo que hace el bot al dibujarlas: pivotes que definen una recta y se
+    extiende. Dos condiciones, y la segunda es la que decide si esto sirve:
+
+    1. El precio la RESPETÓ entre los extremos. Una recta que atravesó cinco veces
+       no es una línea de tendencia.
+    2. **Al menos tres toques.** Dos puntos definen una recta, y por dos puntos
+       cualesquiera pasa exactamente una: sobre ruido puro eso daba ocho "líneas"
+       de doce posibles. Con ocho, la familia TrendLine está presente en cualquier
+       zona que mires y deja de discriminar — que es peor que no tenerla, porque
+       infla la cuenta de familias sin aportar una razón.
+
+    Se miran pocos pivotes a propósito: esto corre en cada vela del backtest, y
+    cuantas más rectas se admiten más fácil es que una pase por donde sea.
+    """
+    altos, bajos = _pivotes(candles, hasta, lookback, 5)
+    out: list[float] = []
+    for puntos, es_alto in ((altos, True), (bajos, False)):
+        for a in range(len(puntos)):
+            for b in range(a + 1, len(puntos)):
+                i1, v1 = puntos[b]                      # el más antiguo
+                i2, v2 = puntos[a]
+                if i2 - i1 < lookback * 2:
+                    continue                            # demasiado juntos: no es una línea
+                m = (v2 - v1) / (i2 - i1)
+                roto = False
+                for k in range(i1 + 1, i2):
+                    y = v1 + m * (k - i1)
+                    c = candles[k]
+                    if (es_alto and c.high > y + tol) or (not es_alto and c.low < y - tol):
+                        roto = True
+                        break
+                if roto:
+                    continue
+                toques = sum(1 for j, v in puntos
+                             if abs(v - (v1 + m * (j - i1))) <= tol)
+                if toques < toques_min:
+                    continue
+                proyectado = v1 + m * (hasta - i1)
+                if proyectado > 0:
+                    out.append(round(proyectado, 6))
     return out
 
 
@@ -110,25 +205,25 @@ def niveles(candles: list[Candle], i: int, p: dict) -> list[tuple[str, float]]:
     if not atr_v:
         return out
 
-    for v in _swings(candles, i, int(p.get("swing_lookback", 5)), 12):
+    lb = int(p.get("swing_lookback", 5))
+    for v in _swings(candles, i, lb, 12):
         out.append(("KeyLevel", v))
-    # Los niveles del marco superior se sacan agregando las mismas velas: sin pedir
-    # otra serie, y sin poder desincronizarse de la que se está mirando.
-    mult = int(p.get("htf_mult", 4))
-    if mult > 1:
-        agrupadas = []
-        for k in range(0, i + 1, mult):
-            trozo = candles[k:k + mult]
-            if len(trozo) == mult:
-                agrupadas.append(Candle(ts=trozo[0].ts, open=trozo[0].open,
-                                        high=max(c.high for c in trozo),
-                                        low=min(c.low for c in trozo),
-                                        close=trozo[-1].close,
-                                        volume=sum(c.volume for c in trozo)))
+    # Las líneas de tendencia las DIBUJA el bot, no se leen del gráfico: son
+    # algorítmicas y por tanto reproducibles. La tolerancia va en ATR para que la
+    # misma exigencia valga en un par de forex y en un índice.
+    for v in _lineas(candles, i, lb, atr_v * float(p.get("tl_tol_atr", 0.25))):
+        out.append(("TrendLine", v))
+    # Los niveles de marcos superiores se sacan agregando las MISMAS velas: sin
+    # pedir otra serie, y sin poder desincronizarse de la que se está mirando.
+    # IKL es el marco intermedio y HTFKL el alto, igual que los distingue el bot.
+    for fam, mult in (("IKL", int(p.get("ikl_mult", 2))),
+                      ("HTFKL", int(p.get("htf_mult", 4)))):
+        if mult <= 1:
+            continue
+        agrupadas = _agrupar(candles, i, mult)
         if len(agrupadas) > 30:
-            for v in _swings(agrupadas, len(agrupadas) - 1,
-                             int(p.get("swing_lookback", 5)), 8):
-                out.append(("HTFKL", v))
+            for v in _swings(agrupadas, len(agrupadas) - 1, lb, 8):
+                out.append((fam, v))
 
     for per in (int(p.get("ema_fast", 20)), int(p.get("ema_slow", 50))):
         e = ind.ema(closes, per)
@@ -238,4 +333,5 @@ def radar(candles: list[Candle], p: dict, top: int = 3) -> dict:
     señal = confluencia(candles, p, i)
     return {"ok": True, "precio": precio, "atr": round(atr_v, 6), "zonas": zs,
             "senal": señal.as_dict() if señal else None,
-            "no_replicadas": list(NO_REPLICADAS)}
+            "familias": list(FAMILIAS), "no_replicadas": list(NO_REPLICADAS),
+            "nota_ajustes": NOTA_AJUSTES}

@@ -3696,10 +3696,12 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                                   -max([z["n_familias"] for z in f["zonas"]] or [0])))
         return {"ok": True, "tf": tfr, "min_familias": p["min_familias"],
                 "n": len(filas), "filas": filas, "sin_datos": sin_datos,
+                "familias": list(conf.FAMILIAS),
                 "no_replicadas": list(conf.NO_REPLICADAS),
-                "aviso": ("las zonas salen de las velas. Lo que dibujes a mano en "
-                          "cTrader no está aquí: si tu bot lo lee, tendrá señales "
-                          "que este radar no puede ver")}
+                "nota_ajustes": conf.NOTA_AJUSTES,
+                "aviso": ("las líneas, los key levels y los Fibonacci se calculan "
+                          "aquí igual que los calcula tu bot: están todas sus "
+                          "familias")}
 
     @app.get("/descubrir")
     async def descubrir_ver(symbol: str = "", tf: str = "", days: float = 365):
