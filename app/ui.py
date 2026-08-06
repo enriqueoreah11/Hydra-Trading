@@ -1537,10 +1537,42 @@ async function renderVault(){ let d; try{ d=await (await fetch('/vault')).json()
     +(e.reglas_activas?' <b style="color:#34d399">Ahora mismo hay reglas tuyas activas.</b>':'')+'</div>';
   h+='<div class="prm"><label>🔎 Preguntar al investigador (Perplexity)</label><input id="rsq" placeholder="ej. ¿qué mueve al oro hoy?" onkeydown="if(event.key===\'Enter\')doResearch()"></div>';
   h+='<button class="btn ghost" onclick="doResearch()">Investigar</button><div id="rsout"></div>';
-  h+='<div id="sys-lecciones"></div>';
+  h+='<div id="sys-playbook"></div><div id="sys-lecciones"></div>';
   const recent=(d.notes||[]).slice(0,6);
   if(recent.length){ h+='<div class="phelp" style="margin-top:8px">Recientes:</div>'+recent.map(x=>'<div class="cfg"><span>'+escapeHtml(x.folder||'nota')+'</span> <b>'+escapeHtml(x.name)+'</b></div>').join(''); }
-  $('#sys-vault').innerHTML=h; renderLecciones(); }
+  $('#sys-vault').innerHTML=h; renderPlaybookModo(); renderLecciones(); }
+/* Playbook escrito vs playbook medido. La diferencia no es de comodidad: el escrito
+   es una creencia que puede estar vieja sin que se note, y el medido se vuelve a
+   comprobar cada día contra el histórico. */
+async function renderPlaybookModo(){ const el=$('#sys-playbook'); if(!el) return;
+  const modo=(DATA&&DATA.core&&DATA.core.playbook_mode)||'manual';
+  let h='<div class="cfg" style="margin-top:10px"><span>Cómo decide qué operar</span> <span>'
+    +[['manual','Playbook escrito'],['auto','Playbook medido']].map(m=>'<button class="btn ghost'+(modo===m[0]?' on':'')
+      +'" style="padding:5px 9px;margin-left:5px" onclick="setPlaybookModo(\''+m[0]+'\')">'+m[1]+'</button>').join('')+'</span></div>';
+  h+=(modo==='auto'
+    ? '<div class="phelp" style="color:#34d399">El playbook lo escribe la medición: cada día prueba las estrategias sobre tu histórico, puntúa <b>fuera de muestra</b> y con coste, y solo opera lo que sobrevive. Lo que deja de funcionar desaparece solo.</div>'
+    : '<div class="phelp">El playbook lo escribes tú y lo evoluciona el Arquitecto desde las revisiones. Funciona, pero es una creencia: si se queda viejo, mirándolo no se nota.</div>');
+  h+='<button class="btn ghost" onclick="medirAhora()">Medir ahora y ver qué sale</button><div id="pb-out" class="phelp"></div>';
+  el.innerHTML=h; }
+async function setPlaybookModo(m){ let r; try{ r=await fetch('/playbook/modo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({modo:m})}); }
+  catch(e){ toast('Error de red'); return; }
+  if(!r.ok){ toast('No se pudo cambiar'); return; }
+  toast(m==='auto'?'Playbook medido ✓':'Playbook escrito ✓');
+  speak(m==='auto'?L('A partir de ahora solo opero lo que se sostiene midiendo, '+SIR+'.','From now on I only trade what survives measurement, '+SIR+'.')
+                  :L('Vuelvo al playbook escrito, '+SIR+'.','Back to the written playbook, '+SIR+'.'));
+  load(); setTimeout(renderPlaybookModo,600); }
+/* Medir sin aplicar: mirar antes de cambiar de modo es justo lo que evita
+   encenderlo a ciegas y descubrir después que no había nada que operar. */
+async function medirAhora(){ const o=$('#pb-out');
+  if(o) o.innerHTML='<span>Midiendo sobre tu histórico… (tarda, está probando cientos de combinaciones)</span>';
+  let d; try{ d=await (await fetch('/descubrir')).json(); }catch(e){ if(o)o.textContent='Error de red.'; return; }
+  if(!d.ok){ if(o){ o.style.color='#fbbf24'; o.textContent=d.error||'No pude medir.'; } return; }
+  let h='<div class="cfg"><span>'+escapeHtml(d.symbol||'')+'</span> <b>'+((d.hallazgos||[]).length)+' con ventaja</b> de '+(d.combinaciones_probadas||0)+' combinaciones · '+(d.velas||0)+' velas</div>';
+  h+=(d.hallazgos||[]).map(x=>'<div class="cfg"><span>'+escapeHtml(x.estrategia)+'</span> <b style="color:#34d399">'+x.esperanza_oos+'R</b> · '+x.ops_oos+' ops fuera de muestra · '+x.win_pct_oos+'%</div>').join('');
+  if(!(d.hallazgos||[]).length) h+='<div class="phelp">Nada pasó los mínimos, y eso es una respuesta: '
+    +escapeHtml(((d.descartes||[])[0]||{}).motivo||'')+'</div>';
+  h+='<div class="phelp">'+escapeHtml(d.aviso||'')+'</div>';
+  if(o){ o.style.color=''; o.innerHTML=h; } }
 /* Lo que ha aprendido de sus propios resultados. Se enseña CON la muestra al lado:
    sin ella, «el oro pierde por la mañana» y «el oro ha perdido 6 de 9 veces por la
    mañana» se leen igual, y la segunda no es una conclusión todavía. */

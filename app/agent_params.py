@@ -71,7 +71,7 @@ _OPTIONS: dict[str, list[str]] = {
 # esto, apuntar la memoria a tu vault duraría hasta el siguiente arranque: la app
 # volvería a escribir dentro de sí misma sin decir nada.
 APP_SETTINGS = {"obsidian_vault_path", "obsidian_folder", "obsidian_tag",
-                "stt_enabled", "macro_enabled"}
+                "stt_enabled", "macro_enabled", "playbook_mode", "coste_r"}
 
 EDITABLE = {n for names in PARAMS.values() for n in names} | APP_SETTINGS
 

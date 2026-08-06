@@ -72,6 +72,21 @@ class Settings(BaseSettings):
     perplexity_model: str = "sonar"          # "sonar" es el económico; "sonar-pro" el potente
     research_daily_brief: bool = True        # un brief de mercado al día, guardado en la memoria
 
+    # --- Cómo se decide qué operar ---
+    # "manual": el playbook lo escribes tú (o lo evoluciona el Arquitecto desde las
+    #           revisiones diarias). Es una creencia: puede estar bien o estar viejo,
+    #           y mirándolo no se distingue.
+    # "auto":   el playbook lo escribe la MEDICIÓN. Cada día se prueban las estrategias
+    #           sobre tu histórico, se puntúa fuera de muestra y con coste, y lo que
+    #           sobrevive es lo único que se opera. Lo que no sobrevive desaparece solo.
+    playbook_mode: str = "manual"            # "manual" | "auto"
+    descubrir_steps: int = 3                 # valores por parámetro (3 = 3^n combinaciones)
+    descubrir_horizon: int = 60              # velas máximas que dura una operación medida
+    descubrir_split: float = 0.7             # 70% para buscar, 30% para comprobar
+    # Spread + comisión estimados en múltiplos de R. Un backtest a coste cero miente
+    # hacia arriba. Súbelo si tu bróker es caro: las cifras bajarán, y serán las tuyas.
+    coste_r: float = 0.05
+
     # --- Macro (lo que mueve a los CFDs y no viene del bróker) ---
     # FRED (Reserva Federal de St. Louis): tipos nominales y reales, VIX e índice
     # dólar. Gratis, pero pide una clave gratuita en fred.stlouisfed.org. Sin clave

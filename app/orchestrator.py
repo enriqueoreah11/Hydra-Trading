@@ -15,7 +15,7 @@ import json
 import logging
 import time
 
-from . import constants, indicators, lecciones, macro, research, vault
+from . import constants, descubridor, indicators, lecciones, macro, research, vault
 from .agents import (analyst, architect, auditor, executor, overnight, portfolio,
                      reviewer, risk_manager, validator)
 from .agents.sentinel import Sentinel
@@ -83,6 +83,54 @@ class Brain:
             return self._trades_cache
         self._trades_cache, self._trades_ts = filas, ahora
         return filas
+
+    # ------------------------------------------- descubrir setups (modo auto)
+
+    async def descubrir_cycle(self) -> dict:
+        """Mide las estrategias sobre el histórico y REESCRIBE el playbook con lo
+        que sobrevive fuera de muestra.
+
+        Aquí el playbook deja de ser una creencia y pasa a ser una medición. Lo
+        importante no es lo que encuentra: es que lo que deja de cumplirse
+        desaparece solo al día siguiente, sin que nadie tenga que acordarse.
+        """
+        from . import history as hist
+
+        db = hist.CandleDB(settings.data_path / "candles.db")
+        por_symbol: dict[str, dict] = {}
+        for symbol in settings.symbol_list:
+            try:
+                velas = await asyncio.to_thread(db.series, symbol, settings.timeframe)
+                por_symbol[symbol] = await asyncio.to_thread(
+                    descubridor.descubrir, velas, symbol,
+                    None, settings.descubrir_steps, settings.descubrir_horizon,
+                    settings.descubrir_split, settings.coste_r)
+            except Exception:  # noqa: BLE001 - un símbolo roto no para a los demás
+                log.exception("no pude medir %s", symbol)
+        if not por_symbol:
+            return {"ok": False, "error": "no pude medir ningún símbolo"}
+
+        con = sum(1 for d in por_symbol.values() if d.get("hallazgos"))
+        sin_datos = [s for s, d in por_symbol.items() if d.get("sin_datos")]
+        texto = descubridor.a_playbook(por_symbol, settings.coste_r)
+        resumen = (f"medido automáticamente: {con} de {len(por_symbol)} instrumentos "
+                   f"con ventaja fuera de muestra")
+        if sin_datos:
+            # No es lo mismo que "no hay ventaja" y no puede leerse igual: aquí lo
+            # que falta es histórico, y se arregla bajándolo.
+            resumen += f"; sin histórico suficiente: {', '.join(sin_datos)}"
+        version = self.store.save_playbook(texto, resumen)
+        self.store.log("architect", "playbook_medido",
+                       {"version": version, "con_ventaja": con,
+                        "sin_datos": sin_datos, "resumen": resumen})
+        try:
+            vault.note("Playbook", f"Playbook medido v{version}", texto,
+                       tags=["playbook", "medido", "hydra"])
+        except Exception:  # noqa: BLE001
+            pass
+        log.info("playbook medido v%s: %s", version, resumen)
+        return {"ok": True, "version": version, "resumen": resumen,
+                "por_symbol": por_symbol}
 
     # ------------------------------------------------------------ main loop
 
@@ -396,6 +444,18 @@ class Brain:
             "open_positions": len(positions),
             "playbook_version": version,
         }
+        # En modo automático el playbook lo escribe la medición, no un modelo. Dejar
+        # que además lo reescriba el Arquitecto sería sustituir números por prosa: la
+        # segunda escritura gana y nadie sabría que ha pasado.
+        if settings.playbook_mode == "auto":
+            try:
+                d = await self.descubrir_cycle()
+                await notifier.send(
+                    "🔬 *Hydra* playbook medido de nuevo.\n" + str(d.get("resumen", "")))
+            except Exception:  # noqa: BLE001
+                log.exception("no pude medir el playbook")
+            return
+
         result = await architect.evolve(playbook, self.store.recent_reviews(7), stats,
                                         aprendido=aprendido_txt)
         if result.get("no_change"):

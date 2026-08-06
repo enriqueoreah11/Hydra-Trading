@@ -3653,6 +3653,54 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         return {"stats": vault.stats(), "notes": vault.list_notes()[:200],
                 "estado": vault.estado()}
 
+    @app.get("/descubrir")
+    async def descubrir_ver(symbol: str = "", tf: str = "", days: float = 365):
+        """Mide las estrategias sobre el histórico y enseña qué se sostiene.
+
+        Sin escribir nada: es para mirar antes de decidir si se pasa a automático.
+        """
+        from . import descubridor as desc
+        sym = (symbol or "").upper().strip() or settings.symbol_list[0]
+        tfr = (tf or settings.timeframe).upper().strip()
+        cs, orig = await _con_velas(sym, tfr, days)
+        if not cs:
+            return {"ok": False, "symbol": sym,
+                    "error": orig.get("aviso") or f"no tengo velas de {sym} {tfr}"}
+        d = await asyncio.to_thread(
+            desc.descubrir, cs, sym, None, settings.descubrir_steps,
+            settings.descubrir_horizon, settings.descubrir_split, settings.coste_r)
+        return {"ok": True, "tf": tfr, "origen": orig, **d,
+                "minimos": {"ops_oos": desc.MIN_OPS_OOS,
+                            "esperanza_r": desc.MIN_EXPECTANCY_R,
+                            "consistencia": desc.CONSISTENCIA_MIN}}
+
+    @app.post("/descubrir/aplicar")
+    async def descubrir_aplicar():
+        """Mide TODOS los símbolos y reescribe el playbook con lo que sobrevive."""
+        if brain is None:
+            return JSONResponse({"ok": False, "error": "el cerebro no está corriendo"},
+                                status_code=503)
+        try:
+            d = await brain.descubrir_cycle()
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": f"al medir: {exc}"[:200]},
+                                status_code=500)
+        return d if d.get("ok") else JSONResponse(d, status_code=400)
+
+    @app.post("/playbook/modo")
+    async def playbook_modo(request: Request):
+        """Cambia entre playbook escrito (manual) y playbook medido (auto)."""
+        try:
+            m = str((await request.json()).get("modo", "")).strip().lower()
+        except Exception:  # noqa: BLE001
+            m = ""
+        if m not in ("manual", "auto"):
+            return JSONResponse({"ok": False, "error": "modo tiene que ser manual o auto"},
+                                status_code=400)
+        agent_params.save_app_setting(settings.data_path / "overrides.json",
+                                      "playbook_mode", m)
+        return {"ok": True, "modo": m}
+
     @app.get("/lecciones")
     async def lecciones_ver(symbol: str = "", days: float = 120):
         """Lo que ha aprendido de sus propios resultados, con la muestra a la vista.
@@ -4121,6 +4169,7 @@ Conecta tu cuenta en <a href="/oauth/login">/oauth/login</a> para operar de verd
                 "balance": st.get("balance"), "model": settings.model,
                 "symbols": st["symbols"], "timeframe": st["timeframe"],
                 "playbook_version": st["playbook_version"],
+                "playbook_mode": settings.playbook_mode,
                 "has_anthropic": bool(settings.anthropic_api_key),
                 "voice_enabled": settings.voice_enabled,
                 "owner_name": settings.owner_name,

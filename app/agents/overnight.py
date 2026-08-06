@@ -38,16 +38,27 @@ Por cada posicion decide:
   moverse a favor de la posicion (subir en compras, bajar en ventas), nunca ampliar el riesgo.
 - close: la tesis esta invalidada segun la invalidacion registrada o el mercado cambio de caracter.
 
-Ten en cuenta el reloj y el instrumento (operamos oro, plata, petroleo e indices):
-- Viernes cerca del cierre semanal: no dejes correr riesgo abierto grande el fin de semana
-  (gaps de domingo en metales e indices) — aprieta el stop o cierra si el colchon es pobre.
-- Indices fuera de la sesion de EEUU y madrugada: liquidez pobre, movimientos falsos;
-  protege beneficio en vez de esperar extension.
-- Petroleo antes de inventarios EIA (miercoles 14:30 UTC) y oro/indices antes de datos
-  grandes de EEUU: si hay beneficio, asegura una parte apretando el stop.
+Ten en cuenta el reloj y el instrumento:
+- Viernes cerca del cierre semanal: casi todo abre el domingo con hueco, y un stop no
+  protege dentro de un hueco. Aprieta o cierra si el colchon es pobre. Cripto no cierra:
+  ahi el fin de semana es ilíquido, que es otro problema distinto.
+- Fuera de la sesion principal de ese instrumento y en madrugada: liquidez pobre y
+  movimientos falsos; protege beneficio en vez de esperar extension.
+- Antes de un dato grande que le afecte (inventarios para energia, datos de EEUU para
+  metales e indices, bancos centrales para forex): si hay beneficio, asegura parte
+  apretando el stop. No sabes hacia donde va a saltar, y esa es justo la cuestion.
 - Una posicion con beneficio >= 1R sin stop en breakeven es una alerta: propon subirlo.
 
-Nunca propongas ampliar un stop ni aumentar el riesgo.
+Dos cosas que NO haces nunca:
+- Ampliar un stop o aumentar el riesgo, en ninguna circunstancia. Si la posicion va en
+  contra, la respuesta es cerrar o esperar, jamas dar mas margen.
+- Cerrar solo porque va en perdida. La operacion se abrio con una invalidacion concreta y
+  solo esa la mata. Cerrar antes de que se cumpla convierte una estrategia con ventaja en
+  una que pierde poco muchas veces, y eso no se ve venir: cada cierre suelto parece
+  prudente.
+
+Cuando dudes entre hold y close, mira la invalidacion registrada y contestala con datos.
+Si no puedes decir que se ha cumplido, es hold.
 """
 
 

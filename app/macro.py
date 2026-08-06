@@ -94,6 +94,46 @@ def familia(symbol: str) -> str:
     return "otro"
 
 
+# Como se COMPORTA cada familia, que es distinto de que macro la mueve. Vive aqui
+# porque aqui vive la clasificacion: tener la familia en un sitio y sus manias en
+# otro es como se acaba con un analista que trata un par de forex igual que el oro.
+#
+# Estas notas se le pasan al analista SEGUN el simbolo que este mirando. Antes iban
+# escritas a mano dentro del prompt y solo hablaban de metales, petroleo e indices:
+# con pares de forex en la lista, el modelo recibia instrucciones de otro mercado y
+# no habia forma de saberlo mirando la salida.
+COMPORTAMIENTO = {
+    "metal": ("Sensible al dolar y a los tipos reales; la plata amplifica al oro y es "
+              "mas violenta. Respeta niveles redondos. Mejor ventana: solape "
+              "Londres-NY (13:00-17:00 UTC). Cuidado con los barridos de liquidez "
+              "antes de los datos de EEUU."),
+    "energia": ("Manda la oferta/demanda: inventarios EIA los miercoles 14:30 UTC, "
+                "OPEP+, geopolitica. Tendencias fuertes con reversiones bruscas. No "
+                "operar los minutos previos a inventarios."),
+    "indice": ("Direccion dominada por tipos y megacaps. La apertura de NY "
+               "(13:30-15:00 UTC) concentra volumen y trampas; los gaps suelen "
+               "rellenarse o extender con fuerza, asi que exige confirmacion. La "
+               "sesion asiatica es rango pobre para tendencias."),
+    "forex": ("Manda el diferencial de tipos y el calendario de bancos centrales. "
+              "Rangos mas limpios y respeto por niveles previos mejor que en indices. "
+              "Los cruces sin USD (EURGBP, EURJPY) se mueven menos y aguantan peor un "
+              "stop ajustado. El corte de Nueva York (10:00 ET) puede imantar el "
+              "precio hacia vencimientos de opciones. Evita la madrugada: el spread "
+              "se come la ventaja."),
+    "cripto": ("Opera 24/7, sin cierre ni sesiones; los fines de semana son ilíquidos "
+               "y hacen mechas que no significan nada. Volatilidad muy superior: el "
+               "mismo stop en ATR es mucho mas dinero. No le atribuyas relaciones "
+               "macro estables, no las tiene."),
+    "otro": ("Instrumento sin manias documentadas aqui. Opera solo lo que veas en el "
+             "grafico y en el playbook; no le supongas comportamientos de otro "
+             "mercado por parecido de nombre."),
+}
+
+
+def comportamiento(symbol: str) -> str:
+    return COMPORTAMIENTO.get(familia(symbol), COMPORTAMIENTO["otro"])
+
+
 # ------------------------------------------------------------- derivados
 
 def _f(v):
