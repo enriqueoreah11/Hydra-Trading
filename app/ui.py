@@ -307,6 +307,7 @@ html,body{margin:0;height:100%;background:#04070e;color:var(--text);
     <div class="ssec">
       <button class="btn" id="b-demo"><span class="bi" data-ico="play"></span>Demo</button>
       <button class="btn ghost" id="b-cal"><span class="bi" data-ico="cal"></span>Calendario</button>
+      <button class="btn ghost" id="b-radar" title="Buscar confluencias en TODOS los instrumentos"><span class="bi" data-ico="target"></span>Radar</button>
       <button class="btn ghost" id="b-halt">PARAR</button>
       <button class="btn ghost" id="b-refresh"><span class="bi" data-ico="refresh"></span>Actualizar</button>
     </div>
@@ -569,6 +570,34 @@ function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('sho
 $('#b-refresh').onclick=()=>{ toast('Datos actualizados'); load(); }; $('#b-halt').onclick=doHalt; $('#b-demo').onclick=runDemo;
 {const bc=$('#b-cal'); if(bc) bc.onclick=openCalendar;}
 $('#b-sistema').onclick=()=>{ renderSysInfo(); renderSecrets(); renderVault(); renderProps(); $('#sistema').classList.add('open'); };
+/* RADAR: el patrón del Confluence Bot sobre TODOS los instrumentos a la vez.
+   Es lo que el bot de cTrader no puede hacer — allí vive pegado a un gráfico, así
+   que vigilar diez pares son diez instancias. Se enseñan las zonas aunque no haya
+   entrada: ver solo las señales esconde el mapa que las produce. */
+$('#b-radar').onclick=()=>abrirRadar();
+async function abrirRadar(){
+  openInfo('◎ Radar de confluencias','<p class="empty">Buscando en todos tus instrumentos…</p>');
+  speak(L('Buscando confluencias en todos los instrumentos, '+SIR+'.','Scanning all instruments, '+SIR+'.'));
+  let d; try{ d=await (await fetch('/radar')).json(); }
+  catch(e){ openInfo('◎ Radar de confluencias','<p style="color:#ff5d73">No pude escanear.</p>'); return; }
+  if(!d.ok){ openInfo('◎ Radar de confluencias','<p style="color:#ff5d73">'+escapeHtml(d.error||'No pude escanear.')+'</p>'); return; }
+  const con=(d.filas||[]).filter(f=>f.senal), sin=(d.filas||[]).filter(f=>!f.senal);
+  let h='<p class="phelp">Zona = varias razones INDEPENDIENTES en el mismo precio. Puntúa por <b>familias distintas</b>, no por número de niveles: tres medias juntas son una razón, no tres.</p>';
+  h+='<div class="cfg"><span>Instrumentos escaneados</span> <b>'+(d.n||0)+'</b> · '+escapeHtml(d.tf||'')+' · mínimo '+d.min_familias+' familias</div>';
+  if(con.length){ h+='<div class="slbl" style="margin-top:10px">CON ENTRADA AHORA</div>';
+    h+=con.map(f=>'<div class="cfg"><span><b>'+escapeHtml(f.symbol)+'</b> '+(f.senal.direction==='buy'?'▲ compra':'▼ venta')
+      +'</span> <b style="color:#34d399">'+f.senal.entry+'</b> · SL '+f.senal.sl+' · TP '+f.senal.tp+'</div>').join(''); }
+  else h+='<div class="phelp" style="margin-top:8px">Ninguna entrada ahora mismo. Es el estado normal: las zonas se cruzan pocas veces al día.</div>';
+  h+='<div class="slbl" style="margin-top:10px">ZONAS VIGILADAS</div>';
+  h+=(con.concat(sin)).map(f=>{
+    const zs=(f.zonas||[]).map(z=>escapeHtml(z.lado)+' '+z.centro+' <b>'+z.n_familias+'</b> fam ('+z.familias.join(', ')+') a '+z.dist_atr+' ATR').join('<br>');
+    return '<div class="cfg" style="align-items:flex-start"><span><b>'+escapeHtml(f.symbol)+'</b><br><span class="phelp">'+escapeHtml(String(f.precio))+'</span></span><span style="text-align:right;font-size:11px">'+(zs||'sin zonas')+'</span></div>'; }).join('');
+  if((d.sin_datos||[]).length) h+='<div class="phelp" style="color:#fbbf24;margin-top:8px">Sin histórico suficiente: '
+    +d.sin_datos.map(x=>escapeHtml(x.symbol)).join(', ')+'. Bájalo en Datos y vuelve a mirar.</div>';
+  h+='<p class="phelp" style="margin-top:10px">'+escapeHtml(d.aviso||'')+'</p>';
+  openInfo('◎ Radar de confluencias',h);
+  speak(con.length?L(con.length+' instrumentos con entrada, '+SIR+'.',con.length+' instruments with a setup, '+SIR+'.')
+                  :L('Ninguna entrada ahora mismo, '+SIR+'.','No setups right now, '+SIR+'.')); }
 /* ------- BOTS DE CTRADER: se importan sus parametros del .algo ------- */
 /* El aviso de los dibujos, honesto. Antes decia "lee dibujos a mano" siempre que
    el bot TUVIERA esos parametros; en modo automatico eso es falso, y en combinado
@@ -2060,6 +2089,7 @@ function paintIcons(){
 const ICO_P={
   chart:'<path d="M4 19h16" /><path d="M5.5 15l4-4.5 3 2.5L19 6"/><path d="M15 6h4v4"/>',
   pause:'<path d="M9 5v14M15 5v14"/>',
+  target:'<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1"/>',
   play:'<path d="M7 4.5l12 7.5-12 7.5z"/>',
   gear:'<circle cx="12" cy="12" r="3.1"/><path d="M12 3v2.4M12 18.6V21M3 12h2.4M18.6 12H21M5.6 5.6l1.7 1.7M16.7 16.7l1.7 1.7M18.4 5.6l-1.7 1.7M7.3 16.7l-1.7 1.7"/>',
   mic:'<rect x="9.2" y="3" width="5.6" height="10" rx="2.8"/><path d="M6 11.5a6 6 0 0012 0M12 17.5V21M8.5 21h7"/>',

@@ -3653,6 +3653,54 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         return {"stats": vault.stats(), "notes": vault.list_notes()[:200],
                 "estado": vault.estado()}
 
+    @app.get("/radar")
+    async def radar(symbols: str = "", tf: str = "", min_familias: int = 0):
+        """Busca el patrón de confluencias en TODOS tus instrumentos a la vez.
+
+        Es lo que el Confluence Bot no puede hacer: dentro de cTrader vive pegado a
+        un gráfico, así que vigilar diez pares son diez instancias. Aquí el patrón
+        corre sobre todas las series a la vez y se ve en una sola pantalla.
+
+        Enseña las zonas aunque no haya entrada: una zona de cuatro familias a
+        media sesión de distancia es informacion, y ver solo las señales esconde
+        el mapa que las produce.
+        """
+        from . import confluencia as conf
+        from . import strategies as st
+
+        syms = [s.strip().upper() for s in (symbols or "").split(",") if s.strip()]
+        if not syms:
+            # los vigilados + los de referencia: para MIRAR sirven los dos, aunque en
+            # los fijos no se opere
+            syms = list(settings.symbol_list) + [s for s in PINNED
+                                                 if s not in settings.symbol_list]
+        tfr = (tf or settings.timeframe).upper().strip()
+        p = dict(st.DEFAULTS["confluencia"])
+        if min_familias:
+            p["min_familias"] = max(2, min(5, int(min_familias)))
+
+        filas, sin_datos = [], []
+        for sym in syms[:40]:
+            try:
+                cs, orig = await _con_velas(sym, tfr, 180)
+                r = await asyncio.to_thread(conf.radar, cs, p)
+            except Exception as exc:  # noqa: BLE001 - un símbolo roto no tumba el radar
+                sin_datos.append({"symbol": sym, "error": str(exc)[:120]})
+                continue
+            if not r.get("ok"):
+                sin_datos.append({"symbol": sym, "error": r.get("error", "")})
+                continue
+            filas.append({"symbol": sym, "tf": tfr, "origen": orig.get("fuente"), **r})
+        # lo que tiene señal primero y, dentro, la zona con más familias
+        filas.sort(key=lambda f: (f["senal"] is None,
+                                  -max([z["n_familias"] for z in f["zonas"]] or [0])))
+        return {"ok": True, "tf": tfr, "min_familias": p["min_familias"],
+                "n": len(filas), "filas": filas, "sin_datos": sin_datos,
+                "no_replicadas": list(conf.NO_REPLICADAS),
+                "aviso": ("las zonas salen de las velas. Lo que dibujes a mano en "
+                          "cTrader no está aquí: si tu bot lo lee, tendrá señales "
+                          "que este radar no puede ver")}
+
     @app.get("/descubrir")
     async def descubrir_ver(symbol: str = "", tf: str = "", days: float = 365):
         """Mide las estrategias sobre el histórico y enseña qué se sostiene.

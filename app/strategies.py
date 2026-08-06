@@ -146,12 +146,25 @@ def ma_pullback(candles: list[Candle], p: dict, i: int) -> Signal | None:
     return None
 
 
+def confluencia(candles: list[Candle], p: dict, i: int) -> Signal | None:
+    """El patrón del Confluence Bot: rebote en una zona con varias razones.
+
+    La implementación vive en su propio módulo porque es bastante más larga que
+    las demás, pero se registra aquí como una estrategia más. Eso es justo lo que
+    hace que herede todo lo que ya existe —medición fuera de muestra, coste,
+    flota, playbook automático— en vez de tener que rehacerlo para ella sola.
+    """
+    from .confluencia import confluencia as _conf
+    return _conf(candles, p, i)
+
+
 STRATEGIES = {
     "donchian": donchian,
     "rsi_fade": rsi_fade,
     "momentum_burst": momentum_burst,
     "ema_trend": ema_trend,
     "ma_pullback": ma_pullback,
+    "confluencia": confluencia,
 }
 
 # Parámetros ajustables por estrategia, con rango permitido. El revisor solo
@@ -166,6 +179,13 @@ TUNABLE: dict[str, dict[str, tuple[float, float]]] = {
                   "atr_mult": (0.5, 4.0), "rr": (0.5, 5.0)},
     "ma_pullback": {"ema_fast": (5, 50), "sma_trend": (50, 200),
                     "touch_atr": (0.05, 1.0), "atr_mult": (0.5, 4.0), "rr": (0.5, 5.0)},
+    # Solo se dejan ajustables los tres que cambian de verdad lo que encuentra: cuántas
+    # familias hay que exigir, qué ancho tiene la zona y a qué distancia se considera
+    # que el precio ha llegado. Abrir los demás multiplicaría las combinaciones sin
+    # cambiar el patrón, y cuantas más se prueban más fácil es que la mejor lo sea
+    # por casualidad.
+    "confluencia": {"min_familias": (2, 5), "zona_atr": (0.15, 0.8),
+                    "dist_atr": (0.2, 1.2), "atr_mult": (0.5, 4.0), "rr": (0.5, 5.0)},
 }
 
 DEFAULTS: dict[str, dict] = {
@@ -175,6 +195,10 @@ DEFAULTS: dict[str, dict] = {
     "ema_trend": {"ema_fast": 20, "ema_slow": 50, "atr_mult": 1.5, "rr": 2.0},
     "ma_pullback": {"ema_fast": 20, "sma_trend": 200, "touch_atr": 0.25,
                     "atr_mult": 1.5, "rr": 2.0},
+    "confluencia": {"min_familias": 3, "zona_atr": 0.35, "dist_atr": 0.6,
+                    "swing_lookback": 5, "htf_mult": 4, "ema_fast": 20,
+                    "ema_slow": 50, "sma_trend": 200, "fib_window": 120,
+                    "velas_dia": 96, "atr_mult": 1.5, "rr": 2.0},
 }
 
 
