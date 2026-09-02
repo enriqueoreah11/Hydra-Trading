@@ -72,6 +72,30 @@ class Settings(BaseSettings):
     perplexity_model: str = "sonar"          # "sonar" es el económico; "sonar-pro" el potente
     research_daily_brief: bool = True        # un brief de mercado al día, guardado en la memoria
 
+    # --- Cadencia: cuándo se analiza y se ponen las operaciones ---
+    # "continua": se analiza cada `analysis_interval_min` minutos, todos los días.
+    # "sesiones": se analiza SOLO los días de `sesion_dias`, a la hora fijada, y se
+    #             dejan órdenes PENDIENTES en las zonas con caducidad hasta la
+    #             siguiente sesión. La zona se toca cuando se toca, no cuando la miras.
+    cadencia: str = "continua"               # "continua" | "sesiones"
+    sesion_dias: str = "sun,wed"             # días de análisis (nombres en inglés, 3 letras)
+    sesion_hora_utc: int = 20                # hora UTC de la sesión
+    # Caducidad de las pendientes. Por defecto se calcula sola: hasta la siguiente
+    # sesión. Una orden que sobrevive a la sesión que la justificó ya no la decidió
+    # nadie.
+    sesion_max_ordenes: int = 6              # tope por sesión: sin él, una sesión buena abre todo
+
+    # --- La estrategia que enseñas tú ---
+    # Con esto activo, el analista aplica TU estrategia (la que vas escribiendo en
+    # Sistema → Estrategia o en tu Obsidian) en vez del playbook.
+    estrategia_activa: bool = False
+    estrategia_label: str = "50cal"          # etiqueta con la que se abren sus órdenes
+    # Carpeta con tus manuales del curso. La app corre en TU Mac, así que puede
+    # leer iCloud directamente — pero solo lo que esté DESCARGADO: un archivo que
+    # solo vive en la nube no se puede abrir aunque se vea en Finder.
+    # Ej: "/Users/tu-usuario/Library/Mobile Documents/com~apple~CloudDocs/Trading"
+    estrategia_dir: str = ""
+
     # --- Cómo se decide qué operar ---
     # "manual": el playbook lo escribes tú (o lo evoluciona el Arquitecto desde las
     #           revisiones diarias). Es una creencia: puede estar bien o estar viejo,

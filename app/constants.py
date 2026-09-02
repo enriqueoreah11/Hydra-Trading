@@ -59,5 +59,9 @@ TRADE_SIDE = {"buy": 1, "sell": 2}
 TRADE_SIDE_NAME = {1: "buy", 2: "sell"}
 
 ORDER_TYPE_MARKET = 1
+# Pendientes. Son las que hacen posible analizar dos dias por semana y dejar las
+# operaciones puestas: la zona se toca cuando se toca, no cuando tu la miras.
+ORDER_TYPE_LIMIT = 2      # entra al llegar al precio A FAVOR (comprar mas barato)
+ORDER_TYPE_STOP = 3       # entra al romper el precio EN CONTRA (comprar mas caro)
 
 PRICE_SCALE = 100_000  # int64 wire prices -> real price

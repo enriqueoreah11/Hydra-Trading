@@ -15,7 +15,8 @@ import json
 import logging
 import time
 
-from . import constants, descubridor, indicators, lecciones, macro, research, vault
+from . import (constants, descubridor, estrategia, indicators, lecciones, macro,
+               research, sesion, vault)
 from .agents import (analyst, architect, auditor, executor, overnight, portfolio,
                      reviewer, risk_manager, validator)
 from .agents.sentinel import Sentinel
@@ -47,6 +48,7 @@ class Brain:
         self._last_daily_date = ""
         self._last_heartbeat_date = ""
         self._last_data_ts = 0.0
+        self._last_sesion_key = ""
         self._trades_cache: list[dict] = []
         self._trades_ts = 0.0
 
@@ -162,7 +164,20 @@ class Brain:
         if not self.broker.client.account_authorized:
             return
 
-        if now - self._last_market_run >= settings.analysis_interval_min * 60:
+        # En modo "sesiones" no se analiza en continuo: se analiza los dias que tu
+        # digas. El resto del tiempo el cerebro sigue vigilando lo abierto —el
+        # nocturno, el auditor y el watchdog no paran—, pero no busca entradas
+        # nuevas. Analizar todo el rato es, sobre todo, doscientas oportunidades
+        # diarias de encontrarle una historia al grafico.
+        if settings.cadencia == "sesiones":
+            dias = sesion.dias_config(settings.sesion_dias)
+            date_h = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H")
+            if (sesion.toca_ahora(dt.datetime.now(dt.timezone.utc), dias,
+                                  settings.sesion_hora_utc)
+                    and date_h != self._last_sesion_key):
+                self._last_sesion_key = date_h
+                await self.sesion_cycle()
+        elif now - self._last_market_run >= settings.analysis_interval_min * 60:
             self._last_market_run = now
             await self.market_cycle()
         if now - self._last_overnight_run >= settings.overnight_interval_min * 60:
@@ -180,6 +195,165 @@ class Brain:
         if today.hour == settings.review_hour_utc and date_s != self._last_daily_date:
             self._last_daily_date = date_s
             await self.daily_cycle()
+
+    # --------------------------------------------------- sesion (2 dias/semana)
+
+    async def sesion_cycle(self) -> dict:
+        """Analiza TU estrategia en todos los símbolos y deja las órdenes puestas.
+
+        Dos diferencias con el ciclo continuo, y las dos son la razón de existir de
+        esto:
+
+        - Se entra con órdenes PENDIENTES en la zona, no a mercado. Analizar el
+          domingo y entrar a mercado significa entrar al precio del domingo, que
+          casi nunca es el de la zona que justificaba la operación.
+        - Todas caducan en la siguiente sesión. Una orden que sobrevive a la sesión
+          que la justificó ya no la decidió nadie.
+        """
+        from .agents import tester
+
+        if self.store.halted:
+            log.info("halted — no hay sesion")
+            return {"ok": False, "error": "el sistema está parado"}
+
+        dias = sesion.dias_config(settings.sesion_dias)
+        ahora = dt.datetime.now(dt.timezone.utc)
+        expira = sesion.caducidad(ahora, dias, settings.sesion_hora_utc)
+
+        estrategia_txt = estrategia.texto()
+        if settings.estrategia_activa and not estrategia_txt:
+            # Callarlo dejaria una sesion sin operaciones que se lee como "no habia
+            # nada", cuando lo que pasa es que no hay estrategia que aplicar.
+            msg = ("la estrategia está activada pero vacía: enséñale algo en "
+                   "Sistema → Estrategia antes de la próxima sesión")
+            self.store.log("system", "sesion_sin_estrategia", msg)
+            await notifier.send("⚠️ *Hydra* " + msg)
+            return {"ok": False, "error": msg}
+
+        _, playbook = self.store.playbook()
+        trader = await self.broker.trader()
+        balance = trader["balance"]
+        self._remember_initial_balance(balance)
+        posiciones = await self._positions_with_names()
+        daily_pnl = await self.broker.realized_pnl_since(_utc_midnight_epoch())
+
+        puestas, miradas, descartes = [], 0, []
+        for symbol in settings.symbol_list:
+            if len(puestas) >= settings.sesion_max_ordenes:
+                descartes.append({"symbol": symbol,
+                                  "motivo": "tope de órdenes de la sesión"})
+                continue
+            try:
+                r = await self._sesion_symbol(
+                    symbol, estrategia_txt, playbook, balance, daily_pnl,
+                    posiciones, expira, tester)
+            except Exception as exc:  # noqa: BLE001 - un simbolo no tumba la sesion
+                log.exception("sesion fallo en %s", symbol)
+                descartes.append({"symbol": symbol, "motivo": str(exc)[:140]})
+                continue
+            miradas += 1
+            if r.get("puesta"):
+                puestas.append(r)
+            else:
+                descartes.append({"symbol": symbol, "motivo": r.get("motivo", "")})
+
+        resumen = {"ok": True, "ts": ahora.isoformat(), "miradas": miradas,
+                   "puestas": puestas, "descartes": descartes,
+                   "caduca": expira,
+                   "proxima": sesion.descripcion(dias, settings.sesion_hora_utc),
+                   "estrategia": bool(settings.estrategia_activa and estrategia_txt)}
+        self.store.log("system", "sesion", resumen)
+        try:
+            vault.note("Sesiones", f"Sesion {ahora.strftime('%Y-%m-%d')}",
+                       self._sesion_md(resumen), tags=["sesion", "hydra"])
+        except Exception:  # noqa: BLE001
+            pass
+        await notifier.send(
+            f"🗓️ *Hydra sesion* — {len(puestas)} orden(es) puestas de {miradas} "
+            f"instrumentos mirados. Caducan en la proxima sesion.")
+        return resumen
+
+    def _sesion_md(self, r: dict) -> str:
+        out = [f"Instrumentos mirados: **{r['miradas']}**  ·  órdenes puestas: "
+               f"**{len(r['puestas'])}**", ""]
+        if r["puestas"]:
+            out.append("## Puestas")
+            for x in r["puestas"]:
+                out.append(f"- **{x['symbol']}** {x['direction']} en {x['entry']} · "
+                           f"SL {x['stop_loss']} · TP {x['take_profit']} — {x.get('reason','')}")
+            out.append("")
+        if r["descartes"]:
+            out.append("## No se operó, y por qué")
+            out.append("")
+            out.append("Esto no es relleno: una sesión sin órdenes puede ser correcta "
+                       "o puede ser un filtro demasiado apretado, y solo se distingue "
+                       "leyendo los motivos.")
+            out.append("")
+            for x in r["descartes"]:
+                out.append(f"- **{x['symbol']}** — {x['motivo']}")
+        return "\n".join(out)
+
+    async def _sesion_symbol(self, symbol: str, estrategia_txt: str, playbook: str,
+                             balance: float, daily_pnl: float, posiciones: list[dict],
+                             expira: float, tester) -> dict:
+        candles = await self.broker.candles(symbol, settings.timeframe, count=400)
+        if len(candles) < 60:
+            return {"puesta": False, "motivo": "sin velas suficientes"}
+        market = indicators.snapshot(candles)
+        ref = candles[-1].close
+
+        if estrategia_txt:
+            # TU estrategia, aplicada al pie de la letra por el tester — que es el
+            # agente que existe justo para eso: no opina, aplica.
+            d = await tester.decide(estrategia_txt, symbol, settings.timeframe, market)
+            if not d.get("enter") or d.get("direction") not in ("buy", "sell"):
+                return {"puesta": False, "motivo": d.get("reason", "no cumple")[:160]}
+            prop = {"symbol": symbol, "direction": d["direction"],
+                    "stop_loss": float(d["stop_loss"]), "take_profit": float(d["take_profit"]),
+                    "confidence": 70, "thesis": d.get("reason", "")[:600],
+                    "invalidation": "el precio pierde la zona",
+                    "last_close": float(d.get("entry") or ref), "action": "propose"}
+            entrada = float(d.get("entry") or ref)
+        else:
+            prop = await analyst.analyze(symbol, settings.timeframe, market, playbook,
+                                         posiciones)
+            if prop.get("action") != "propose":
+                return {"puesta": False, "motivo": prop.get("thesis", "no_trade")[:160]}
+            entrada = float(prop.get("last_close") or ref)
+
+        self.store.log("analyst", "sesion_propuesta", prop, symbol=symbol)
+        info = await self.broker.symbol_info(symbol)
+        decision = await risk_manager.review(
+            proposal=prop, balance=balance, initial_balance=self._initial_balance(balance),
+            daily_realized_pnl=daily_pnl, open_positions=posiciones, info=info,
+            halted=self.store.halted, playbook=playbook)
+        if not decision.approved:
+            return {"puesta": False, "motivo": f"riesgo: {decision.reason}"[:160]}
+        pf = await portfolio.check(prop, posiciones, self.broker)
+        if not pf.approved:
+            return {"puesta": False, "motivo": f"portafolio: {pf.reason}"[:160]}
+
+        fila = {"puesta": True, "symbol": symbol, "direction": prop["direction"],
+                "entry": round(entrada, 6), "stop_loss": prop["stop_loss"],
+                "take_profit": prop["take_profit"], "units": decision.volume_units,
+                "reason": prop.get("thesis", "")[:300]}
+        if settings.dry_run:
+            self.store.log("executor", "pendiente_simulada", fila, symbol=symbol)
+            fila["simulada"] = True
+            return fila
+        try:
+            res = await self.broker.place_pending_order(
+                symbol=symbol, side=prop["direction"], volume_units=decision.volume_units,
+                entry=entrada, stop_loss=prop["stop_loss"],
+                take_profit=prop["take_profit"], expira_ts=expira, ref=ref,
+                label=settings.estrategia_label)
+            self.store.log("executor", "pendiente_puesta",
+                           {**fila, "response": str(res)[:1200]}, symbol=symbol)
+        except Exception as exc:  # noqa: BLE001
+            self.store.log("executor", "pendiente_error", {**fila, "error": str(exc)},
+                           symbol=symbol)
+            return {"puesta": False, "motivo": f"al ponerla: {exc}"[:160]}
+        return fila
 
     # ----------------------------------------------------------- market cycle
 
@@ -247,9 +421,28 @@ class Brain:
                 datos, lecciones.de_postmortems(self.store.postmortem_counts()))
         except Exception:  # noqa: BLE001
             log.info("%s: sin lecciones en este ciclo", symbol)
-        proposal = await analyst.analyze(symbol, settings.timeframe, market, playbook,
-                                         positions, macro_ctx=macro_ctx, reglas=reglas,
-                                         aprendido=aprendido)
+        # Con tu estrategia activa manda ELLA, no el playbook: el tester la aplica
+        # al pie de la letra en vez de que el analista decida por su cuenta. Tener
+        # las dos a la vez seria operar dos estrategias creyendo que es una.
+        est_txt = estrategia.texto() if settings.estrategia_activa else ""
+        if est_txt:
+            from .agents import tester as _tester
+            d = await _tester.decide(est_txt, symbol, settings.timeframe, market)
+            if not d.get("enter") or d.get("direction") not in ("buy", "sell"):
+                self.store.log("analyst", "estrategia_no_entra",
+                               {"reason": d.get("reason", "")[:400]}, symbol=symbol)
+                return
+            proposal = {"symbol": symbol, "action": "propose",
+                        "direction": d["direction"],
+                        "stop_loss": float(d["stop_loss"]),
+                        "take_profit": float(d["take_profit"]),
+                        "confidence": 70, "thesis": d.get("reason", "")[:600],
+                        "invalidation": "la condicion de la estrategia deja de cumplirse",
+                        "last_close": market.get("last_close")}
+        else:
+            proposal = await analyst.analyze(symbol, settings.timeframe, market, playbook,
+                                             positions, macro_ctx=macro_ctx, reglas=reglas,
+                                             aprendido=aprendido)
         self.store.log("analyst", "analysis", proposal, symbol=symbol)
 
         if proposal["action"] != "propose":
@@ -420,6 +613,30 @@ class Brain:
                      n, datos["n_cerradas"])
         except Exception:  # noqa: BLE001 - aprender no puede tumbar la revisión
             log.warning("no pude calcular los aprendizajes", exc_info=True)
+
+        # Aprender sobre TU estrategia, no sobre el sistema en general. Las
+        # lecciones globales mezclan operaciones de todo; si lo que quieres es
+        # mejorar UNA estrategia, lo que hace falta es su propio historial —y va a
+        # la seccion de observaciones de la estrategia, separado de lo que
+        # escribiste tu, para que siempre se pueda distinguir.
+        if settings.estrategia_activa:
+            try:
+                filas = [r for r in await self._trades_cerradas()
+                         if str(r.get("strategy", "")).lower()
+                         == settings.estrategia_label.lower()]
+                d_est = lecciones.calcular(filas)
+                for x in (d_est.get("lecciones") or [])[:3]:
+                    estrategia.observar(
+                        f"{x['dimension']} «{x['valor']}»: "
+                        f"{'pierde' if x['net'] < 0 else 'gana'} {abs(x['net']):.2f}",
+                        f"{x['n']} operaciones, {x['win_pct']}% acierto, "
+                        f"casualidad {int((x.get('prob_suerte') or 0) * 100)}%")
+                if not d_est.get("lecciones") and d_est.get("n_cerradas", 0):
+                    log.info("estrategia %s: %s operaciones, aun sin muestra para "
+                             "concluir nada", settings.estrategia_label,
+                             d_est["n_cerradas"])
+            except Exception:  # noqa: BLE001
+                log.warning("no pude medir la estrategia", exc_info=True)
 
         # El contexto de decisión del bot entra en la revisión: sin esto, el
         # Reviewer solo ve lo que se OPERÓ y nunca aprende de lo que se rechazó.

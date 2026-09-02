@@ -277,6 +277,60 @@ class Broker:
         log.info("placing order: %s", payload)
         return await self.client.send(c.NEW_ORDER_REQ, payload)
 
+    async def place_pending_order(self, symbol: str, side: str, volume_units: float,
+                                  entry: float, stop_loss: float,
+                                  take_profit: float | None, expira_ts: float,
+                                  ref: float, label: str = "brain",
+                                  account_id: int | None = None) -> dict:
+        """Deja una orden esperando en un precio, con caducidad OBLIGATORIA.
+
+        Es lo que permite analizar dos dias por semana: la zona se toca cuando se
+        toca, no cuando tu la miras. Sin esto, analizar el domingo y entrar a
+        mercado significa entrar al precio del domingo, que casi nunca es el de la
+        zona que justificaba la operacion.
+
+        La caducidad no es opcional a proposito. Una orden puesta el domingo que
+        sigue viva tres semanas despues se ejecuta en un mercado que ya no es el
+        que la justifico, y esa entrada no la decidio nadie: la decidio el olvido.
+
+        Las pendientes llevan SL y TP ABSOLUTOS; las de mercado los llevan
+        relativos porque alli el precio de ejecucion no se conoce de antemano.
+        """
+        if expira_ts <= time.time():
+            raise ValueError("la caducidad ya pasó: seria una orden muerta al nacer")
+        # Un LIMIT compra por debajo del precio y vende por encima. Del otro lado es
+        # un STOP, y confundirlos no da un error claro: o lo rechaza el broker, o
+        # entra en un sitio que no es el que se penso.
+        if side == "buy":
+            tipo = "limit" if entry < ref else "stop"
+            if not stop_loss < entry:
+                raise ValueError("en una compra el stop va por debajo de la entrada")
+        else:
+            tipo = "limit" if entry > ref else "stop"
+            if not stop_loss > entry:
+                raise ValueError("en una venta el stop va por encima de la entrada")
+        info = await self.symbol_info(symbol, account_id)
+        payload: dict = {
+            "ctidTraderAccountId": account_id or self.account_id,
+            "symbolId": info.symbol_id,
+            "orderType": c.ORDER_TYPE_LIMIT if tipo == "limit" else c.ORDER_TYPE_STOP,
+            "tradeSide": c.TRADE_SIDE[side],
+            "volume": int(round(volume_units * 100)),
+            "label": label[:100],
+            ("limitPrice" if tipo == "limit" else "stopPrice"): entry,
+            "stopLoss": stop_loss,
+            "expirationTimestamp": int(expira_ts * 1000),
+        }
+        if take_profit is not None:
+            payload["takeProfit"] = take_profit
+        log.info("pendiente %s %s %s @%s (caduca %s)", tipo, side, symbol, entry,
+                 int(expira_ts))
+        return await self.client.send(c.NEW_ORDER_REQ, payload)
+
+    async def cancel_order(self, order_id: int) -> dict:
+        return await self.client.send(c.CANCEL_ORDER_REQ, {
+            "ctidTraderAccountId": self.account_id, "orderId": order_id})
+
     async def amend_position_sltp(self, position_id: int, stop_loss: float | None,
                                   take_profit: float | None) -> dict:
         payload: dict = {"ctidTraderAccountId": self.account_id, "positionId": position_id}

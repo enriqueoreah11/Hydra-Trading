@@ -1567,10 +1567,135 @@ async function renderVault(){ let d; try{ d=await (await fetch('/vault')).json()
     +(e.reglas_activas?' <b style="color:#34d399">Ahora mismo hay reglas tuyas activas.</b>':'')+'</div>';
   h+='<div class="prm"><label>🔎 Preguntar al investigador (Perplexity)</label><input id="rsq" placeholder="ej. ¿qué mueve al oro hoy?" onkeydown="if(event.key===\'Enter\')doResearch()"></div>';
   h+='<button class="btn ghost" onclick="doResearch()">Investigar</button><div id="rsout"></div>';
-  h+='<div id="sys-playbook"></div><div id="sys-lecciones"></div>';
+  h+='<div id="sys-estrategia"></div><div id="sys-playbook"></div><div id="sys-lecciones"></div>';
   const recent=(d.notes||[]).slice(0,6);
   if(recent.length){ h+='<div class="phelp" style="margin-top:8px">Recientes:</div>'+recent.map(x=>'<div class="cfg"><span>'+escapeHtml(x.folder||'nota')+'</span> <b>'+escapeHtml(x.name)+'</b></div>').join(''); }
-  $('#sys-vault').innerHTML=h; renderPlaybookModo(); renderLecciones(); }
+  $('#sys-vault').innerHTML=h; renderEstrategia(); renderPlaybookModo(); renderLecciones(); }
+/* LA ESTRATEGIA QUE TÚ ENSEÑAS. Es lo que faltaba: un sitio donde ir añadiéndola
+   a trozos sin que lo de ayer desaparezca al escribir lo de hoy. Lo que destila de
+   tus manuales queda PENDIENTE hasta que lo apruebas — un resumen automático que
+   entra solo acaba siendo política de trading que nadie escribió. */
+async function renderEstrategia(){ const el=$('#sys-estrategia'); if(!el) return;
+  let d; try{ d=await (await fetch('/estrategia')).json(); }catch(e){ el.innerHTML=''; return; }
+  const ses=d.sesion||{};
+  let h='<div class="slbl" style="margin-top:12px">TU ESTRATEGIA</div>';
+  h+='<div class="cfg"><span>Nombre</span> <b>'+escapeHtml(d.nombre||'(sin nombre)')+'</b></div>';
+  h+='<div class="cfg"><span>Piezas enseñadas</span> <b>'+(d.n_piezas||0)+'</b>'
+    +((d.n_pendientes||0)?' · <b style="color:#fbbf24">'+d.n_pendientes+' esperando tu visto bueno</b>':'')
+    +((d.n_retiradas||0)?' · '+d.n_retiradas+' retiradas':'')+'</div>';
+  h+='<div class="cfg"><span>La opera el sistema</span> <span>'
+    +[['1','Sí'],['0','No']].map(o=>'<button class="btn ghost'+((d.activa?'1':'0')===o[0]?' on':'')
+      +'" style="padding:5px 9px;margin-left:5px" onclick="activarEstrategia('+o[0]+')">'+o[1]+'</button>').join('')+'</span></div>';
+  if(d.activa) h+='<div class="phelp" style="color:#34d399">Manda TU estrategia: el sistema la aplica al pie de la letra en vez del playbook. Las órdenes se abren con la etiqueta <code>'+escapeHtml(d.label||'')+'</code>, y por esa etiqueta se mide qué funciona.</div>';
+  else if(!d.n_piezas) h+='<div class="phelp">Todavía no le has enseñado nada. Escríbele abajo, o apunta la carpeta de tus manuales y que los lea.</div>';
+  h+='<div class="prm"><label>Enséñale una pieza (título)</label><input id="est-tit" placeholder="ej. Condiciones de entrada"></div>';
+  h+='<div class="prm"><label>Qué hace</label><textarea id="est-txt" rows="5" placeholder="Se entra cuando el precio vuelve a la zona y deja vela de rechazo con cierre por encima…"></textarea></div>';
+  h+='<button class="btn" onclick="ensenarEstrategia()">Añadir a la estrategia</button> <span id="est-out" class="phelp"></span>';
+  /* Las piezas, con su fecha: sin el historial no se puede correlacionar un cambio
+     de resultados con un cambio de estrategia. */
+  const ps=(d.piezas||[]);
+  if(ps.length){ h+='<div class="phelp" style="margin-top:10px">Lo que le has enseñado:</div>';
+    h+=ps.map((x,i)=>{ const est=x.retirada?'retirada':(x.pendiente?'pendiente':'activa');
+      const col=x.retirada?'#8aa':(x.pendiente?'#fbbf24':'#34d399');
+      return '<div class="cfg"><span style="max-width:60%"><b style="color:'+col+'">'+est+'</b> '
+        +escapeHtml(x.titulo||('pieza '+(i+1)))+'<br><span class="phelp">'+escapeHtml(x.ts||'')+'</span></span><span>'
+        +(x.pendiente?'<button class="btn ghost" style="padding:4px 8px" onclick="aprobarPieza('+i+')">Aprobar</button> ':'')
+        +(x.retirada?'':'<button class="btn ghost" style="padding:4px 8px" onclick="retirarPieza('+i+')">Retirar</button>')
+        +'</span></div>'; }).join(''); }
+  /* Los manuales del curso */
+  h+='<div class="slbl" style="margin-top:12px">TUS MANUALES</div>';
+  h+='<div class="prm"><label>Carpeta con los manuales</label><input id="man-dir" placeholder="/Users/tu-usuario/Library/Mobile Documents/com~apple~CloudDocs/Trading/Strategies/FX Cartel" onkeydown="if(event.key===\'Enter\')guardarCarpetaManuales()"></div>';
+  h+='<button class="btn ghost" onclick="guardarCarpetaManuales()">Leer esa carpeta</button><div id="man-out" class="phelp"></div>';
+  /* Cuándo analiza */
+  h+='<div class="slbl" style="margin-top:12px">CUÁNDO ANALIZA</div>';
+  h+='<div class="cfg"><span>Cadencia</span> <span>'
+    +[['continua','Todo el rato'],['sesiones','Días fijos']].map(m=>'<button class="btn ghost'+((ses.cadencia||'continua')===m[0]?' on':'')
+      +'" style="padding:5px 9px;margin-left:5px" onclick="setCadencia(\''+m[0]+'\')">'+m[1]+'</button>').join('')+'</span></div>';
+  if((ses.cadencia||'')==='sesiones'){
+    h+='<div class="phelp" style="color:#34d399">'+escapeHtml(ses.descripcion||'')+'. Deja las operaciones como órdenes <b>pendientes</b> en las zonas, y todas caducan en la siguiente sesión.</div>';
+    h+='<div class="prm"><label>Días (mon,tue,wed,thu,fri,sat,sun)</label><input id="ses-dias" value="'+escapeHtml(ses.dias||'')+'"></div>';
+    h+='<div class="prm"><label>Hora UTC</label><input id="ses-hora" value="'+escapeHtml(String(ses.hora_utc!=null?ses.hora_utc:20))+'"></div>';
+    h+='<button class="btn ghost" onclick="guardarSesion()">Guardar</button> <button class="btn ghost" onclick="sesionAhora()">Correr sesión ahora</button><div id="ses-out" class="phelp"></div>';
+  } else h+='<div class="phelp">Analiza cada '+escapeHtml(String((DATA&&DATA.core&&DATA.core.analysis_interval_min)||15))+' min. Con «Días fijos» analiza solo los días que le digas y deja las órdenes puestas para la semana.</div>';
+  el.innerHTML=h; }
+
+async function ensenarEstrategia(){ const t=$('#est-txt'), ti=$('#est-tit'), o=$('#est-out');
+  const txt=(t&&t.value||'').trim(); if(!txt){ toast('Escribe qué hace'); return; }
+  let d; try{ d=await (await fetch('/estrategia',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({texto:txt,titulo:(ti&&ti.value||'').trim()})})).json(); }
+  catch(e){ if(o)o.textContent='Error de red.'; return; }
+  if(!d.ok){ if(o){o.style.color='#ff5d73';o.textContent=d.error||'No pude guardarla.';} return; }
+  if(t)t.value=''; if(ti)ti.value='';
+  toast('Aprendido ✓'); speak(L('Apuntado en la estrategia, '+SIR+'.','Added to the strategy, '+SIR+'.'));
+  renderEstrategia(); }
+
+async function activarEstrategia(on){ let r; try{ r=await fetch('/estrategia/activar',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({activa:!!on})}); }catch(e){ toast('Error de red'); return; }
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok){ toast(d.error||'No se pudo'); return; }
+  toast(on?'Opera tu estrategia ✓':'Vuelve al playbook'); renderEstrategia(); load(); }
+
+async function aprobarPieza(i){ try{ await fetch('/estrategia/aprobar',{method:'POST',
+  headers:{'Content-Type':'application/json'},body:JSON.stringify({indice:i})}); }catch(e){}
+  toast('Aprobada ✓'); renderEstrategia(); }
+
+async function retirarPieza(i){ const m=prompt('¿Por qué la retiras? (queda anotado)')||'';
+  try{ await fetch('/estrategia/retirar',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({indice:i,motivo:m})}); }catch(e){}
+  toast('Retirada'); renderEstrategia(); }
+
+async function guardarCarpetaManuales(){ const el=$('#man-dir'), o=$('#man-out');
+  if(o){ o.style.color=''; o.textContent='Buscando…'; }
+  let d; try{ d=await (await fetch('/manuales/carpeta',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({path:(el&&el.value||'').trim()})})).json(); }
+  catch(e){ if(o)o.textContent='Error de red.'; return; }
+  if(!d.ok){ if(o){o.style.color='#fbbf24';o.textContent=d.error||d.motivo||'No pude leerla.';} return; }
+  const fs=d.archivos||[];
+  if(!fs.length){ if(o)o.textContent='Carpeta encontrada, pero sin PDF, Markdown ni Word dentro.'; return; }
+  if(o) o.innerHTML='<b>'+fs.length+' documento(s)</b>:<br>'+fs.map((f,i)=>
+    escapeHtml(f.rel)+' <button class="btn ghost" style="padding:3px 7px" onclick="destilar('+JSON.stringify(f.rel).replace(/"/g,'&quot;')+')">Leer y sacar reglas</button>').join('<br>'); }
+
+/* Destilar: sacar del manual solo lo operable, con la cita del texto al lado. Una
+   regla cuya cita no está en el manual se descarta antes de llegar aquí. */
+async function destilar(rel){ const o=$('#man-out');
+  if(o){ o.style.color=''; o.innerHTML='Leyendo <b>'+escapeHtml(rel)+'</b>… (un manual largo tarda)'; }
+  speak(L('Leyendo tu manual, '+SIR+'.','Reading your manual, '+SIR+'.'));
+  let d; try{ d=await (await fetch('/manuales/destilar',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({rel:rel})})).json(); }
+  catch(e){ if(o)o.textContent='Error de red.'; return; }
+  if(!d.ok){ if(o){o.style.color='#ff5d73';o.textContent=d.error||'No pude leerlo.';} return; }
+  if(!d.n_reglas){ if(o){o.style.color='#fbbf24';o.textContent=d.aviso||'Sin reglas operables.';} return; }
+  if(o) o.innerHTML='<b style="color:#34d399">'+d.n_reglas+' reglas</b> de '+d.leidos+'/'+d.trozos+' trozos'
+    +(d.descartadas?' · <b style="color:#fbbf24">'+d.descartadas+' descartadas por no estar en el texto</b>':'')
+    +'<br>'+escapeHtml(d.aviso||'');
+  speak(L('Saqué '+d.n_reglas+' reglas, '+SIR+'. Las dejo esperando tu visto bueno.',
+          'Got '+d.n_reglas+' rules, '+SIR+'. Waiting for your approval.'));
+  renderEstrategia(); }
+
+async function setCadencia(c){ try{ await fetch('/sesion/config',{method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({cadencia:c})}); }catch(e){ toast('Error de red'); return; }
+  toast(c==='sesiones'?'Analiza en días fijos ✓':'Analiza en continuo ✓'); renderEstrategia(); }
+
+async function guardarSesion(){ const dd=$('#ses-dias'), hh=$('#ses-hora'), o=$('#ses-out');
+  let d; try{ d=await (await fetch('/sesion/config',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({dias:(dd&&dd.value||'').trim(),hora_utc:parseInt((hh&&hh.value)||'20',10)})})).json(); }
+  catch(e){ if(o)o.textContent='Error de red.'; return; }
+  if(!d.ok){ if(o){o.style.color='#ff5d73';o.textContent=d.error||'No pude guardarlo.';} return; }
+  if(o){ o.style.color='#34d399'; o.textContent=d.descripcion||''; }
+  toast('Guardado ✓'); renderEstrategia(); }
+
+async function sesionAhora(){ const o=$('#ses-out');
+  if(o){ o.style.color=''; o.textContent='Analizando y poniendo órdenes…'; }
+  let d; try{ d=await (await fetch('/sesion/ahora',{method:'POST'})).json(); }
+  catch(e){ if(o)o.textContent='Error de red.'; return; }
+  if(!d.ok){ if(o){o.style.color='#ff5d73';o.textContent=d.error||'No pude.';} return; }
+  const n=(d.puestas||[]).length;
+  if(o) o.innerHTML='<b style="color:#34d399">'+n+' orden(es)</b> de '+d.miradas+' instrumentos.'
+    +(n?'<br>'+d.puestas.map(x=>escapeHtml(x.symbol)+' '+x.direction+' @'+x.entry).join('<br>'):'')
+    +((d.descartes||[]).length?'<br><span class="phelp">No se operó: '+d.descartes.map(x=>escapeHtml(x.symbol)+' ('+escapeHtml(String(x.motivo||'').slice(0,60))+')').join(' · ')+'</span>':'');
+  speak(n?L('Dejé '+n+' órdenes puestas, '+SIR+'.','Left '+n+' orders resting, '+SIR+'.')
+         :L('Ninguna operación esta sesión, '+SIR+'.','No trades this session, '+SIR+'.')); }
+
 /* Playbook escrito vs playbook medido. La diferencia no es de comodidad: el escrito
    es una creencia que puede estar vieja sin que se note, y el medido se vuelve a
    comprobar cada día contra el histórico. */

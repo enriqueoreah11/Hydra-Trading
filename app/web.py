@@ -3653,6 +3653,218 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         return {"stats": vault.stats(), "notes": vault.list_notes()[:200],
                 "estado": vault.estado()}
 
+    # ------------------------------------------- la estrategia que enseñas tú
+
+    @app.get("/estrategia")
+    async def estrategia_ver():
+        """Lo que le has enseñado, pieza a pieza y con fecha."""
+        from . import estrategia as est
+        e = est.estado()
+        return {"ok": True, **e, "texto": est.texto(),
+                "activa": settings.estrategia_activa,
+                "label": settings.estrategia_label,
+                "tag_obsidian": est.TAG,
+                "cadencia": settings.cadencia,
+                "sesion": _sesion_info()}
+
+    @app.post("/estrategia")
+    async def estrategia_enseñar(request: Request):
+        """Añade una pieza. Nunca pisa lo anterior: por eso se puede ir enseñando."""
+        from . import estrategia as est
+        try:
+            b = await request.json()
+        except Exception:  # noqa: BLE001
+            b = {}
+        if "nombre" in b and "texto" not in b:
+            return {"ok": True, **est.nombrar(str(b.get("nombre") or ""))}
+        r = est.enseñar(str(b.get("texto") or ""), str(b.get("titulo") or ""))
+        if not r.get("ok"):
+            return JSONResponse(r, status_code=400)
+        store.log("system", "estrategia_ensenada",
+                  {"titulo": b.get("titulo"), "chars": len(str(b.get("texto") or ""))})
+        return r
+
+    @app.post("/estrategia/retirar")
+    async def estrategia_retirar(request: Request):
+        """Marca una pieza como retirada. No se borra: cuando algo empeora, lo
+        primero que hace falta saber es qué se quitó y cuándo."""
+        from . import estrategia as est
+        try:
+            b = await request.json()
+        except Exception:  # noqa: BLE001
+            b = {}
+        r = est.retirar(int(b.get("indice", -1)), str(b.get("motivo") or ""))
+        return r if r.get("ok") else JSONResponse(r, status_code=400)
+
+    @app.post("/estrategia/activar")
+    async def estrategia_activar(request: Request):
+        """Enciende o apaga que el sistema opere TU estrategia en vez del playbook."""
+        from . import estrategia as est
+        try:
+            on = bool((await request.json()).get("activa"))
+        except Exception:  # noqa: BLE001
+            on = False
+        if on and not est.texto():
+            return JSONResponse(
+                {"ok": False, "error": "no puedo activarla vacía: enséñale algo primero"},
+                status_code=400)
+        agent_params.save_app_setting(settings.data_path / "overrides.json",
+                                      "estrategia_activa", on)
+        return {"ok": True, "activa": settings.estrategia_activa}
+
+    # ------------------------------------------ manuales del curso -> reglas
+
+    @app.get("/manuales")
+    async def manuales_ver():
+        """Qué manuales ve en tu carpeta. No lee ninguno todavía."""
+        from . import manuales as man
+        return {"ok": True, **man.estado(), "archivos": man.listar()}
+
+    @app.post("/manuales/carpeta")
+    async def manuales_carpeta(request: Request):
+        """Apunta a la carpeta del curso. Se comprueba ANTES de guardarla."""
+        from pathlib import Path as _P
+        try:
+            ruta = str((await request.json()).get("path", "")).strip()
+        except Exception:  # noqa: BLE001
+            ruta = ""
+        if ruta and not _P(ruta).expanduser().is_dir():
+            return JSONResponse(
+                {"ok": False,
+                 "error": f"no encuentro «{ruta}». Si está en iCloud, ábrela una vez "
+                          "en Finder para que se descargue: lo que solo vive en la "
+                          "nube no se puede leer"}, status_code=400)
+        agent_params.save_app_setting(settings.data_path / "overrides.json",
+                                      "estrategia_dir", ruta)
+        from . import manuales as man
+        return {"ok": True, **man.estado(), "archivos": man.listar()}
+
+    @app.post("/manuales/destilar")
+    async def manuales_destilar(request: Request):
+        """Lee un manual y saca de él las reglas operables, con su cita.
+
+        Lo destilado queda PENDIENTE de tu visto bueno: no opera hasta que lo
+        apruebas. Un resumen automático que entra solo acaba siendo política de
+        trading que nadie escribió.
+        """
+        from . import estrategia as est
+        from . import manuales as man
+        from .agents import destilador
+        try:
+            b = await request.json()
+        except Exception:  # noqa: BLE001
+            b = {}
+        rel = str(b.get("rel") or "").strip()
+        if not rel:
+            return JSONResponse({"ok": False, "error": "dime qué archivo"}, status_code=400)
+        d = await asyncio.to_thread(man.extraer, rel)
+        if not d.get("ok"):
+            return JSONResponse({"ok": False, "error": d.get("error")}, status_code=400)
+        trozos = man.trozos(d["texto"])
+        max_trozos = max(1, min(int(b.get("max_trozos") or 12), 40))
+        reglas, notas, descartadas = [], [], 0
+        for t in trozos[:max_trozos]:
+            try:
+                r = await destilador.destilar(t, rel)
+            except Exception as exc:  # noqa: BLE001
+                notas.append(f"un trozo falló: {str(exc)[:100]}")
+                continue
+            reglas += r.get("reglas") or []
+            descartadas += len(r.get("descartadas") or [])
+            if r.get("sin_reglas") and r.get("nota"):
+                notas.append(r["nota"][:160])
+        if not reglas:
+            return {"ok": True, "rel": rel, "n_reglas": 0, "trozos": len(trozos),
+                    "leidos": min(len(trozos), max_trozos), "notas": notas[:8],
+                    "descartadas": descartadas,
+                    "aviso": ("no saqué ninguna regla operable de este archivo. Suele "
+                              "pasar con la parte de teoría o psicología del curso, "
+                              "que es la mayor parte de cualquier manual")}
+        md = destilador.a_markdown(reglas, rel)
+        est.enseñar(md, titulo=f"Del manual: {rel}", pendiente=True, fuente=rel)
+        store.log("system", "manual_destilado",
+                  {"rel": rel, "n_reglas": len(reglas), "descartadas": descartadas})
+        return {"ok": True, "rel": rel, "n_reglas": len(reglas),
+                "trozos": len(trozos), "leidos": min(len(trozos), max_trozos),
+                "descartadas": descartadas, "notas": notas[:8], "markdown": md,
+                "pendiente": True,
+                "aviso": ("queda PENDIENTE de tu visto bueno: no opera hasta que lo "
+                          "apruebes. Y se descartaron " + str(descartadas) +
+                          " reglas cuya cita no estaba en el texto — esas eran "
+                          "inventadas")}
+
+    @app.post("/estrategia/aprobar")
+    async def estrategia_aprobar(request: Request):
+        from . import estrategia as est
+        try:
+            i = int((await request.json()).get("indice", -1))
+        except Exception:  # noqa: BLE001
+            i = -1
+        r = est.aprobar(i)
+        return r if r.get("ok") else JSONResponse(r, status_code=400)
+
+    # ------------------------------------------------ sesiones (2 días/semana)
+
+    def _sesion_info() -> dict:
+        from . import sesion as ses
+        dias = ses.dias_config(settings.sesion_dias)
+        ahora = dt.datetime.now(dt.timezone.utc)
+        prox = ses.proxima(ahora, dias, settings.sesion_hora_utc)
+        return {"cadencia": settings.cadencia, "dias": settings.sesion_dias,
+                "hora_utc": settings.sesion_hora_utc,
+                "descripcion": ses.descripcion(dias, settings.sesion_hora_utc),
+                "proxima": prox.isoformat() if prox else None,
+                "max_ordenes": settings.sesion_max_ordenes}
+
+    @app.get("/sesion")
+    async def sesion_ver():
+        return {"ok": True, **_sesion_info(),
+                "ultimas": store.journal_kind("sesion", 5)}
+
+    @app.post("/sesion/config")
+    async def sesion_config(request: Request):
+        """Cuándo analiza. Se valida ANTES de guardar: unos días que no existen
+        dejarían al sistema sin analizar nunca, y en silencio."""
+        from . import sesion as ses
+        try:
+            b = await request.json()
+        except Exception:  # noqa: BLE001
+            b = {}
+        if "dias" in b:
+            dias = ses.dias_config(str(b["dias"]))
+            if not dias:
+                return JSONResponse(
+                    {"ok": False, "error": "no reconocí ningún día. Usa mon,tue,wed,"
+                                           "thu,fri,sat,sun (ej. «sun,wed»)"},
+                    status_code=400)
+            agent_params.save_app_setting(settings.data_path / "overrides.json",
+                                          "sesion_dias", ",".join(ses.NOMBRES[d] for d in dias))
+        if "hora_utc" in b:
+            h = max(0, min(23, int(b["hora_utc"])))
+            agent_params.save_app_setting(settings.data_path / "overrides.json",
+                                          "sesion_hora_utc", h)
+        if "cadencia" in b:
+            c = str(b["cadencia"]).strip().lower()
+            if c not in ("continua", "sesiones"):
+                return JSONResponse({"ok": False, "error": "cadencia: continua o sesiones"},
+                                    status_code=400)
+            agent_params.save_app_setting(settings.data_path / "overrides.json",
+                                          "cadencia", c)
+        return {"ok": True, **_sesion_info()}
+
+    @app.post("/sesion/ahora")
+    async def sesion_ahora():
+        """Corre la sesión ahora mismo, sin esperar al día. Para probarla."""
+        if brain is None:
+            return JSONResponse({"ok": False, "error": "el cerebro no está corriendo"},
+                                status_code=503)
+        try:
+            r = await brain.sesion_cycle()
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse({"ok": False, "error": f"en la sesión: {exc}"[:200]},
+                                status_code=500)
+        return r if r.get("ok") else JSONResponse(r, status_code=400)
+
     @app.get("/radar")
     async def radar(symbols: str = "", tf: str = "", min_familias: int = 0):
         """Busca el patrón de confluencias en TODOS tus instrumentos a la vez.

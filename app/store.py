@@ -241,6 +241,14 @@ class Store:
         return [{"ts": r[0], "agent": r[1], "kind": r[2], "symbol": r[3], "content": r[4]}
                 for r in rows]
 
+    def journal_kind(self, kind: str, limit: int = 10) -> list[dict]:
+        """Las últimas entradas de un tipo concreto (p.ej. las sesiones)."""
+        rows = self.db.execute(
+            "SELECT ts, agent, kind, symbol, content FROM journal WHERE kind=? "
+            "ORDER BY ts DESC LIMIT ?", (kind, int(limit))).fetchall()
+        return [{"ts": r[0], "agent": r[1], "kind": r[2], "symbol": r[3], "content": r[4]}
+                for r in rows]
+
     def recent_reviews(self, n: int = 5) -> list[dict]:
         rows = self.db.execute(
             "SELECT ts, content FROM journal WHERE agent='reviewer' AND kind='daily_review' "

@@ -7,3 +7,5 @@ pydantic>=2.7.0
 pydantic-settings>=2.3.0
 cryptography>=42.0.0
 certifi>=2024.2.2
+# leer los manuales del curso en PDF
+pypdf>=4.2.0
