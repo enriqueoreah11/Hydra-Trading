@@ -73,7 +73,8 @@ _OPTIONS: dict[str, list[str]] = {
 APP_SETTINGS = {"obsidian_vault_path", "obsidian_folder", "obsidian_tag",
                 "stt_enabled", "macro_enabled", "playbook_mode", "coste_r",
                 "cadencia", "sesion_dias", "sesion_hora_utc", "sesion_max_ordenes",
-                "estrategia_activa", "estrategia_label", "estrategia_dir"}
+                "estrategia_activa", "estrategia_label", "estrategia_dir",
+                "ejecucion_determinista", "permitir_cierre_por_llm"}
 
 EDITABLE = {n for names in PARAMS.values() for n in names} | APP_SETTINGS
 

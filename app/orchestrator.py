@@ -15,8 +15,8 @@ import json
 import logging
 import time
 
-from . import (constants, descubridor, estrategia, indicators, lecciones, macro,
-               research, sesion, vault)
+from . import (constants, descubridor, estrategia, gestion, indicators,
+               lecciones, macro, research, sesion, vault)
 from .agents import (analyst, architect, auditor, executor, overnight, portfolio,
                      reviewer, risk_manager, validator)
 from .agents.sentinel import Sentinel
@@ -322,6 +322,26 @@ class Brain:
             entrada = float(prop.get("last_close") or ref)
 
         self.store.log("analyst", "sesion_propuesta", prop, symbol=symbol)
+        # Los niveles vienen de un texto: antes de que lleguen a la cuenta se
+        # comprueban con aritmetica. No es desconfianza generica — son los cuatro
+        # modos concretos en que unos niveles salidos de un modelo salen mal, y
+        # ninguno da error al mandarlos: lado invertido, stop pegado al precio,
+        # stop absurdamente lejos, y una relacion beneficio/riesgo que no es la que
+        # dice la tesis.
+        atr_l = indicators.atr(candles, 14)
+        vale, porque = gestion.niveles_validos(
+            side=proposal["direction"],
+            entrada=float(proposal.get("last_close") or 0),
+            sl=float(proposal.get("stop_loss") or 0),
+            tp=float(proposal.get("take_profit") or 0),
+            atr=atr_l[-1] if atr_l else 0.0,
+            min_rr=settings.min_risk_reward)
+        if not vale:
+            self.store.log("risk_manager", "niveles_rechazados",
+                           {"motivo": porque, "proposal": proposal}, symbol=symbol)
+            log.info("%s: niveles rechazados — %s", symbol, porque)
+            return
+
         info = await self.broker.symbol_info(symbol)
         decision = await risk_manager.review(
             proposal=prop, balance=balance, initial_balance=self._initial_balance(balance),
@@ -528,33 +548,89 @@ class Brain:
                 log.exception("overnight action failed: %s", action)
 
     async def _apply_overnight_action(self, action: dict, pos: dict) -> None:
+        """Lo que dice el modelo se guarda; lo que toca la cuenta lo decide el código.
+
+        El agente nocturno devolvia un `new_stop_loss` y ese numero —salido de un
+        modelo de lenguaje— iba al broker. Habia un control de direccion (solo podia
+        apretar) que evitaba lo peor, pero no acotaba el VALOR: un stop "apretado" a
+        dos pips del precio pasa ese control y lo barre el primer tick.
+        """
         kind = action["action"]
+        self.store.log("overnight", "opinion", action, symbol=pos["symbol"])
         if kind == "hold":
             return
         if settings.dry_run:
             self.store.log("overnight", f"{kind}_simulated", action, symbol=pos["symbol"])
             return
+
         if kind == "close":
+            if not settings.permitir_cierre_por_llm:
+                # Cerrar por una lectura equivocada mata una operacion que iba bien,
+                # y eso no se deshace. Se avisa y decide él.
+                self.store.log("overnight", "cierre_sugerido_no_ejecutado", action,
+                               symbol=pos["symbol"])
+                await notifier.send(
+                    f"🌙 *{pos['symbol']}* — el nocturno sugiere CERRAR: "
+                    f"{action.get('reason', '')}\n"
+                    "No la he cerrado: por voz o por modelo no se cierran posiciones. "
+                    "Ciérrala tú si estás de acuerdo.")
+                return
             await self.broker.close_position(pos["position_id"], pos["volume_units"])
             self.store.log("overnight", "position_closed", action, symbol=pos["symbol"])
             await notifier.send(f"🌙 *{pos['symbol']}* cerrada por el agente nocturno — "
                                 f"{action.get('reason', '')}")
-        elif kind == "tighten_stop":
-            new_sl = float(action.get("new_stop_loss") or 0)
-            current_sl = pos.get("stop_loss")
-            ok = (
-                new_sl > 0 and (
-                    current_sl is None
-                    or (pos["side"] == "buy" and new_sl > current_sl)
-                    or (pos["side"] == "sell" and new_sl < current_sl)
-                )
+            return
+
+        if kind != "tighten_stop":
+            return
+
+        if settings.ejecucion_determinista:
+            await self._mover_stop_calculado(pos, action)
+            return
+
+        new_sl = float(action.get("new_stop_loss") or 0)
+        current_sl = pos.get("stop_loss")
+        ok = (
+            new_sl > 0 and (
+                current_sl is None
+                or (pos["side"] == "buy" and new_sl > current_sl)
+                or (pos["side"] == "sell" and new_sl < current_sl)
             )
-            if not ok:
-                self.store.log("overnight", "tighten_rejected", action, symbol=pos["symbol"])
-                return
-            await self.broker.amend_position_sltp(pos["position_id"], new_sl, pos.get("take_profit"))
-            self.store.log("overnight", "stop_tightened", action, symbol=pos["symbol"])
-            await notifier.send(f"🌙 *{pos['symbol']}* stop movido a {new_sl} (protegiendo posicion)")
+        )
+        if not ok:
+            self.store.log("overnight", "tighten_rejected", action, symbol=pos["symbol"])
+            return
+        await self.broker.amend_position_sltp(pos["position_id"], new_sl,
+                                              pos.get("take_profit"))
+        self.store.log("overnight", "stop_tightened", action, symbol=pos["symbol"])
+        await notifier.send(f"🌙 *{pos['symbol']}* stop movido a {new_sl} (protegiendo posicion)")
+
+    async def _mover_stop_calculado(self, pos: dict, action: dict) -> None:
+        """El stop que toca, en aritmética: precio, entrada y ATR. Sin opinión."""
+        symbol = pos["symbol"]
+        candles = await self.broker.candles(symbol, settings.timeframe, count=60)
+        if len(candles) < 20:
+            return
+        atr_l = indicators.atr(candles, 14)
+        atr = atr_l[-1] if atr_l else 0.0
+        precio = candles[-1].close
+        nuevo, motivo = gestion.stop_objetivo(
+            side=pos["side"], entrada=float(pos.get("entry_price") or 0),
+            stop_actual=pos.get("stop_loss"),
+            stop_inicial=pos.get("stop_loss_inicial") or pos.get("stop_loss"),
+            precio=precio, atr=atr, be_en_r=settings.gestion_be_en_r,
+            trail_atr=settings.gestion_trail_atr, min_atr=settings.gestion_min_atr)
+        if nuevo is None:
+            self.store.log("overnight", "stop_sin_cambio",
+                           {"motivo": motivo, "sugerido_por_llm": action.get("new_stop_loss")},
+                           symbol=symbol)
+            return
+        await self.broker.amend_position_sltp(pos["position_id"], nuevo,
+                                              pos.get("take_profit"))
+        self.store.log("overnight", "stop_calculado",
+                       {"nuevo": nuevo, "motivo": motivo, "atr": atr,
+                        "sugerido_por_llm": action.get("new_stop_loss")}, symbol=symbol)
+        await notifier.send(f"🌙 *{symbol}* stop a {nuevo} — {motivo}")
 
     # ---------------------------------------------------------- auditor cycle
 

@@ -178,32 +178,72 @@ class CandleDB:
             symbol TEXT NOT NULL, tf TEXT NOT NULL, ts INTEGER NOT NULL,
             open REAL, high REAL, low REAL, close REAL, volume REAL,
             PRIMARY KEY(symbol, tf, ts))""")
+        # De DONDE salio cada vela. Sin esto, dos fuentes para el mismo simbolo se
+        # pisaban vela a vela (la clave primaria no las distingue) y quedaba una
+        # serie mitad de un sitio y mitad de otro, sin nada que lo indicara. Eso es
+        # peor que no tener datos: se mide sobre una serie que no existio nunca.
+        cols = {r[1] for r in self.db.execute("PRAGMA table_info(candles)")}
+        if "fuente" not in cols:
+            self.db.execute("ALTER TABLE candles ADD COLUMN fuente TEXT DEFAULT ''")
         self.db.commit()
 
-    def add(self, symbol: str, tf: str, rows: list[dict]) -> int:
+    def add(self, symbol: str, tf: str, rows: list[dict],
+            fuente: str = "ctrader") -> int:
         """Inserta o REEMPLAZA por (símbolo, temporalidad, instante).
 
         Reimportar el mismo archivo no duplica ni una vela: la clave lo impide. Es lo
         que permite bajar el histórico por trozos sin llevar la cuenta a mano.
+
+        `fuente` dice de dónde salió. Importa mucho más de lo que parece: los datos
+        de Dukascopy y los de tu bróker NO son los mismos —distinto feed, distintos
+        cierres, distintas mechas— y antes se pisaban vela a vela sin dejar rastro.
+        Una estrategia medida sobre media serie de cada sitio da un número que no
+        corresponde a ningún mercado real.
         """
         if not rows:
             return 0
-        sym, t = symbol.upper(), tf.upper()
+        sym, t, f = symbol.upper(), tf.upper(), (fuente or "desconocida").lower()
         before = self.count(sym, t)
         self.db.executemany(
-            "INSERT OR REPLACE INTO candles(symbol,tf,ts,open,high,low,close,volume) "
-            "VALUES(?,?,?,?,?,?,?,?)",
+            "INSERT OR REPLACE INTO candles(symbol,tf,ts,open,high,low,close,volume,fuente) "
+            "VALUES(?,?,?,?,?,?,?,?,?)",
             [(sym, t, int(r["ts"]), r["open"], r["high"], r["low"], r["close"],
-              r.get("volume") or 0) for r in rows])
+              r.get("volume") or 0, f) for r in rows])
         self.db.commit()
         return self.count(sym, t) - before
+
+    def fuentes(self, symbol: str, tf: str) -> list[dict]:
+        """Qué fuentes hay mezcladas en esa serie, y cuántas velas pone cada una."""
+        rows = self.db.execute(
+            "SELECT COALESCE(NULLIF(fuente,''),'desconocida'), COUNT(*) FROM candles "
+            "WHERE symbol=? AND tf=? GROUP BY 1 ORDER BY 2 DESC",
+            (symbol.upper(), tf.upper())).fetchall()
+        return [{"fuente": r[0], "velas": int(r[1])} for r in rows]
+
+    def mezclada(self, symbol: str, tf: str) -> bool:
+        return len(self.fuentes(symbol, tf)) > 1
 
     def count(self, symbol: str, tf: str) -> int:
         return int(self.db.execute(
             "SELECT COUNT(*) FROM candles WHERE symbol=? AND tf=?",
             (symbol.upper(), tf.upper())).fetchone()[0])
 
-    def series(self, symbol: str, tf: str, limit: int = 200000) -> list[Candle]:
+    def series(self, symbol: str, tf: str, limit: int = 200000,
+               fuente: str = "") -> list[Candle]:
+        """Las velas de una serie. Con `fuente`, SOLO las de esa procedencia.
+
+        Sin filtrar devuelve todo lo que haya, que es lo correcto cuando hay una
+        sola fuente. Cuando hay varias, quien mida debe elegir una: `mezclada()` lo
+        dice, y medir sobre la mezcla es medir sobre un mercado que no existió.
+        """
+        if fuente:
+            rows = self.db.execute(
+                "SELECT ts,open,high,low,close,volume FROM candles "
+                "WHERE symbol=? AND tf=? AND COALESCE(NULLIF(fuente,''),'desconocida')=? "
+                "ORDER BY ts LIMIT ?",
+                (symbol.upper(), tf.upper(), fuente.lower(), int(limit))).fetchall()
+            return [Candle(ts=r[0], open=r[1], high=r[2], low=r[3], close=r[4],
+                           volume=r[5] or 0) for r in rows]
         rows = self.db.execute(
             "SELECT ts,open,high,low,close,volume FROM candles "
             "WHERE symbol=? AND tf=? ORDER BY ts LIMIT ?",

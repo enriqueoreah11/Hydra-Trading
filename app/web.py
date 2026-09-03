@@ -2790,7 +2790,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             return JSONResponse({"ok": False, "error": "no pude deducir la temporalidad: "
                                                        "dímela (M15, H1…)"},
                                 status_code=400)
-        added = await asyncio.to_thread(_candles_db().add, sym, t, rows)
+        added = await asyncio.to_thread(_candles_db().add, sym, t, rows, "csv")
         store.log("system", "data_import",
                   f"{sym} {t}: {added} velas nuevas de {len(rows)} leídas")
         return {"ok": True, "symbol": sym, "tf": t, "read": len(rows),
@@ -2837,7 +2837,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                     unknown.append({"file": f.name, "bars": len(rows),
                                     "symbol": sym, "tf": tf})
                     continue
-                n = _candles_db().add(sym, tf, rows)
+                n = _candles_db().add(sym, tf, rows, "csv")
                 added += n
                 done.append({"file": f.name, "symbol": sym, "tf": tf,
                              "read": len(rows), "added": n})
@@ -2914,7 +2914,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
                         if len(buf) > 400000 or i == len(hours) - 1:
                             cs = dk.to_candles(sorted(buf, key=lambda t: t["ts"]), secs)
                             saved += await asyncio.to_thread(
-                                _candles_db().add, sym, tf, cs)
+                                _candles_db().add, sym, tf, cs, "dukascopy")
                             buf = []
                             _dl["msg"] = f"{sym} {tf}: {saved} velas"
                 store.log("system", "data_download",
@@ -2995,7 +2995,8 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             if not ticks:
                 continue
             cs = dk.to_candles(sorted(ticks, key=lambda t: t["ts"]), secs)
-            n = await asyncio.to_thread(db.add, ser["symbol"], ser["tf"], cs)
+            n = await asyncio.to_thread(db.add, ser["symbol"], ser["tf"], cs,
+                                        "dukascopy")
             added_total += n
             if n:
                 touched.append(f"{ser['symbol']} {ser['tf']} +{n}")
@@ -3103,7 +3104,7 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         filas = [{"ts": c.ts, "open": c.open, "high": c.high, "low": c.low,
                   "close": c.close, "volume": c.volume} for c in velas]
         db = _candles_db()
-        added = await asyncio.to_thread(db.add, sym, tf, filas)
+        added = await asyncio.to_thread(db.add, sym, tf, filas, "ctrader")
         huecos = ctdata.gaps(velas, hist._TF_SECONDS[tf])
         store.log("system", "data_ctrader",
                   f"{sym} {tf}: {added} velas nuevas de {len(filas)} bajadas de cTrader")
@@ -3121,9 +3122,30 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
         segunda vez ya está en disco y es instantáneo.
         """
         db = _candles_db()
-        cs = await asyncio.to_thread(db.series, sym, tf)
+        # UNA sola fuente. Si hay varias mezcladas se usa la del broker y se dice:
+        # medir sobre media serie de Dukascopy y media de cTrader da un numero que
+        # no corresponde a ningun mercado real, y nada en el resultado lo delata.
+        fuentes = await asyncio.to_thread(db.fuentes, sym, tf)
+        elegida, aviso_mezcla = "", ""
+        if len(fuentes) > 1:
+            nombres = [f["fuente"] for f in fuentes]
+            elegida = ("ctrader" if "ctrader" in nombres
+                       else max(fuentes, key=lambda f: f["velas"])["fuente"])
+            aviso_mezcla = (
+                f"{sym} {tf} tiene velas de varias fuentes ("
+                + ", ".join(f"{f['fuente']}: {f['velas']}" for f in fuentes)
+                + f"). Se mide solo con «{elegida}»: mezclarlas daria un resultado "
+                  "de un mercado que no existio")
+        cs = await asyncio.to_thread(db.series, sym, tf, 200000, elegida)
         if len(cs) >= 400:                     # suficiente para medir algo
-            return cs, {"fuente": "guardado", "bajadas": 0}
+            # "fuente" dice de DONDE se sacaron (disco o descarga) y "proveedor"
+            # QUIEN produjo esas velas. Son dos preguntas distintas y meterlas en la
+            # misma clave es como se acaba comparando "guardado" con "dukascopy".
+            return cs, {"fuente": "guardado", "bajadas": 0,
+                        "proveedor": elegida or (fuentes[0]["fuente"] if fuentes
+                                                 else "desconocida"),
+                        "fuentes": fuentes,
+                        **({"aviso": aviso_mezcla} if aviso_mezcla else {})}
         if broker is None or not broker.client.account_authorized:
             return cs, {"fuente": "guardado", "bajadas": 0,
                         "aviso": "no tengo histórico de ese símbolo y cTrader no está "
@@ -3133,7 +3155,8 @@ def create_app(store: Store, tokens: TokenStore, broker: Broker, brain=None) -> 
             return cs, {"fuente": "guardado", "bajadas": 0,
                         "aviso": parte.get("error") or "no pude bajarlo"}
         cs = await asyncio.to_thread(db.series, sym, tf)
-        return cs, {"fuente": "cTrader (bajado ahora)", "bajadas": parte.get("bajadas", 0),
+        return cs, {"fuente": "cTrader (bajado ahora)", "proveedor": "ctrader",
+                    "bajadas": parte.get("bajadas", 0),
                     "n_huecos": parte.get("n_huecos", 0)}
 
     @app.post("/backtest/run")

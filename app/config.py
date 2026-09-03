@@ -72,6 +72,20 @@ class Settings(BaseSettings):
     perplexity_model: str = "sonar"          # "sonar" es el económico; "sonar-pro" el potente
     research_daily_brief: bool = True        # un brief de mercado al día, guardado en la memoria
 
+    # --- Quién toca la cuenta ---
+    # El modelo razona; el código opera. Con esto activo, los stops de las
+    # posiciones abiertas los calcula `gestion.py` con aritmética sobre precio,
+    # entrada y ATR — no un número salido de un modelo de lenguaje. La opinión del
+    # agente nocturno se sigue guardando (sirve para revisar si habría acertado),
+    # pero no llega al bróker.
+    ejecucion_determinista: bool = True
+    gestion_be_en_r: float = 1.0             # a break-even al llegar a +1R
+    gestion_trail_atr: float = 2.0           # arrastre a N x ATR del precio
+    gestion_min_atr: float = 0.8             # nunca más cerca del precio que esto
+    # Un "cerrar" del modelo NO cierra: avisa. Cerrar por una lectura equivocada
+    # mata una operación que iba bien, y eso no se deshace.
+    permitir_cierre_por_llm: bool = False
+
     # --- Cadencia: cuándo se analiza y se ponen las operaciones ---
     # "continua": se analiza cada `analysis_interval_min` minutos, todos los días.
     # "sesiones": se analiza SOLO los días de `sesion_dias`, a la hora fijada, y se
